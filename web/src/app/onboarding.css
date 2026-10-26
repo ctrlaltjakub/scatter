@@ -1,0 +1,84 @@
+.onboarding { padding: 28px; overflow: auto; }
+.onboarding-shell {
+  position: relative;
+  --settings-line: var(--ui-line);
+  display: grid; grid-template-columns: 235px minmax(0, 1fr);
+  width: min(1080px, 100%); height: min(840px, calc(100dvh - 56px));
+  border: 1px solid var(--settings-line); border-radius: 18px;
+  background: var(--base); color: var(--text); overflow: hidden; box-shadow: 0 20px 80px #0002;
+}
+.onboarding-rail { padding: 32px 20px 68px; background: color-mix(in oklab, var(--mantle) 60%, var(--base)); border-right: 1px solid var(--settings-line); display: flex; flex-direction: column; }
+.onboarding-brand { font-size: 28px; letter-spacing: -0.8px; padding: 0 10px; }
+.onboarding-brand span { display: block; margin-top: 5px; font-size: 13px; letter-spacing: 0; color: var(--subtext0); }
+.onboarding-timeline { list-style: none; margin: 52px 0 0; padding: 0; }
+.onboarding-timeline li { position: relative; padding-bottom: 30px; }
+.onboarding-timeline li:not(:last-child)::after { content: ''; position: absolute; left: 22px; top: 36px; bottom: 4px; width: 1px; background: var(--settings-line); }
+.onboarding-timeline button { display: flex; align-items: flex-start; gap: 12px; text-align: left; width: 100%; padding: 8px; border-radius: var(--r-md); }
+.onboarding-timeline button:enabled:hover { background: var(--tint-2); }
+.onboarding-dot { width: 28px; height: 28px; flex: 0 0 28px; border: 1px solid var(--settings-line); border-radius: 50%; display: grid; place-items: center; font-size: 12px; color: var(--subtext0); }
+.onboarding-timeline strong { display: block; font-size: 14px; font-weight: 400; padding-top: 2px; }
+.onboarding-timeline small { display: block; font-size: 11.5px; color: var(--subtext0); margin-top: 3px; }
+.onboarding-timeline .is-current strong { font-weight: 700; }
+.onboarding-timeline .is-current .onboarding-dot { background: var(--text); color: var(--base); border-color: var(--text); }
+.onboarding-timeline .is-complete .onboarding-dot { color: var(--text); background: var(--tint-3); }
+.onboarding-timeline button:disabled { cursor: default; }
+.onboarding-theme-control { position: absolute; left: 20px; bottom: 16px; z-index: 1; display: flex; }
+.onboarding-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.onboarding-main > header { padding: 32px 36px 22px; margin: 0; flex: none; }
+.onboarding-main h1 { margin: 9px 0; font-size: 29px; line-height: 1.2; letter-spacing: -0.6px; font-weight: 400; outline: none; }
+.onboarding-content { margin: 0; border: 0; min-width: 0; overflow-y: auto; min-height: 0; padding: 4px 36px 24px; scrollbar-width: thin; scrollbar-color: var(--surface2) transparent; flex: 1; }
+.onboarding-choices { display: grid; gap: 14px; }
+.onboarding-choice { display: flex; align-items: center; gap: 18px; width: 100%; text-align: left; padding: 23px; border: 1px solid var(--settings-line); border-radius: 12px; background: var(--tint-1); transition: background .15s, border-color .15s; }
+.onboarding-choice:hover { background: var(--tint-3); border-color: var(--overlay0); }
+.onboarding-choice > svg { flex: none; color: var(--subtext0); }
+.onboarding-choice-body { display: flex; flex: 1; flex-direction: column; gap: 7px; }
+.onboarding-choice-body > strong { font-size: 20px; font-weight: 400; }
+.onboarding-choice-body > span:not(.onboarding-recommended) { font-size: 14px; line-height: 1.5; }
+.onboarding-choice-body small { font-size: 12px; color: var(--subtext0); }
+.onboarding-recommended { align-self: flex-start; font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--subtext0); }
+.onboarding-restore { border-top: 1px solid var(--settings-line); margin-top: 28px; padding-top: 22px; }
+.onboarding-restore h2 { font-size: 15px; font-weight: 700; }
+.onboarding-restore p { margin: 8px 0 16px; color: var(--subtext0); font-size: 13px; line-height: 1.5; }
+.onboarding-footer { display: flex; justify-content: space-between; gap: 12px; padding: 16px 36px; border-top: 1px solid var(--settings-line); flex: none; }
+.onboarding-footer > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.onboarding-connect-card { display: flex; align-items: flex-start; flex-direction: column; gap: 14px; padding: 26px; border: 1px solid var(--settings-line); border-radius: 12px; background: var(--tint-1); }
+.onboarding-connect-card h2 { font-size: 21px; font-weight: 400; }
+.onboarding-connect-card p, .onboarding-facts p { font-size: 14px; line-height: 1.55; }
+.onboarding-facts { margin: 24px 0; display: grid; gap: 13px; color: var(--subtext0); }
+.onboarding-facts strong { color: var(--text); }
+.onboarding-reconnect { margin-bottom: 20px; }
+.onboarding-models { display: grid; gap: 12px; margin-bottom: 18px; }
+.onboarding-model { border: 1px solid var(--settings-line); border-radius: var(--r-md); padding: 16px 18px; background: var(--tint-1); }
+.onboarding-model-heading { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.onboarding-model-heading small { display: block; font-size: 11px; color: var(--subtext0); margin-bottom: 5px; }
+.onboarding-model-heading strong { font-size: 17px; font-weight: 400; }
+.onboarding-model > p { font-size: 12px; color: var(--subtext0); margin: 6px 0; }
+.onboarding-model .settings-selected-properties { margin-top: 12px; }
+.onboarding-details { margin-top: 20px; border-top: 1px solid var(--settings-line); padding-top: 16px; }
+.onboarding-details > summary { cursor: pointer; font-size: 14px; margin-bottom: 14px; }
+@media (max-width: 760px) {
+  .onboarding { padding: 12px; }
+  .onboarding-shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: calc(100dvh - 24px); }
+  .onboarding-rail { padding: 16px 20px; border-right: 0; border-bottom: 1px solid var(--settings-line); }
+  .onboarding-brand { font-size: 22px; padding: 0; }
+  .onboarding-brand span, .onboarding-timeline small { display: none; }
+  .onboarding-timeline { display: flex; margin-top: 14px; gap: 8px; }
+  .onboarding-timeline li { flex: 1; padding: 0; }
+  .onboarding-timeline li::after { display: none; }
+  .onboarding-timeline button { gap: 7px; padding: 0; }
+  .onboarding-timeline strong { font-size: 11px; }
+  .onboarding-dot { width: 22px; height: 22px; flex-basis: 22px; }
+  .onboarding-main > header { padding: 22px 20px 16px; }
+  .onboarding-main h1 { font-size: 25px; }
+  .onboarding-content { padding: 0 20px 20px; }
+  .onboarding-footer { padding: 12px 20px 12px 66px; min-height: 64px; align-items: center; }
+  .onboarding-choice { padding: 18px; gap: 12px; }
+  .onboarding-footer .btn { font-size: 12px; }
+}
+.onboarding-confirmations { display: grid; gap: 16px; max-width: 780px; }
+.onboarding-confirmation { padding: 18px; border: 1px solid var(--settings-line); border-radius: 12px; background: var(--tint-1); color: var(--subtext1); font-size: 14px; line-height: 1.6; }
+.onboarding-confirmation-statements p { margin: 0 0 16px; }
+.onboarding-confirmation-statements p:last-child { margin-bottom: 0; }
+.onboarding-confirmation-accept { display: flex; align-items: flex-start; gap: 12px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--settings-line); color: var(--text); cursor: var(--cur-click); }
+.onboarding-confirmation input { flex: 0 0 auto; margin-top: 3px; width: 16px; height: 16px; accent-color: var(--text); }
+.onboarding-confirmation strong { color: var(--text); }

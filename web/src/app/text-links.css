@@ -1,0 +1,34 @@
+/* Text links share the marked terms' underline and interaction feedback.
+   Keep native anchors (including new-tab and keyboard behavior). Button and
+   icon links keep their control styling; linked cards underline their title
+   rather than every line of supporting text. No font-weight or size changes. */
+a[href]:not(:where(.btn, .icon-btn, .sc-sel-btn, [data-link-control])),
+a[href][data-link-control] .app-link-label {
+  color: inherit;
+  border-radius: 2px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in oklab, var(--overlay1) 70%, transparent);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: background-color 0.15s ease, text-decoration-color 0.1s;
+}
+a[href]:not(:where(.btn, .icon-btn, .sc-sel-btn, [data-link-control])) {
+  cursor: var(--cur-term);
+}
+a[href]:not(:where(.btn, .icon-btn, .sc-sel-btn, [data-link-control])):is(:hover, :focus-visible),
+a[href][data-link-control]:is(:hover, :focus-visible) .app-link-label {
+  text-decoration-color: var(--text);
+}
+a[href]:not(:where(.btn, .icon-btn, .sc-sel-btn, [data-link-control])):active,
+a[href][data-link-control]:active .app-link-label {
+  background-color: var(--tint-4);
+}
+a[href]:not(:where(.btn, .icon-btn, .sc-sel-btn, [data-link-control])):focus-visible {
+  outline: 2px solid var(--overlay1);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  a[href]:not(:where(.btn, .icon-btn, .sc-sel-btn, [data-link-control])),
+  a[href][data-link-control] .app-link-label { transition: none; }
+}

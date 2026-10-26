@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="416" height="42" viewBox="0 0 416 42" role="img" aria-labelledby="title description">
+  <title id="title">Open the app — scatter.study</title>
+  <desc id="description">scatter.study, entirely set in Press Start 2P.</desc>
+  <style>
+    .wordmark { fill: #0969da; }
+    @media (prefers-color-scheme: dark) { .wordmark { fill: #58a6ff; } }
+  </style>
+  <!-- Press Start 2P glyph outlines keep the pixel lettering independent of installed fonts. -->
+  <g class="wordmark">
+    <g transform="translate(0 34)" shape-rendering="crispEdges">
+      <path d="M0-4V-8H20V-12H4V-16H0V-20H4V-24H24V-20H8V-16H24V-12H28V-8H24V-4Z"/>
+      <path transform="translate(32)" d="M4-4V-8H0V-20H4V-24H28V-20H8V-8H28V-4Z"/>
+      <path transform="translate(64)" d="M4-4V-8H0V-12H4V-16H20V-20H4V-24H24V-20H28V-4ZM8-8H20V-12H8Z"/>
+      <path transform="translate(96)" d="M12-4V-20H4V-24H12V-32H20V-24H28V-20H20V-4Z"/>
+      <path transform="translate(128)" d="M12-4V-20H4V-24H12V-32H20V-24H28V-20H20V-4Z"/>
+      <path transform="translate(160)" d="M4-4V-8H0V-20H4V-24H24V-20H28V-12H8V-8H24V-4ZM8-16H20V-20H8Z"/>
+      <path transform="translate(192)" d="M12-20H16V-16H12V-4H4V-24H12ZM28-24V-20H16V-24Z"/>
+      <path transform="translate(224)" d="M8-4V-12H16V-4Z"/>
+      <path transform="translate(256)" d="M0-4V-8H20V-12H4V-16H0V-20H4V-24H24V-20H8V-16H24V-12H28V-8H24V-4Z"/>
+      <path transform="translate(288)" d="M12-4V-20H4V-24H12V-32H20V-24H28V-20H20V-4Z"/>
+      <path transform="translate(320)" d="M4-4V-8H0V-24H8V-8H20V-24H28V-4Z"/>
+      <path transform="translate(352)" d="M4-4V-8H0V-20H4V-24H20V-32H28V-4ZM8-8H20V-20H8Z"/>
+      <path transform="translate(384)" d="M4 0V-4H20V-8H4V-12H0V-24H8V-12H20V-24H28V-4H24V0Z"/>
+    </g>
+    <path d="M0 40H414V41H0Z"/>
+  </g>
+</svg>

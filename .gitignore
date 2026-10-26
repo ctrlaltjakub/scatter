@@ -1,0 +1,41 @@
+.superpowers/
+node_modules/
+test-results/
+playwright-report/
+.claude/
+.agents/
+
+# Local research, plans, and generated documentation
+/docs/
+
+# Credentials and local app exports. Templates contain names/placeholders only.
+.env
+.env.*
+!.env.example
+!.env.template
+*.key
+*.pem
+*.p12
+*.pfx
+credentials.json
+credentials.*.json
+secrets.json
+secrets.*.json
+*.scatter.zip
+*.har
+scatter-settings*.json
+
+# Private workspace material; publication checks also reject forced additions.
+AGENT.md
+AGENTS.md
+.codex/
+.vercel/
+/.private/
+/plans/
+/recs/
+/promotional/
+/example_project/
+**/prototypes/
+**/recordings/
+*.trace.zip
+*.tsbuildinfo

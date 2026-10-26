@@ -1,0 +1,5 @@
+.citation-hover-preview { width: max-content; max-width: calc(100vw - 16px); display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+.citation-hover-preview svg { flex: none; opacity: .6; }
+/* Preserve inline marker metrics now that web sources are real links. */
+.node-body a.cite-marker, a.cite-marker, button.cite-marker { color: var(--node-accent, var(--blue)); font-size: .82em; text-decoration: none; border: 0; background: none; line-height: inherit; }
+a.cite-marker:hover, a.cite-marker:focus-visible, button.cite-marker:hover { text-decoration: underline; }

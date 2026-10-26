@@ -1,0 +1,15 @@
+.root { position: fixed; inset: 0; pointer-events: none; z-index: 10000; }
+.toolbar { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; padding: 7px; width: max-content; max-width: calc(100vw - 24px); flex-wrap: wrap; justify-content: center; pointer-events: auto; background: var(--panel-bg); color: var(--text); border: 1px solid var(--ui-line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); z-index: 2; }
+.toolbar button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: var(--r-sm); white-space: nowrap; font-size: 13px; color: var(--subtext0); border: 1px solid transparent; }
+.toolbar button:hover, .toolbar button[aria-pressed=true] { background: var(--field-bg); color: var(--text); border-color: var(--ui-line); }
+.toolbar button:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.toolbar button:disabled { opacity: .45; cursor: wait; }
+.toolbar .capture { border-color: var(--ui-line); color: var(--text); }
+.title { padding: 0 9px; font-weight: 600; font-size: 13px; }
+.size { padding: 0 8px; font: 11px var(--font-mono, monospace); color: var(--subtext0); white-space: nowrap; }
+.error { flex-basis: 100%; font-size: 12px; color: var(--red); max-width: 740px; padding: 6px 10px; }
+.selector { position: absolute; inset: 0; pointer-events: auto; cursor: crosshair; }
+.selection { position: absolute; border: 1px dashed var(--text); box-shadow: 0 0 0 9999px #0005; pointer-events: none; }
+.spinner { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2s; } }
