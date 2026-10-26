@@ -1,6 +1,7 @@
 import { sha256Hex } from '../codec';
 import { SyncNamespace } from '../namespace';
 import type { RemoteChanges, RemoteObject, SyncProvider } from '../types';
+import { syncRequestSignal } from '../requestTimeout';
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 const DRIVE_SELECTED_FILES_SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -11,6 +12,7 @@ const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 const SIMPLE_LIMIT = 5 * 1024 * 1024;
 const TOKEN_REFRESH_WINDOW_MS = 5 * 60 * 1000;
 const TOKEN_REQUEST_TIMEOUT_MS = 30_000;
+const IDENTITY_LOAD_TIMEOUT_MS = 15_000;
 const RECONNECT_REQUIRED_ERRORS = new Set([
   'access_denied',
   'consent_required',
@@ -55,6 +57,7 @@ let sourceAccessToken: StoredToken | null = null;
 // A pointerdown can start renewal before that same click starts a sync action.
 // Both paths must share the grant instead of racing or opening two popups.
 let syncTokenRequest: Promise<void> | null = null;
+let identityLoad: Promise<void> | null = null;
 
 interface GoogleTokenResponse {
   access_token?: string;
@@ -79,6 +82,7 @@ declare global {
             client_id: string;
             scope: string;
             callback: (response: GoogleTokenResponse) => void;
+            error_callback?: (error: { type: string }) => void;
           }): GoogleTokenClient;
         };
       };
@@ -168,23 +172,41 @@ function storeToken(response: GoogleTokenResponse): StoredToken {
   return token;
 }
 
-async function loadGoogleIdentity(): Promise<void> {
-  if (window.google?.accounts?.oauth2) return;
-  await new Promise<void>((resolve, reject) => {
+function loadGoogleIdentity(): Promise<void> {
+  if (window.google?.accounts?.oauth2) return Promise.resolve();
+  if (identityLoad) return identityLoad;
+  const loading = new Promise<void>((resolve, reject) => {
     const existing = document.querySelector<HTMLScriptElement>(`script[src="${GIS_SRC}"]`);
-    if (existing) {
-      existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(new Error('Could not load Google authorization.')), { once: true });
-      return;
-    }
-    const script = document.createElement('script');
+    const script = existing ?? document.createElement('script');
+    const finish = (error?: Error) => {
+      window.clearTimeout(timeout);
+      script.removeEventListener('load', loaded);
+      script.removeEventListener('error', failed);
+      if (error) { script.remove(); reject(error); }
+      else resolve();
+    };
+    const loaded = () => finish(window.google?.accounts?.oauth2 ? undefined
+      : new Error('Google authorization did not initialize. Please try connecting again.'));
+    const failed = () => finish(new Error('Could not load Google authorization. Check your connection or content blocker, then try again.'));
+    const timeout = window.setTimeout(() => finish(new Error('Google authorization could not load in time. Check your connection or content blocker, then try again.')), IDENTITY_LOAD_TIMEOUT_MS);
+    script.addEventListener('load', loaded, { once: true });
+    script.addEventListener('error', failed, { once: true });
+    if (existing) return;
     script.src = GIS_SRC;
     script.async = true;
     script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error('Could not load Google authorization.'));
     document.head.appendChild(script);
   });
+  identityLoad = loading.finally(() => { identityLoad = null; });
+  return identityLoad;
+}
+
+function googlePopupError(type: string): Error {
+  return new Error(type === 'popup_failed_to_open'
+    ? 'Google sign-in could not open. Allow pop-ups for this site, then try again.'
+    : type === 'popup_closed'
+      ? 'Google sign-in was closed before it finished. You can try again or choose another setup method.'
+      : 'Google sign-in could not finish. Please try again.');
 }
 
 function requestLoadedGoogleDriveToken(prompt?: GooglePrompt): Promise<void> {
@@ -201,17 +223,20 @@ function requestLoadedGoogleDriveToken(prompt?: GooglePrompt): Promise<void> {
     const timeout = window.setTimeout(() => {
       finish(() => reject(new Error('Google authorization did not finish. Reconnect Google Drive.')));
     }, TOKEN_REQUEST_TIMEOUT_MS);
-    const client = oauth.initTokenClient({
-      client_id: resolveGoogleDriveClientId(
-        process.env.NEXT_PUBLIC_GOOGLE_DRIVE_CLIENT_ID,
-        window.location.origin,
-      )!,
-      scope: DRIVE_SCOPE,
-      callback: (response) => finish(() => {
-        try { storeToken(response); resolve(); } catch (error) { reject(error); }
-      }),
-    });
-    client.requestAccessToken(prompt === undefined ? undefined : { prompt });
+    try {
+      const client = oauth.initTokenClient({
+        client_id: resolveGoogleDriveClientId(
+          process.env.NEXT_PUBLIC_GOOGLE_DRIVE_CLIENT_ID,
+          window.location.origin,
+        )!,
+        scope: DRIVE_SCOPE,
+        error_callback: error => finish(() => reject(googlePopupError(error.type))),
+        callback: (response) => finish(() => {
+          try { storeToken(response); resolve(); } catch (error) { reject(error); }
+        }),
+      });
+      client.requestAccessToken(prompt === undefined ? undefined : { prompt });
+    } catch (error) { finish(() => reject(error)); }
   });
 }
 
@@ -263,26 +288,27 @@ export async function requestGoogleDriveSourceAccessToken(): Promise<string> {
     const timeout = window.setTimeout(() => {
       finish(() => reject(new Error('Google Drive import authorization did not finish.')));
     }, TOKEN_REQUEST_TIMEOUT_MS);
-    const client = oauth.initTokenClient({
-      client_id: clientId,
-      scope: DRIVE_SELECTED_FILES_SCOPE,
-      callback: (response) => finish(() => {
-        if (response.access_token) {
-          sourceAccessToken = {
-            accessToken: response.access_token,
-            expiresAt: Date.now() + Math.max(60, response.expires_in ?? 3600) * 1000,
-          };
-          resolve(response.access_token);
-        }
-        else reject(new GoogleDriveAuthorizationRejected(
-          response.error_description || response.error || 'Google Drive import was cancelled.',
-        ));
-      }),
-    });
-    // An omitted prompt defaults to `select_account`, which reopened Google's
-    // account chooser on every import. The empty prompt asks only when consent
-    // is genuinely needed and otherwise reuses the approved browser session.
-    client.requestAccessToken({ prompt: '' });
+    try {
+      const client = oauth.initTokenClient({
+        client_id: clientId,
+        scope: DRIVE_SELECTED_FILES_SCOPE,
+        error_callback: error => finish(() => reject(googlePopupError(error.type))),
+        callback: (response) => finish(() => {
+          if (response.access_token) {
+            sourceAccessToken = {
+              accessToken: response.access_token,
+              expiresAt: Date.now() + Math.max(60, response.expires_in ?? 3600) * 1000,
+            };
+            resolve(response.access_token);
+          }
+          else reject(new GoogleDriveAuthorizationRejected(
+            response.error_description || response.error || 'Google Drive import was cancelled.',
+          ));
+        }),
+      });
+      // Reuse the approved account unless Google actually needs consent.
+      client.requestAccessToken({ prompt: '' });
+    } catch (error) { finish(() => reject(error)); }
   });
 }
 
@@ -348,6 +374,7 @@ async function driveFetch(url: string, init: RequestInit = {}): Promise<Response
   if (!token) throw new GoogleDriveReconnectRequired('Reconnect Google Drive to resume sync.');
   const send = (accessToken: string) => fetch(url, {
     ...init,
+    signal: syncRequestSignal(init, url.includes('alt=media')),
     headers: { Authorization: `Bearer ${accessToken}`, ...(init.headers ?? {}) },
   });
   let response = await send(token.accessToken);

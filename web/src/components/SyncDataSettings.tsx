@@ -6,6 +6,7 @@ import { LayerArrowDown } from './icons/LayerArrowDown';
 import { SyncHistoryPicker } from './settings/SyncHistoryPicker';
 import { useGraphStore } from '@/store/useGraphStore';
 import { useSyncStore, type SyncHistoryEntry } from '@/store/useSyncStore';
+import { syncFailureMessage } from '@/sync/requestTimeout';
 import { hasSyncConnection } from '@/sync/connection';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { SettingsToggle } from './settings/SettingsSection';
@@ -159,7 +160,7 @@ export function SyncDataSettings({ onRestored, onWorkingChange }: { onRestored?:
     try {
       await action();
     } catch (cause) {
-      setLocalError(cause instanceof Error ? cause.message : String(cause));
+      setLocalError(syncFailureMessage(cause));
     } finally {
       setWorking(false);
       onWorkingChange?.(false);

@@ -73,6 +73,26 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('onboarding settings import', () => {
+  it.each(['google-drive', 'webdav'] as const)('unlocks onboarding after a failed %s restore and allows retry or another setup method', async provider => {
+    useSyncStore.setState({ running: false, error: null, config: { ...defaultSyncConfig(), provider,
+      webdav: { baseUrl: 'https://test.invalid', username: 'test', appPassword: 'test', folder: 'test' } } });
+    vi.mocked(restoreSetupFromSync).mockRejectedValueOnce(new Error('Cloud settings could not be downloaded.'));
+    render(<WelcomeScreenA />);
+    fireEvent.click(screen.getByRole('button', { name: 'Restore from sync' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Restore saved setup' }));
+    await screen.findByText('Cloud settings could not be downloaded.');
+    expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Restore saved setup' })).toBeEnabled();
+
+    vi.mocked(restoreSetupFromSync).mockRejectedValueOnce(new DOMException('Timed out', 'TimeoutError'));
+    fireEvent.click(screen.getByRole('button', { name: 'Restore saved setup' }));
+    await screen.findByText(/The sync request did not finish in time/);
+    expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('button', { name: /Quick setup/ })).toBeEnabled();
+    expect(restoreSetupFromSync).toHaveBeenCalledTimes(2);
+  });
+
   it.each(['google-drive', 'webdav'] as const)('recognizes opted-in API keys restored from %s and skips reconnecting providers', async provider => {
     const source = { ...DEFAULT_SETTINGS, syncApiKeys: true,
       providers: [{ id: 'restored', preset: 'openrouter' as const, apiKey: 'test-key', enabledModels: ['test-model'] }],

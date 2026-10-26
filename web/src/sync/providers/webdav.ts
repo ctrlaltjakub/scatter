@@ -1,5 +1,6 @@
 import { sha256Hex } from '../codec';
 import { SyncNamespace } from '../namespace';
+import { isSyncTimeout, syncFailureMessage, syncRequestSignal } from '../requestTimeout';
 import type { RemoteChanges, RemoteObject, SyncProvider, WebDavConnection } from '../types';
 
 const DAV_BODY = `<?xml version="1.0" encoding="utf-8" ?>
@@ -32,12 +33,16 @@ async function request(
   try {
     response = await fetch(url, {
       ...init,
+      signal: syncRequestSignal(init, init.method === 'GET'),
       headers: {
         Authorization: basicAuth(connection),
         ...(init.headers ?? {}),
       },
     });
   } catch (error) {
+    if (isSyncTimeout(error)) {
+      throw new Error(syncFailureMessage(error));
+    }
     throw new Error(
       `Could not reach WebDAV. Check its address and allow Scatter through CORS. ${error instanceof Error ? error.message : ''}`.trim(),
     );

@@ -1357,6 +1357,7 @@ select.input {
 /* Playful project/group-coloured wordmark in the canvas's pixel face. */
 .app-wordmark {
   text-decoration: none;
+  cursor: var(--cur-click);
   align-items: center;
   display: flex;
   gap: 2px;
@@ -1369,8 +1370,13 @@ select.input {
   text-transform: uppercase;
   user-select: none;
   transform: translateY(2px);
+  transform-origin: center;
 }
-.app-wordmark-letter { display: inline-block; }
+.app-wordmark:active { transform: translateY(2px) scale(.96); }
+.app-wordmark-letter { display: inline-block; transition: color .18s ease, filter .18s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .app-wordmark-letter { transition: none; }
+}
 .app-wordmark:focus-visible { outline: 1px solid var(--text); outline-offset: 4px; border-radius: 3px; }
 .app-release-label { font-family: var(--font-atkinson), sans-serif; font-size: 11px; color: var(--subtext0); text-transform: none; margin-left: 4px; }
 

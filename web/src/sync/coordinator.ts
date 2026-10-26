@@ -26,6 +26,7 @@ import { loadSourceAsset, saveSourceAsset } from '@/opfs/sourceAssetsIO';
 import { stripTransient } from '@/opfs/projectIO';
 import { collectReferencedProjectAssets } from '@/lib/projectBranch';
 import { flushSyncPersistence, saveSyncLedger } from './local';
+import { syncFailureMessage } from './requestTimeout';
 import {
   assetObjectName,
   compareSnapshotObjects,
@@ -916,7 +917,7 @@ async function runCore(manual: boolean, revision: number): Promise<void> {
       useSyncStore.getState().setRuntime({ running: false });
       return;
     }
-    const message = error instanceof Error ? error.message : String(error);
+    const message = syncFailureMessage(error);
     const current = useSyncStore.getState();
     const projects = { ...current.ledger.projects };
     const projectIds = new Set([
@@ -976,7 +977,7 @@ export function requestSyncNow(options: { manual?: boolean } = {}): Promise<void
     await runWithLeaderLock(manual, revision);
   })().catch(error => {
     if (revision !== syncRunRevision) return;
-    useSyncStore.getState().setRuntime({ error: error instanceof Error ? error.message : String(error) });
+    useSyncStore.getState().setRuntime({ error: syncFailureMessage(error) });
     throw error;
   }).finally(() => {
     // A history action may already be queued behind this pass.
