@@ -81,20 +81,13 @@
 .settings-release-footer a { width: fit-content; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .settings-release-footer a:hover { color: var(--text); }
 .settings-release-footer small { font-size: 11px; }
-.settings-release-row { display: flex; align-items: center; gap: 10px; white-space: nowrap; }
 .settings-release-footer .settings-repository-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  width: 28px;
   min-height: 28px;
-  padding: 4px 7px;
-  border: 1px solid var(--settings-line);
-  border-radius: var(--r-sm);
-  font-size: 11px;
+  flex-shrink: 0;
   text-decoration: none;
   cursor: var(--cur-click);
 }
-.settings-repository-link:hover { background: var(--tint-3); }
 .settings-repository-link:focus-visible { outline: 1px solid var(--text); outline-offset: 2px; }
 .settings-nav-group + .settings-nav-group {
   margin-top: 18px;
@@ -1273,7 +1266,7 @@ dialog.local-model-guide::backdrop { background: color-mix(in oklab, var(--crust
     border-bottom: 1px solid var(--settings-line);
   }
   .settings-nav-sections { display: flex; gap: 12px; }
-  .settings-release-footer { flex-direction: row; align-items: center; gap: 12px; padding: 4px 10px; }
+  .settings-release-footer { padding: 4px 10px; }
   .settings-nav-group {
     display: flex;
     gap: 3px;
