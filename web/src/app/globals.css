@@ -6340,7 +6340,7 @@ select.input {
 .sc-media-edit-overlay:hover { background: color-mix(in oklab, #101010 88%, transparent); }
 
 /* Embed poster + centred play button. */
-.sc-media-embed-poster { cursor: pointer; background: #000; }
+.sc-media-embed-poster { cursor: var(--cur-click); background: #000; }
 .sc-media-embed-poster .sc-media-poster-img { object-fit: cover; }
 .sc-media-play-btn {
   position: absolute;
@@ -6351,16 +6351,22 @@ select.input {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 999px;
+  border-radius: 50%;
   background: color-mix(in oklab, #000 55%, transparent);
   color: #fff;
-  border: 0;
-  cursor: pointer;
+  /* A real circular border avoids rounded inset-outline raster seams while
+     Firefox/Zen composites the hover scale at fractional canvas zoom. */
+  border: 1px solid transparent;
+  outline: none;
+  cursor: var(--cur-click);
   transition: background 0.15s, transform 0.15s;
 }
 .sc-media-embed-poster:hover .sc-media-play-btn {
   background: color-mix(in oklab, #000 72%, transparent);
   transform: scale(1.06);
+}
+.sc-media-play-btn:focus-visible {
+  border: 3px solid #fff;
 }
 
 /* Chooser controls (rendered below the explainer in the body). */
@@ -7965,15 +7971,16 @@ select.input {
   outline-offset: -2px;
 }
 [data-theme="mocha"] .sc-media-play-btn {
-  outline: 1px solid color-mix(in oklab, #fff 50%, transparent);
-  outline-offset: -1px;
+  border-color: color-mix(in oklab, #fff 50%, transparent);
 }
 [data-theme="mocha"] .sc-media-embed-poster:hover .sc-media-play-btn {
-  outline-color: color-mix(in oklab, #fff 82%, transparent);
+  border-color: color-mix(in oklab, #fff 82%, transparent);
 }
 [data-theme="mocha"] .sc-media-play-btn:active {
-  outline: 2px solid color-mix(in oklab, #fff 92%, transparent);
-  outline-offset: -2px;
+  border: 2px solid color-mix(in oklab, #fff 92%, transparent);
+}
+[data-theme="mocha"] .sc-media-play-btn:focus-visible {
+  border: 3px solid #fff;
 }
 [data-theme="mocha"] .sidebar-row-action:not(:disabled):is(:hover, :focus-visible) {
   background: color-mix(in oklab, var(--row-accent, var(--text)) 6%, transparent) !important;

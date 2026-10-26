@@ -70,6 +70,76 @@ async function openMainPage(page: Page, nodeId: string) {
   await page.locator(`[data-node-id="${nodeId}"] .node-header`).click();
 }
 
+for (const provider of ['youtube', 'vimeo'] as const) {
+  test(`${provider} video posters use custom cursors and open their player with pointer or keyboard input`, async ({ page }, info) => {
+    test.setTimeout(60_000);
+    await mediaFixture(page);
+    await page.evaluate(provider => {
+      const graph = (window as any).testExport('useGraphStore');
+      const project = graph.getState().project;
+      const image = project.nodes['Transparent image'];
+      const video = { ...image, versions: [{ ...image.versions[0], header: 'Video controls', media: {
+        kind: 'embed', source: 'embed', provider, embedId: '123456789',
+        thumbnailUrl: image.versions[0].media.url, naturalWidth: 500, naturalHeight: 320,
+      } }] };
+      graph.getState().setProject({ ...project, nodes: { [video.id]: video }, arrows: {},
+        rootNodeId: video.id, viewport: { x: 450, y: 140, zoom: 1 } });
+      graph.getState().requestPanTo(null);
+    }, provider);
+    const node = page.locator('[data-node-id="Transparent image"]');
+    const poster = node.locator('.sc-media-embed-poster');
+    const play = node.getByRole('button', { name: 'Play video' });
+    const expectedCursor = await page.evaluate(() => {
+      const sample = document.createElement('span');
+      sample.style.cursor = 'var(--cur-click)'; document.body.appendChild(sample);
+      const cursor = getComputedStyle(sample).cursor; sample.remove(); return cursor;
+    });
+    expect(expectedCursor).not.toBe('pointer');
+    for (const theme of ['mocha', 'latte']) for (const zoom of [.55, 1, 1.5]) {
+      await page.evaluate(({ theme, zoom }) => {
+        document.documentElement.dataset.theme = theme;
+        (window as any).testExport('useGraphStore').getState().setViewport({ x: 450, y: 140, zoom });
+      }, { theme, zoom });
+      await poster.hover({ position: { x: 20, y: 20 } });
+      await expect(poster).toHaveCSS('cursor', expectedCursor);
+      await play.hover();
+      await expect(play).toHaveCSS('cursor', expectedCursor);
+      await expect(play.locator('svg')).toHaveCSS('cursor', expectedCursor);
+      await expect(play).toHaveCSS('outline-style', 'none');
+      await expect(play).toHaveCSS('border-radius', '50%');
+      await expect(play).toHaveCSS('border-top-width', '1px');
+      if (zoom === 1) await node.screenshot({ path: info.outputPath(`${provider}-play-${theme}.png`) });
+    }
+    // Freeze an actual hover transition halfway through: screenshots taken
+    // after it finishes miss the transient outline seams reported in Zen.
+    await page.mouse.move(1400, 950);
+    await expect.poll(() => play.evaluate(el => getComputedStyle(el).transform)).toBe('none');
+    await play.hover();
+    await play.evaluate(el => {
+      for (const animation of el.getAnimations()) {
+        if (animation instanceof CSSTransition && animation.transitionProperty === 'transform') {
+          animation.pause(); animation.currentTime = 75;
+        }
+      }
+    });
+    await expect(play).toHaveCSS('outline-style', 'none');
+    await expect(play).toHaveCSS('border-top-width', '1px');
+    await node.screenshot({ path: info.outputPath(`${provider}-play-mid-transition.png`) });
+    await play.evaluate(el => el.getAnimations().forEach(animation => animation.finish()));
+    if (provider === 'youtube') {
+      await play.focus();
+      await expect(play).toHaveCSS('border-top-width', '3px');
+      await page.keyboard.press('Enter');
+    } else {
+      await poster.click({ position: { x: 20, y: 20 } });
+    }
+    await expect(node.getByTitle('Embedded video')).toHaveAttribute('src', provider === 'youtube'
+      ? 'https://www.youtube.com/embed/123456789?autoplay=1'
+      : 'https://player.vimeo.com/video/123456789?autoplay=1');
+    await expect(play).toHaveCount(0);
+  });
+}
+
 test('transparent images stay white and image-origin arrows cross the header/footer under the panels', async ({ page }, info) => {
   test.setTimeout(60_000);
   await mediaFixture(page);
