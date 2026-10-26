@@ -36,6 +36,39 @@ beforeEach(()=>{vi.restoreAllMocks();resetGenerationSessionsForTests();setup();v
 afterEach(()=>resetGenerationSessionsForTests());
 
 describe('dedicated interactive nodes',()=>{
+  it.each(['create', 'modify', 'regenerate', 'repair'] as const)('uses newly fitted content dimensions after %s, without inheriting a manual size', async mode => {
+    const id = spawnInteractiveNode('source')!;
+    const version = node(id).versions[0]!;
+    useGraphStore.getState().updateNode(id, { versions: [{ ...version, interactiveCanvasWidth: 1300,
+      ...(mode === 'repair' ? { interactiveBuild: { request: 'Counter', state: 'failed', steps: [], draftHtml: html, plan,
+        viewportWidth: 1400, viewportHeight: 1200, verificationPending: true } }
+        : mode !== 'create' ? { interactive: { html, request: 'Counter', providerId: 'fixture', model: 'code', viewportWidth: 960, viewportHeight: 720 } } : {}),
+    }] });
+    vi.mocked(checkInteractiveDocument).mockResolvedValue({ ok: true, errors: [], screenshot, viewport: { width: 540, height: 220 } });
+    vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* (_key, options) {
+      yield { delta: interactiveMetaResponse(options) ?? html, done: true };
+    });
+    await buildInteractiveNode(id, mode === 'repair' ? undefined : 'Counter', mode);
+    const finished = node(id).versions[node(id).currentVersionIndex]!;
+    expect(node(id).generationError).toBeUndefined();
+    expect(finished.interactive).toMatchObject({ viewportWidth: 540, viewportHeight: 220 });
+    expect(finished.interactiveCanvasWidth).toBeUndefined();
+    expect(finished.interactiveBuild).toMatchObject({ state: 'complete', viewportWidth: 540, viewportHeight: 220 });
+    if (mode !== 'create') expect(node(id).versions[0]?.interactiveCanvasWidth).toBe(1300);
+  });
+
+  it('keeps space required by the largest tested state of the same program', async () => {
+    const id = spawnInteractiveNode('source')!;
+    let checks = 0;
+    vi.mocked(checkInteractiveDocument).mockImplementation(async () => ({ ok: true, errors: [], screenshot,
+      viewport: { width: 540, height: ++checks === 2 ? 400 : 220 } }));
+    vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* (_key, options) {
+      yield { delta: interactiveMetaResponse(options) ?? html, done: true };
+    });
+    await buildInteractiveNode(id, 'Counter', 'create');
+    expect(checks).toBeGreaterThan(2);
+    expect(node(id).versions[0]?.interactive).toMatchObject({ viewportWidth: 540, viewportHeight: 400 });
+  });
   it('starts with a visibility notice and updates the current check while paused', async () => {
     const id = spawnInteractiveNode('source')!;
     const invoke = vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* (_key, opts) {

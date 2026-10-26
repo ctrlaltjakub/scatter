@@ -63,7 +63,7 @@ async function checkVisibleInteractiveDocument(
   const probe = `<script>${renderer}\n;(${interactiveProbeRuntime.toString()})(${payload}, (${rasterizeScreenshotSvg.toString()}), (${normalizeScreenshotControls.toString()}));</script>`;
   // Verification must execute normally (including sequencer clocks), but the
   // invisible draft must never be audible. This also covers capability tests.
-  const compiled = buildInteractiveSrcDoc(html, channel, { active: true, theme: effectiveTheme }, viewport, { muteAudio: true });
+  const compiled = buildInteractiveSrcDoc(html, channel, { active: true, theme: effectiveTheme }, viewport, { muteAudio: true, fitContent: true });
   const src = compiled.replace(/<head(?:\s[^>]*)?>/i, tag => tag + probe);
   const frame = document.createElement('iframe');
   frame.setAttribute('sandbox', 'allow-scripts');
@@ -74,6 +74,7 @@ async function checkVisibleInteractiveDocument(
   const errors: string[] = [];
   let layout: { width: number; height: number; clipped: number; negativeOverflow: boolean } | undefined;
   let adjustments = 0;
+  let fitted = false;
   return new Promise<InteractiveCheck>((resolve, reject) => {
     const cleanup = () => {
       clearTimeout(timeout); window.removeEventListener('message', receive);
@@ -86,9 +87,18 @@ async function checkVisibleInteractiveDocument(
         const measured = event.data.payload;
         if (!Number.isFinite(measured?.width) || !Number.isFinite(measured?.height)) return;
         layout = measured;
-        if (adjustments < 3 && (measured.width > viewport.width + 2 || measured.height > viewport.height + 2)) {
-          viewport.width = Math.min(INTERACTIVE_MAX_DIMENSION, Math.max(viewport.width, Math.ceil(measured.width)));
-          viewport.height = Math.min(INTERACTIVE_MAX_DIMENSION, Math.max(viewport.height, Math.ceil(measured.height)));
+        const natural = !fitted && measured.contentWidth > 0 && measured.contentHeight > 0
+          && Number.isFinite(measured.contentWidth) && Number.isFinite(measured.contentHeight);
+        // Fit natural content once, then allow growth after reflow or a test
+        // interaction. Repeated shrinking makes vh-based layouts chase zero.
+        const width = Math.min(INTERACTIVE_MAX_DIMENSION, Math.max(280, natural ? measured.contentWidth : viewport.width,
+          measured.width > viewport.width + 2 ? measured.width : 0));
+        const height = Math.min(INTERACTIVE_MAX_DIMENSION, Math.max(80, natural ? measured.contentHeight : viewport.height,
+          measured.height > viewport.height + 2 ? measured.height : 0));
+        if (natural) fitted = true;
+        if (adjustments < 4 && (Math.abs(width - viewport.width) > 2 || Math.abs(height - viewport.height) > 2)) {
+          viewport.width = Math.ceil(width);
+          viewport.height = Math.ceil(height);
           frame.style.width = `${viewport.width}px`; frame.style.height = `${viewport.height}px`;
           adjustments++;
         }

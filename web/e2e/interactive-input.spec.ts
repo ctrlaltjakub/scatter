@@ -394,3 +394,52 @@ test('generation and capability probes are silent without muting finished progra
   await expect(frame.locator('#chain')).toHaveText('preserved');
   await expect(frame.locator('#clicked')).toHaveText('1');
 });
+
+test('verification fits compact content, retains larger states and protects clipped panels and HiDPI canvases', async ({ page }, info) => {
+  test.setTimeout(90_000);
+  await seed(page, true);
+  const results = await page.evaluate(async () => {
+    const get = (window as any).inputExport;
+    const check = get('checkInteractiveDocument'), theme = get('DEFAULT_INTERACTIVE_HOST_STATE').theme;
+    const html = `<!doctype html><html><head><meta name="scatter-viewport" content="width=960,height=720">
+      <title>Compact program</title><style>
+      body{margin:0;padding:24px;min-height:100vh;display:grid;justify-content:center;background:var(--sc-bg);color:var(--sc-text);font:16px/20px sans-serif}
+      .panel{width:600px;height:220px;padding:16px;border:1px solid var(--sc-primary)}p{margin:0 0 12px}
+      button{height:36px;margin-bottom:8px}svg{display:block}.extra{width:600px;height:350px}
+      </style></head><body><main class="panel"><p>日本語 · العربية · हिन्दी · Zażółć gęślą jaźń</p>
+      <button id="expand">Show details</button><svg width="200" height="80"><circle cx="40" cy="40" r="30" fill="var(--sc-primary)"/></svg></main>
+      <aside id="extra" class="extra" hidden>Expanded information</aside>
+      <script>document.querySelector('#expand').onclick=()=>document.querySelector('#extra').hidden=false;</script></body></html>`;
+    const basic = await check(html, theme, new AbortController().signal, [], { screenshot: true });
+    const expanded = await check(html, theme, new AbortController().signal, [{ selector: '#expand', action: 'click' }]);
+    const clipped = await check(html.replace('</style>', '.panel{overflow:auto}.panel svg{width:1800px;height:1000px}</style>'),
+      theme, new AbortController().signal);
+    const overflowing = await check(html.replaceAll('width:600px', 'width:1200px'), theme, new AbortController().signal);
+    const tooLarge = await check(html.replaceAll('width:600px', 'width:2000px'), theme, new AbortController().signal);
+    const canvas = await check(`<!doctype html><html><head><style>
+      body{margin:0;background:var(--sc-bg);color:var(--sc-text)}canvas{display:block;width:100%;height:100%;outline-color:var(--sc-primary)}
+      </style></head><body><canvas></canvas><script>const canvas=document.querySelector('canvas');canvas.width=innerWidth*2;canvas.height=innerHeight*2;</script></body></html>`,
+      theme, new AbortController().signal);
+    return { basic, expanded, clipped, overflowing, tooLarge, canvas };
+  });
+  for (const result of [results.basic, results.expanded, results.clipped, results.overflowing, results.canvas]) {
+    expect(result.errors, JSON.stringify(result)).toEqual([]);
+    expect(result.ok).toBe(true);
+  }
+  expect(results.basic.viewport).toEqual({ width: 648, height: 268 });
+  expect(results.expanded.viewport).toEqual({ width: 648, height: 618 });
+  expect(results.clipped.viewport).toEqual({ width: 648, height: 268 });
+  expect(results.overflowing.viewport).toEqual({ width: 1248, height: 268 });
+  expect(results.tooLarge.ok).toBe(false);
+  expect(results.tooLarge.errors.join(' ')).toContain('1600');
+  expect(results.canvas.viewport).toEqual({ width: 960, height: 720 });
+  expect(results.basic.text).toContain('العربية');
+  expect(results.basic.text).toContain('हिन्दी');
+  const screenshot = results.basic.screenshot!;
+  expect(screenshot).toMatch(/^data:image\/png;base64,/);
+  await page.evaluate(screenshot => {
+    const image = document.createElement('img'); image.id = 'fitted-program-preview'; image.src = screenshot;
+    image.style.cssText = 'position:fixed;top:0;left:0;z-index:2147483647'; document.body.append(image);
+  }, screenshot);
+  await page.locator('#fitted-program-preview').screenshot({ path: info.outputPath('interactive-fitted-content.png') });
+});

@@ -164,6 +164,7 @@ export async function buildInteractiveNode(nodeId: string, instruction?: string,
     ...(continuing ? { draftHtml: initialHtml, plan: source.interactiveBuild?.plan,
       pendingIssues: interactivePendingIssues(source.interactiveBuild), warnings: source.interactiveBuild?.warnings } : {}) };
   const draft: NodeVersion = { ...source, createdAt: Math.max(Date.now(), ...original.versions.map(v=>v.createdAt+1)),
+    interactiveCanvasWidth: undefined,
     language: mode === 'modify' || continuing ? versionLanguage(source) : normalizeLanguage(settings.generationLanguage),
     body: fullRequest, header: source.interactive ? source.header : request.replace(/\s+/g,' ').slice(0,100), headerParts: undefined,
     interactive: undefined, interactiveBuild: { ...build, steps: [...build.steps] }, termPreviews: undefined, generatedBy: 'interactive' };
@@ -191,10 +192,11 @@ export async function buildInteractiveNode(nodeId: string, instruction?: string,
     updateGenNode(projectId,nodeId,{ ...nodePatch, versions: nextVersions });
   };
   let lastDraftSave = 0;
+  let measuredHtml: string | undefined;
   const onDraft = (html: string) => {
     if (html !== build.draftHtml) {
-      const viewport = preferredInteractiveViewport(html);
-      build.viewportWidth = viewport.width; build.viewportHeight = viewport.height;
+      build.viewportWidth = undefined; build.viewportHeight = undefined;
+      measuredHtml = undefined;
     }
     build.draftHtml = html; markGenerationTextReceived(session.id);
     if (Date.now() - lastDraftSave > 650) { lastDraftSave = Date.now(); commit({ interactiveBuild: { ...build, steps: [...build.steps] } }); }
@@ -218,8 +220,10 @@ export async function buildInteractiveNode(nodeId: string, instruction?: string,
       },
     });
     if (result.viewport) {
-      build.viewportWidth = Math.max(build.viewportWidth ?? 0, result.viewport.width);
-      build.viewportHeight = Math.max(build.viewportHeight ?? 0, result.viewport.height);
+      const sameDocument = measuredHtml === html;
+      build.viewportWidth = Math.max(sameDocument ? build.viewportWidth ?? 0 : 0, result.viewport.width);
+      build.viewportHeight = Math.max(sameDocument ? build.viewportHeight ?? 0 : 0, result.viewport.height);
+      measuredHtml = html;
     }
     return result;
   };
@@ -260,12 +264,13 @@ export async function buildInteractiveNode(nodeId: string, instruction?: string,
       repairPrompt: error => configuredPrompt('interactiveNodeRepair',{error}),
     });
     const parsed = new DOMParser().parseFromString(html,'text/html');
+    const preferred = preferredInteractiveViewport(html);
     const title = parsed.title.trim().replace(/\s+/g,' ').slice(0,120) || draft.header;
     parsed.querySelectorAll('script,style').forEach(el=>el.remove());
     const text = parsed.body.textContent?.replace(/\s+/g,' ').trim().slice(0,10000) ?? '';
     commit({ header: title, headerParts: { subject: title }, body: `${fullRequest}\n\n${text}`,
       interactive: { html, request: fullRequest, providerId: provider.id, model: ref.model,
-        viewportWidth: build.viewportWidth ?? 960, viewportHeight: build.viewportHeight ?? 720 },
+        viewportWidth: build.viewportWidth ?? preferred.width, viewportHeight: build.viewportHeight ?? preferred.height },
       interactiveBuild: { ...build, draftHtml: undefined, state: 'complete', verificationPending: false },
     }, { generating: false, generatingVersionIndex: undefined, generationError: undefined });
   } catch (error) {

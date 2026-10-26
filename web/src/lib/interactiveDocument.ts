@@ -1,6 +1,7 @@
 import { installClickFlash } from './clickFlashRuntime';
 import { installInteractiveCapture } from './interactiveCaptureRuntime';
 import { installInteractiveAudioMute } from './interactiveAudioMute';
+import { measureInteractiveContent } from './interactiveContentSize';
 import { normalizeScreenshotControls, rasterizeScreenshotSvg } from './screenshotRasterize';
 
 /** Default starting surface; individual programs may choose another shape.
@@ -219,7 +220,7 @@ export function buildInteractiveSrcDoc(
     width: INTERACTIVE_VIEWPORT_WIDTH,
     height: INTERACTIVE_VIEWPORT_HEIGHT,
   },
-  options: { muteAudio?: boolean } = {},
+  options: { muteAudio?: boolean; fitContent?: boolean } = {},
 ): string {
   const safeChannel = JSON.stringify(channel);
   const safeState = JSON.stringify(initialState).replace(/</g, '\\u003c');
@@ -347,7 +348,8 @@ export function buildInteractiveSrcDoc(
     var root=document.documentElement,body=document.body;
     var requiredWidth=Math.ceil(Math.max(maxRight,root.scrollWidth,body.scrollWidth)-Math.min(0,minLeft));
     var requiredHeight=Math.ceil(Math.max(maxBottom,root.scrollHeight,body.scrollHeight)-Math.min(0,minTop));
-    send('layout',{width:requiredWidth,height:requiredHeight,clipped:clipped,negativeOverflow:minLeft < -tolerance||minTop < -tolerance});
+    var contentSize=${options.fitContent ? `(${measureInteractiveContent.toString()})()` : 'undefined'};
+    send('layout',{width:requiredWidth,height:requiredHeight,contentWidth:contentSize&&contentSize.width,contentHeight:contentSize&&contentSize.height,clipped:clipped,negativeOverflow:minLeft < -tolerance||minTop < -tolerance});
   }
   window.addEventListener('error',function(event){send('error',errorPayload(event.error||event.message,event.filename,event.lineno,event.colno))});
   window.addEventListener('unhandledrejection',function(event){send('error',errorPayload(event.reason))});

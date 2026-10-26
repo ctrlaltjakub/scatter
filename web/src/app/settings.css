@@ -82,17 +82,21 @@
   scrollbar-color: var(--surface2) transparent;
 }
 .settings-nav-sections { flex: 1; }
-.settings-release-footer { display: flex; flex-direction: column; gap: 6px; padding: 22px 12px 0; color: var(--subtext0); font-size: 13px; }
-.settings-release-footer a { width: fit-content; color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.settings-release-footer { display: grid; grid-template-columns: minmax(0, 1fr) 88px; column-gap: 8px; row-gap: 4px; align-items: center; padding: 22px 8px 0 12px; color: var(--subtext0); font-size: 13px; }
+.settings-release-footer a { width: fit-content; color: inherit; white-space: nowrap; text-decoration: underline; text-underline-offset: 3px; }
 .settings-release-footer a:hover { color: var(--text); }
-.settings-release-footer small { font-size: 11px; }
+.settings-release-footer small { grid-column: 1; font-size: 11px; white-space: nowrap; }
 .settings-release-footer .settings-repository-link {
-  width: 28px;
-  min-height: 28px;
-  flex-shrink: 0;
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  width: 88px;
+  height: 100%;
+  min-height: 38px;
+  padding: 0;
   text-decoration: none;
   cursor: var(--cur-click);
 }
+.settings-repository-link svg { flex-shrink: 0; }
 .settings-repository-link:focus-visible { outline: 1px solid var(--text); outline-offset: 2px; }
 .settings-nav-group + .settings-nav-group {
   margin-top: 18px;
@@ -1280,7 +1284,7 @@ dialog.local-model-guide::backdrop { background: color-mix(in oklab, var(--crust
     border-bottom: 1px solid var(--settings-line);
   }
   .settings-nav-sections { display: flex; gap: 12px; }
-  .settings-release-footer { padding: 4px 10px; }
+  .settings-release-footer { min-width: 206px; flex-shrink: 0; padding: 4px 10px; }
   .settings-nav-group {
     display: flex;
     gap: 3px;

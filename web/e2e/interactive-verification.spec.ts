@@ -94,8 +94,10 @@ test('adapts portrait and overflowing layouts without treating decorative clippi
     results.push(await check(build(960, 720, 2000), theme, new AbortController().signal));
     return results;
   });
-  expect(results[0].viewport).toEqual({ width: 720, height: 960 });
-  expect(results[1].viewport).toEqual({ width: 840, height: 840 });
+  expect(results[0].viewport.width).toBe(720);
+  expect(results[0].viewport.height).toBeLessThan(960);
+  expect(results[1].viewport.width).toBe(840);
+  expect(results[1].viewport.height).toBeLessThan(840);
   expect(results[2].viewport.width).toBeGreaterThanOrEqual(1130);
   for (const [index, result] of results.slice(0, 3).entries()) {
     expect(result.errors).toEqual([]); expect(result.ok).toBe(true);
