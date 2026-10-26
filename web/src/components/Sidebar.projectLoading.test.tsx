@@ -29,6 +29,14 @@ vi.mock('@/store/projectActions', async (importOriginal) => ({
 vi.mock('./NavActions', () => ({ NavActions: () => null }));
 vi.mock('./SidebarModelPicker', () => ({ SidebarModelPicker: () => null }));
 vi.mock('@/components/canvas/Minimap', () => ({ Minimap: () => null }));
+// Project-switch tests must not start real connectivity probes that can outlive
+// their fake timers and the jsdom window. Network monitoring is unrelated here.
+vi.mock('@/lib/networkStatus', () => ({
+  useIsBrowserOnline: () => true,
+  isBrowserOnline: () => true,
+  subscribeNetworkStatus: () => () => undefined,
+  probeInternetConnectivity: async () => true,
+}));
 
 const root: ScatterNode = {
   id: 'root', type: 'root', position: { x: 0, y: 0 }, frozen: true,
