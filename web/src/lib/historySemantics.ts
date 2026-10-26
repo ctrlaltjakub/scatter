@@ -35,6 +35,7 @@ export interface GraphHistorySlice {
 
 const VERSION_PRESENTATION_KEYS = [
   'width',
+  'interactiveCanvasWidth',
   'minWidth',
   'bodyMaxHeight',
   'minBodyHeight',

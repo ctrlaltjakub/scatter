@@ -1,9 +1,32 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { checkInteractiveDocument } from './interactiveProbe';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_INTERACTIVE_HOST_STATE } from './interactiveDocument';
 
 const html = '<!doctype html><html><body style="background:var(--sc-bg);color:var(--sc-text);border-color:var(--sc-primary)">Hello</body></html>';
+let checkInteractiveDocument: typeof import('./interactiveProbe').checkInteractiveDocument;
+beforeEach(async () => {
+  // Isolate the cached screenshot renderer, including its load-failure tests.
+  vi.resetModules();
+  ({ checkInteractiveDocument } = await import('./interactiveProbe'));
+});
 afterEach(() => vi.unstubAllGlobals());
+
+describe('silent generation and model-capability checks', () => {
+  it.each([false, true])('always mutes active verification frames (screenshot: %s)', async screenshot => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, text: async () => 'var htmlToImage = {};' })));
+    const controller = new AbortController();
+    const check = checkInteractiveDocument(html, DEFAULT_INTERACTIVE_HOST_STATE.theme, controller.signal, [], { screenshot });
+    const cancelled = expect(check).rejects.toMatchObject({ name: 'AbortError' });
+    try {
+      await vi.waitFor(() => expect(document.querySelector('iframe')).not.toBeNull());
+      const frame = document.querySelector('iframe')!;
+      expect(frame.srcdoc).toContain('silentDestination');
+      expect(frame.srcdoc).toContain('"active":true');
+      expect(frame.getAttribute('sandbox')).toBe('allow-scripts');
+    } finally { controller.abort(); }
+    await cancelled;
+    expect(document.querySelector('iframe')).toBeNull();
+  });
+});
 
 describe('screenshot renderer loading', () => {
   it('reports asset failure as unavailable capture, not a program defect', async () => {

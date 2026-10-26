@@ -54,7 +54,7 @@ describe('prompt catalog and request wiring', () => {
       answerBase: 'ANSWER {formatting}', answerNormal: 'PLAIN {normalInstructions}', taskAnswer: '{previousAnswer}TASK {instruction}', taskAnswerPrevious: 'OLD {previousBody}; ' };
     useSettingsStore.setState({ customPrompts: custom, normalChatInstructions: 'PREFERENCE' });
     expect(chatSystemPrompt(false, 'PREFERENCE', true)).toBe('CHAT\n\nNORMAL PREFERENCE\n\nSEARCH');
-    expect(chatSystemPrompt(true, 'PREFERENCE', false)).toBe('CHAT\n\nCHUNKED');
+    expect(chatSystemPrompt(true, 'PREFERENCE', false)).toBe('CHAT\n\nCHUNKED\n\nPREFERENCE');
     expect(buildMessages({ context, variant: { kind: 'answer', previousBody: 'text', instruction: 'change', informationChunking: false } }))
       .toEqual([{ role: 'system', content: 'ANSWER PLAIN PREFERENCE' }, { role: 'user', content: 'OLD text; TASK change' }]);
   });

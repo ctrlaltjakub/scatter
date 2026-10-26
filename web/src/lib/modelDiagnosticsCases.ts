@@ -2,6 +2,7 @@ import type { ModelRole, Settings } from '@/store/types';
 import type { ChatMessage, TaskVariant } from './promptBuilder';
 import { buildMessages, buildFollowUpClassifierPrompt } from './promptBuilder';
 import { effectivePrompt, substitute } from './promptDefaults';
+import { chatFormattingPrompt } from './chatFormatting';
 import { termSelectionPrompt } from './termSelectionPrompt';
 import { applyTermSelection, markedTerms, stripTermMarkers } from './termMarking';
 import { previewRequest, inspectTermPreviews } from './termPreviewCore';
@@ -73,7 +74,7 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
       assertDiagnostic(!/<<<(?:EXPAND|END|SELECTED)/.test(text), 'Internal selection markers leaked into the answer.');
     } });
   for (const chunking of [false, true]) cases.push({ id: `chat-${chunking}`, label: `Chat · ${chunking ? 'information chunking' : 'normal'}`, role: 'main', kind: 'text', requests: 1,
-    messages: pair(prompt('chatBase') + '\n\n' + (chunking ? prompt('chatChunking') : prompt('chatNormal', { normalInstructions: settings.normalChatInstructions ?? '' })) + '\n\n' + languagePrompt,
+    messages: pair(prompt('chatBase') + '\n\n' + chatFormattingPrompt(chunking, settings.normalChatInstructions ?? '', settings.customPrompts) + '\n\n' + languagePrompt,
       'Compare area and perimeter in a compact Markdown table. Then give a Python function that adds three side lengths.'),
     validate: text => { table(text); assertDiagnostic(/```/.test(text), 'The requested code block is missing.'); } });
   const passages = '(SOURCE_1) Triangle perimeter is the sum of its three side lengths. A triangle with sides 3, 4 and 5 cm has perimeter 12 cm.';

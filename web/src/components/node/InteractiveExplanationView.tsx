@@ -29,6 +29,7 @@ interface Props {
   generating: boolean;
   accent?: string | null;
   presentation?: 'viewer' | 'canvas';
+  canvasWidth?: number;
   unverifiedDraft?: boolean;
 }
 
@@ -48,6 +49,7 @@ export function InteractiveExplanationView({
   generating,
   accent,
   presentation = 'canvas',
+  canvasWidth,
   unverifiedDraft = false,
 }: Props) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -82,7 +84,7 @@ export function InteractiveExplanationView({
     () => resolveInteractiveViewport(interactive),
     [interactive?.viewportHeight, interactive?.viewportSize, interactive?.viewportWidth],
   );
-  const { width: targetWidth, height: targetHeight } = interactiveDisplaySize(interactive, isViewer);
+  const { width: targetWidth, height: targetHeight } = interactiveDisplaySize(interactive, isViewer, canvasWidth);
   const viewportScale = Math.min(
     targetWidth / sourceViewport.width,
     targetHeight / sourceViewport.height,

@@ -97,9 +97,9 @@ describe('chat context and durable boundaries', () => {
     expect(result.text).toContain('QX991');
     expect(result.text.length).toBeLessThan(8500);
   });
-  it('applies normal instructions only when information chunking is off', () => {
+  it('applies chat instructions with information chunking on or off', () => {
     expect(chatSystemPrompt(false, 'Please be brief', false)).toContain('Please be brief');
-    expect(chatSystemPrompt(true, 'Please be brief', false)).not.toContain('Please be brief');
+    expect(chatSystemPrompt(true, 'Please be brief', false)).toContain('Please be brief');
     expect(estimateChatTokens('東京')).toBeGreaterThan(0);
     expect(chatSystemPrompt(true, '', false)).toContain('In EVERY sentence, bold its 2-3 most important parts');
     expect(chatSystemPrompt(true, '', false)).toContain('inside list items and table cells');

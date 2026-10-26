@@ -10,6 +10,8 @@ import { FIELD_LABELS } from './dev/PromptsEditor';
 import { KEY_ACTIONS } from '@/lib/keymap';
 import { SETTINGS_PAGES } from './settings/settingsNavigation';
 import { useModelCatalogStore } from '@/store/useModelCatalogStore';
+import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
+import { colorToCss } from '@/lib/groupColor';
 
 vi.mock('@/opfs/settingsIO', () => ({ saveSettings: vi.fn(async () => undefined), loadSettings: vi.fn() }));
 
@@ -40,6 +42,27 @@ function go(name: string) {
 }
 
 describe('redesigned settings', () => {
+  it('uses the current project tint for panels and keeps disclosure headings inside their panels', () => {
+    const project = { ...createBlankProject('Settings preview', 'root'), color: '#ad4f7e' };
+    useGraphStore.setState({ project });
+    const view = render(<SettingsModal open initialPage="canvas" onClose={() => {}} />);
+    const dialog = screen.getByRole('dialog', { name: 'Settings' });
+    expect(dialog.style.getPropertyValue('--settings-accent')).toBe(colorToCss(project.color));
+    for (const title of ['Chat', 'Writing', 'Text selection web search']) {
+      expect(screen.getByRole('heading', { name: title, level: 3 }).closest('.settings-section')).toBeInTheDocument();
+    }
+    const camera = screen.getByRole('button', { name: 'Automatic camera movement' });
+    const panel = camera.closest('.settings-collapsible');
+    expect(panel).toBeInTheDocument();
+    fireEvent.click(camera);
+    expect(camera).toHaveAttribute('aria-expanded', 'true');
+    expect(camera.closest('.settings-collapsible')).toBe(panel);
+    act(() => useGraphStore.setState({ project: { ...project, color: '#4da77c' } }));
+    expect(dialog.style.getPropertyValue('--settings-accent')).toBe(colorToCss('#4da77c'));
+    act(() => useGraphStore.setState({ project: null }));
+    expect(dialog.style.getPropertyValue('--settings-accent')).toBe('var(--mauve)');
+    view.unmount();
+  });
   it('opens the requested page and clears a previous settings search on reopening', () => {
     const props = { open: true, onClose: vi.fn() };
     const view = render(<SettingsModal {...props} />);
@@ -138,7 +161,7 @@ describe('redesigned settings', () => {
   it('keeps every prompt editable and searchable without saved versions', () => {
     render(<SettingsModal open onClose={() => {}} />);
     go('Canvas and nodes');
-    fireEvent.change(screen.getByLabelText('Normal chat instructions'), {
+    fireEvent.change(screen.getByLabelText('Chat instructions'), {
       target: { value: 'Give concrete examples.' },
     });
     expect(useSettingsStore.getState().normalChatInstructions).toBe('Give concrete examples.');
@@ -146,7 +169,7 @@ describe('redesigned settings', () => {
     expect(screen.queryByText('Saved prompt versions')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Save version' })).toBeNull();
     expect(screen.getByText('Custom system prompts can break generation.')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Normal chat instructions')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Chat instructions')).not.toBeInTheDocument();
     // The per-field editing matrix lives in PromptsEditor.test.tsx. Check all
     // labels here without expanding 79 large textareas in one integration test.
     const labels = screen.getAllByRole('button').map(button => button.getAttribute('aria-label'));
@@ -340,7 +363,7 @@ describe('redesigned settings', () => {
       .toEqual(['Chat', 'Writing', 'Text selection web search']);
     expect(screen.getByRole('button', { name: 'Automatic camera movement' })).toHaveAttribute('aria-expanded', 'false');
     const chat = screen.getByRole('heading', { name: 'Chat', level: 3 }).closest('section')!;
-    expect(within(chat).getByRole('textbox', { name: 'Normal chat instructions' })).toBeInTheDocument();
+    expect(within(chat).getByRole('textbox', { name: 'Chat instructions' })).toHaveAccessibleDescription('Applies to new and regenerated chat answers, with Information chunking on or off.');
     expect(within(chat).getByRole('switch', { name: /Information chunking by default/ })).toBeInTheDocument();
     const toggle = screen.getByRole('switch', { name: /Information chunking by default/ });
     expect(toggle).toBeChecked();

@@ -105,8 +105,7 @@ export async function enrichChatAnswer(projectId: string, nodeId: string, ref: C
           if (!current || current.body !== answer.body) return node;
           // Read the latest cache: previews may finish while term selection runs.
           const next = { ...current, body, ...(manual ? { answerEnrichmentId: current.answerEnrichmentId ? newId() : undefined } : {}) };
-          let termPreviews = reusableTermPreviews(next, [current]);
-          if (manual && termPreviews) termPreviews = { ...termPreviews, exhaustedTerms: undefined, error: undefined };
+          const termPreviews = reusableTermPreviews(next, [current], manual);
           return updateChatAnswer(node, ref, { body, termPreviews, answerEnrichmentId: next.answerEnrichmentId,
             answerTermMarking: { fingerprint: answerMarkingFingerprint(next), state: failed ? 'failed' : 'complete',
               error: failed ? 'Some terms could not be marked. Use Redo terms to retry.' : undefined } });
@@ -129,7 +128,7 @@ export async function enrichChatAnswer(projectId: string, nodeId: string, ref: C
         if (!signal.aborted) {
           const project = getGenProject(projectId);
           const member = project && enrichmentMembers(project, nodeId, seed)[0];
-          if (manual) void generateTermPreviews(nodeId, ref.versionCreatedAt);
+          if (manual) void generateTermPreviews(nodeId, ref.versionCreatedAt, true);
           else if (member) void generateTermPreviews(member.nodeId, member.version.createdAt);
         }
       } catch (cause) {

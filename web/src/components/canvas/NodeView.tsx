@@ -32,7 +32,8 @@ import {
   clampResizeAgainstChain, maxMediaWidthAgainstChain, wallLeft, wallRight,
   type RectInfo,
 } from '@/physics/rectChain';
-import { aspectResize } from '@/lib/mediaSizing';
+import { aspectResize, mediaHeightPerWidth } from '@/lib/mediaSizing';
+import { interactiveDisplaySize } from '@/lib/interactiveDocument';
 import { DEFAULT_PHYSICS_CONFIG } from '@/physics/defaults';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { currentContentType, nodeTypeLabel, isStandaloneInteractive } from '@/lib/nodeContentType';
@@ -663,7 +664,7 @@ function NodeViewImpl(p: Props) {
     e.preventDefault();
     // First-time resize: freeze the current visible body height so further
     // width changes don't grow the card unexpectedly.
-    if (!effectivelyCollapsed && v?.bodyMaxHeight == null) {
+    if (ct !== 'interactive' && !effectivelyCollapsed && v?.bodyMaxHeight == null) {
       const bodyEl = wrapperRef.current?.querySelector('.node-body') as HTMLElement | null;
       if (bodyEl) {
         const measuredH = bodyEl.getBoundingClientRect().height / liveZoom();
@@ -747,25 +748,35 @@ function NodeViewImpl(p: Props) {
     }
     const startRect = { x: r.startNodeX, y: r.startNodeY, w: r.startW, h: r.startRenderedH };
 
-    // Media: aspect-locked resize. Width drives height via the intrinsic ratio
+    // Media and interactive programs: aspect-locked resize via the intrinsic ratio
     // (never distort/crop); a pinned wall on EITHER axis caps the width so the
     // card still stops cleanly at the gap instead of overlapping the pin.
     const mediaRef = v?.media;
-    if (mediaRef?.naturalWidth && mediaRef?.naturalHeight) {
-      let proposedW = leftCorner ? r.startW - dx : r.startW + dx;
+    const intrinsic = ct === 'interactive' ? interactiveDisplaySize(v?.interactive, true)
+      : mediaRef ? { width: 1, height: mediaHeightPerWidth(mediaRef.naturalWidth ?? 0, mediaRef.naturalHeight ?? 0) }
+        : undefined;
+    if (intrinsic) {
+      const ratio = intrinsic.height / intrinsic.width;
+      const widthDelta = leftCorner ? -dx : dx;
+      const heightDeltaAsWidth = (topCorner ? -dy : dy) / ratio;
+      // A vertical drag should also resize an interactive surface. Existing
+      // media gestures retain their width-driven behavior.
+      let proposedW = r.startW + (ct === 'interactive' && Math.abs(heightDeltaAsWidth) > Math.abs(widthDelta)
+        ? heightDeltaAsWidth : widthDelta);
       if (others.length > 0) {
-        const ratio = mediaRef.naturalHeight / mediaRef.naturalWidth;
         const maxW = maxMediaWidthAgainstChain(startRect, r.mode, ratio, chromeH, others, GAP);
         if (proposedW > maxW) proposedW = maxW;
       }
-      const fit = aspectResize(mediaRef.naturalWidth, mediaRef.naturalHeight, proposedW);
+      const fit = aspectResize(intrinsic.width, intrinsic.height, proposedW);
       const renderedH = fit.bodyMaxHeight + chromeH;
       let nx = r.startNodeX;
       let ny = r.startNodeY;
       if (leftCorner) nx = r.startNodeX + (r.startW - fit.width);
       if (topCorner) ny = r.startNodeY + (r.startRenderedH - renderedH);
       const mrx = Math.round(nx), mry = Math.round(ny);
-      useGraphStore.getState().setVersionSize(p.node.id, { width: fit.width, bodyMaxHeight: fit.bodyMaxHeight });
+      useGraphStore.getState().setVersionSize(p.node.id, ct === 'interactive'
+        ? { interactiveCanvasWidth: fit.width }
+        : { width: fit.width, bodyMaxHeight: fit.bodyMaxHeight });
       // NodeView owns the resized node's live position (Canvas skips the
       // worker's echo for it) — write it directly so position tracks size with
       // no one-frame lag. updateNode keeps project/undo in sync, same value.
@@ -1315,7 +1326,7 @@ function NodeViewImpl(p: Props) {
               beyond the card and must remain visible and hit-testable.
               Chats keep a fixed reading viewport, so resizing is safe even
               while the first answer is still generating. */}
-          {!emptyText && (!p.node.generating || ct === 'chat') && ct !== 'interactive' && !(ct === 'media' && !v.media) && (['tl', 'tr', 'bl', 'br'] as const).map((mode) => (
+          {!emptyText && (!p.node.generating || ct === 'chat') && !(ct === 'media' && !v.media) && (['tl', 'tr', 'bl', 'br'] as const).map((mode) => (
             <div
               key={mode}
               className={'node-resize ' + mode + (resizingMode === mode ? ' resizing' : '')}

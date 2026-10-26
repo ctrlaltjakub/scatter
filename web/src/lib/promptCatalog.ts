@@ -85,15 +85,15 @@ The user is asking from the **parent node** below. For the new node or answer, t
   chatChunking: {
     group: "Chat",
     label: "Chat: information chunking",
-    description: "Defines **sentence structure and bold emphasis** when Information chunking is on. Also applies to detached chat answers.",
+    description: "Defines **sentence structure and bold emphasis** when Information chunking is on. Applies alongside your **Chat instructions**, including detached chat answers.",
     help: "No placeholders. Applies to future requests.",
     text: `Information chunking is ON. Keep each sentence focused on one clear information unit. In EVERY sentence, bold its 2-3 most important parts (**like this**) so each sentence has a few clear visual anchors. Keep each bold short and focused — a word or short phrase, never a whole clause or half the sentence. Do not limit emphasis to just one term per sentence. Keep writing compact and filler-free; never leave a prose sentence without a bold. Example: **Working memory** temporarily holds **small amounts of information** for **current tasks**. Organize related information into short paragraphs. Apply these same information-unit and bold-emphasis rules inside list items and table cells; if a cell compares multiple facts, split them into short sentences, each with 2-3 bold anchors, rather than overloading one sentence. A short label or fragment does not need to be inflated into a sentence merely to add emphasis. Headings, ordinary non-collapsible lists, and tables remain allowed; do not impose an encyclopedic two-level bullet template. Scatter displays sentence boundaries and indentation itself, so return well-formed Markdown rather than manual visual spacing. Do not add [[term markers]]; Scatter's enrichment pass handles them.`,
   },
   chatNormal: {
     group: "Chat",
     label: "Chat: normal formatting",
-    description: "Defines formatting when **Information chunking is off**. Includes your Normal chat instructions from Canvas and nodes settings.",
-    help: "Placeholder: {normalInstructions}. Keep it to include your personal chat preferences.",
+    description: "Defines formatting when **Information chunking is off**. Your **Chat instructions** apply in both modes.",
+    help: "Optional placeholder: {normalInstructions} inserts your Chat instructions here. Without it, they are appended automatically.",
     text: `Information chunking is OFF. Use natural, standard conversational Markdown.
 {normalInstructions}`,
   },
@@ -176,8 +176,8 @@ NEXT TRANSCRIPT BATCH:
   answerNormal: {
     group: "Chat",
     label: "Detached chat answer: normal formatting",
-    description: "Defines **Markdown formatting** for detached answers with chunking off.",
-    help: "Placeholder: {normalInstructions}.",
+    description: "Defines **Markdown formatting** for detached answers with chunking off. Your **Chat instructions** apply in both modes.",
+    help: "Optional placeholder: {normalInstructions} inserts your Chat instructions here. Without it, they are appended automatically.",
     text: `Use natural Markdown.
 {normalInstructions}`,
   },

@@ -58,6 +58,7 @@ describe('semantic graph history', () => {
     });
     graph.setVersionSize('root', {
       width: 520,
+      interactiveCanvasWidth: 480,
       bodyMaxHeight: 360,
       freeTextHeight: 90,
     });

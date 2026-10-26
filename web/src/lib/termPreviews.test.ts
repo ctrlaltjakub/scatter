@@ -242,6 +242,52 @@ describe('background preview lifecycle', () => {
     expect(answerEnrichmentError(chatVersion(12))).toBeUndefined();
     expect(complete).toHaveBeenCalledTimes(2);
   });
+  it.each(['generating', 'failed'] as const)('redo previews for a completed answer are independent of another chat turn being %s', async (state) => {
+    const project = seedChat();
+    const ref = { turnId: 'first', versionCreatedAt: 11 };
+    useGraphStore.getState().updateNode('n', {
+      ...updateChatAnswer(project.nodes.n!, { turnId: 'second', versionCreatedAt: 12 }, {},
+        { state: state === 'generating' ? 'generating' : 'interrupted' }),
+      generating: state === 'generating',
+      generationError: state === 'failed' ? 'Another answer failed' : undefined,
+    });
+    complete.mockResolvedValueOnce('{"terms":["cache"]}');
+    await redoChatTerms('n', ref);
+    await vi.waitFor(() => expect(termPreviewFor(chatVersion(11), 'cache')).toBe(explanation));
+    expect(chatVersion(12).termPreviews).toBeUndefined();
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
+  it.each(['encyclopedic', 'explain', 'answer', 'chat'] as const)('redo retries failed %s previews without inheriting failures from older versions', async (contentType) => {
+    seed('A [[cache]] reduces [[latency]].');
+    const initial = { ...current(), contentType, wikimediaImages: {
+      schemaVersion: 1 as const, bodyFingerprint: '', providerId: 'test', model: 'test', searchedAt: 0, resultLimit: 0, results: [],
+    } };
+    if (contentType === 'chat') {
+      seedChat();
+      const node = useGraphStore.getState().project!.nodes.n!;
+      useGraphStore.getState().updateNode('n', updateChatAnswer(node, { turnId: 'second', versionCreatedAt: 12 }, { body: initial.body }));
+    } else useGraphStore.getState().updateNode('n', { versions: [initial] });
+    const timestamp = contentType === 'chat' ? 12 : 10;
+    complete.mockResolvedValue('{"previews":[]}').mockResolvedValueOnce(result([0]));
+    await generateTermPreviews('n', timestamp);
+    // A matching historical alternative must not make an explicit retry inherit its failure.
+    const node = useGraphStore.getState().project!.nodes.n!;
+    const failed = node.versions.find(v => v.createdAt === timestamp)!;
+    expect(failed.termPreviews?.exhaustedTerms).toEqual(['latency']);
+    useGraphStore.getState().updateNode('n', { versions: [...node.versions, { ...failed, createdAt: 13, answerEnrichmentId: undefined,
+      termPreviews: { ...failed.termPreviews!, fingerprint: termPreviewFingerprint({ ...failed, answerEnrichmentId: undefined }) } }] });
+    complete.mockReset();
+    complete.mockResolvedValue(result([0])).mockResolvedValueOnce('{"terms":["cache","latency"]}');
+    if (contentType === 'chat') await redoChatTerms('n', { turnId: 'second', versionCreatedAt: 12 });
+    else await redoTermMarking('n');
+    const latest = () => contentType === 'chat' ? chatVersion(12) : useGraphStore.getState().project!.nodes.n!.versions.at(-1)!;
+    await vi.waitFor(() => expect(termPreviewFor(latest(), 'latency')).toBe(explanation));
+    expect(termPreviewFor(latest(), 'cache')).toBe(explanation);
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'latency' }]);
+    await generateTermPreviews('n', latest().createdAt);
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
   it('persists an actionable preview network error and clears it after successful recovery', async () => {
     seedChat();
     complete.mockRejectedValueOnce(new Error('Network unavailable'));
@@ -424,6 +470,45 @@ describe('background preview lifecycle', () => {
     await generateTermPreviews('n', 10);
     resolve(result([0])); await pending;
     expect(complete).toHaveBeenCalledTimes(1);
+  });
+  it('starts a fresh request when the previous request for the same text was already cancelled', async () => {
+    let finishOld!: (value: string) => void;
+    complete.mockReturnValueOnce(new Promise<string>(resolve => { finishOld = resolve; }));
+    const old = generateTermPreviews('n', 10);
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledOnce());
+    useSettingsStore.setState({ autoTermPreviews: false });
+    expect(complete.mock.calls[0]![0].signal.aborted).toBe(true);
+    useSettingsStore.setState({ autoTermPreviews: true });
+    // The cancelled provider request has not settled yet. Its registry entry
+    // must not suppress this retry just because the answer has not changed.
+    const retry = generateTermPreviews('n', 10);
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(2));
+    finishOld(result([0]));
+    await Promise.all([old, retry]);
+    expect(termPreviewFor(current(), 'cache')).toBe(explanation);
+  });
+  it('explicit re-marking still respects the automatic-preview preference', async () => {
+    seedChat();
+    useSettingsStore.setState({ autoTermPreviews: false });
+    complete.mockResolvedValueOnce('{"terms":["cache"]}');
+    await redoChatTerms('n', { turnId: 'second', versionCreatedAt: 12 });
+    expect(complete).toHaveBeenCalledOnce();
+    expect(chatVersion(12).termPreviews?.entries ?? {}).toEqual({});
+  });
+  it('a cancelled shared preview cannot clear the replacement redo status', async () => {
+    seedChat();
+    let finishOld!: (value: string) => void, finishNew!: (value: string) => void;
+    complete.mockReturnValueOnce(new Promise<string>(resolve => { finishOld = resolve; }))
+      .mockResolvedValueOnce('{"terms":["cache"]}')
+      .mockReturnValueOnce(new Promise<string>(resolve => { finishNew = resolve; }));
+    const old = generateTermPreviews('n', 12);
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledOnce());
+    await redoChatTerms('n', { turnId: 'second', versionCreatedAt: 12 });
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(3));
+    finishOld(result([0])); await old;
+    expect(useNodeStatusStore.getState().processes.n?.[termPreviewProcess(12)]?.clearedAt).toBeNull();
+    finishNew(result([0]));
+    await vi.waitFor(() => expect(termPreviewFor(chatVersion(12), 'cache')).toBe(explanation));
   });
   it('splits large lists and retries only rejected entries once', async () => {
     seed(Array.from({ length: 26 }, (_, i) => `[[term ${i}]]`).join(' '));

@@ -17,7 +17,7 @@ const roles = [
 
 export function ModelRolesGuide() {
   return (
-    <section className="settings-model-guide" aria-labelledby="settings-model-guide-title">
+    <section className="settings-model-guide settings-card" aria-labelledby="settings-model-guide-title">
       <h3 id="settings-model-guide-title">A model for each job</h3>
       <p className="field-help">
         The app uses <strong>four model roles</strong> with different strengths.

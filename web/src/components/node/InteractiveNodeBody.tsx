@@ -27,7 +27,7 @@ export function InteractiveNodeBody({ node, active, presentation = 'canvas' }: {
     viewportWidth: build.viewportWidth ?? preferredInteractiveViewport(draft.html).width,
     viewportHeight: build.viewportHeight ?? preferredInteractiveViewport(draft.html).height,
   } : undefined);
-  const size = interactiveDisplaySize(interactive, presentation === 'viewer');
+  const size = interactiveDisplaySize(interactive, presentation === 'viewer', version.interactiveCanvasWidth);
   const accent = useGraphStore(state => {
     const project = state.project;
     return (node.groupId ? project?.groups[node.groupId]?.color : undefined) ?? project?.color;
@@ -49,7 +49,7 @@ export function InteractiveNodeBody({ node, active, presentation = 'canvas' }: {
   } as CSSProperties}>
     {interactive?.html && !busy ? <InteractiveExplanationView
       nodeId={node.id} versionIndex={node.currentVersionIndex} interactive={interactive}
-      active={active} generating={false} accent={accent} presentation={presentation} unverifiedDraft={previewingDraft || build?.acceptedByUser} />
+      active={active} generating={false} accent={accent} presentation={presentation} canvasWidth={version.interactiveCanvasWidth} unverifiedDraft={previewingDraft || build?.acceptedByUser} />
       : build ? <section className="interactive-build" aria-label="Interactive build progress">
         <div className="interactive-build-heading"><SquareMousePointer size={22} /><span>{busy ? `Generating an interactive node${build.model ? ` with ${modelDisplayName(build.model)}` : ''}` : build.state === 'stopped' ? 'Creation stopped' : 'Creation needs attention'}</span></div>
         <div ref={logRef} className="interactive-build-log" role="log" aria-live="polite" aria-relevant="additions text"

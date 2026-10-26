@@ -9,6 +9,7 @@ import { enrichmentMembers, pendingAnswerTermMarking, shareAnswerEnrichment } fr
 import { ensureAnswerTerms } from './chat/enrichment';
 
 const running = new Map<string, { controller: AbortController; fingerprint: string }>();
+const statusOwners = new Map<string, AbortController>();
 let activeRequests = 0;
 const waiting: Array<() => void> = [];
 
@@ -29,12 +30,15 @@ export const termPreviewProcess = (createdAt: number) => `term-previews-${create
 
 /** Background enrichment never creates an undo entry or changes body text.
  * Results are committed only to the captured project/version and exact body. */
-export async function generateTermPreviews(nodeId: string, createdAt: number): Promise<void> {
+export async function generateTermPreviews(nodeId: string, createdAt: number, retryFailed = false): Promise<void> {
   if (!useSettingsStore.getState().autoTermPreviews) return;
   const project = useGraphStore.getState().project;
   const node = project?.nodes[nodeId];
   let version = node?.versions.find(v => v.createdAt === createdAt);
-  if (!project || !node || !version || version.contentType === 'interactive' || node.generating || node.generationError || version.chat?.state === 'generating') return;
+  if (!project || !node || !version || version.contentType === 'interactive' || version.chat?.state === 'generating') return;
+  // Chat completion belongs to each answer. A different turn may be streaming
+  // or have failed while the user re-marks an already completed answer.
+  if (!node.chat && (node.generating || node.generationError)) return;
   if (node.chat && !version.answerEnrichmentId) {
     version = shareAnswerEnrichment(version, `${project.id}:${nodeId}:${createdAt}`);
     updateGenNode(project.id, nodeId, { versions: node.versions.map(v => v.createdAt === createdAt ? version! : v) });
@@ -46,7 +50,7 @@ export async function generateTermPreviews(nodeId: string, createdAt: number): P
   const ownEntries = version.termPreviews?.fingerprint === fingerprint ? version.termPreviews.entries : {};
   if (allTerms.every(term => Object.hasOwn(ownEntries, termPreviewKey(term)))) return;
   const reused = reusableTermPreviews(version, version.answerEnrichmentId
-    ? [...node.versions, ...enrichmentMembers(project, nodeId, version).map(member => member.version)] : node.versions);
+    ? [...node.versions, ...enrichmentMembers(project, nodeId, version).map(member => member.version)] : node.versions, retryFailed);
   if (reused && reused !== version.termPreviews) {
     const versions = node.versions.map(v => v.createdAt === createdAt ? { ...version!, termPreviews: reused } : v);
     updateGenNode(project.id, nodeId, { versions });
@@ -59,7 +63,7 @@ export async function generateTermPreviews(nodeId: string, createdAt: number): P
   if (!terms.length) return;
   const key = `${project.id}:${version.answerEnrichmentId ?? `${nodeId}:${createdAt}`}`;
   const previous = running.get(key);
-  if (previous?.fingerprint === fingerprint) return;
+  if (previous?.fingerprint === fingerprint && !previous.controller.signal.aborted) return;
   previous?.controller.abort();
   const controller = new AbortController();
   running.set(key, { controller, fingerprint });
@@ -80,6 +84,7 @@ export async function generateTermPreviews(nodeId: string, createdAt: number): P
     if (!members.length) controller.abort();
     for (const member of members) if (!statusNodes.has(member.nodeId)) {
       statusNodes.set(member.nodeId, member.version.createdAt);
+      statusOwners.set(`${project.id}:${member.nodeId}:${member.version.createdAt}`, controller);
       useNodeStatusStore.getState().setProcessStatus(member.nodeId, termPreviewProcess(member.version.createdAt), 'GENERATING TERM PREVIEWS');
     }
   };
@@ -127,7 +132,14 @@ export async function generateTermPreviews(nodeId: string, createdAt: number): P
     unsubscribeSettings();
     if (running.get(key)?.controller === controller) {
       running.delete(key);
-      for (const [id, timestamp] of statusNodes) useNodeStatusStore.getState().clearProcessStatus(id, termPreviewProcess(timestamp));
+    }
+    for (const [id, timestamp] of statusNodes) {
+      const statusKey = `${project.id}:${id}:${timestamp}`;
+      // A manual redo can detach this answer from its former shared identity.
+      // Finishing that old task must not clear the replacement task's status.
+      if (statusOwners.get(statusKey) !== controller) continue;
+      statusOwners.delete(statusKey);
+      useNodeStatusStore.getState().clearProcessStatus(id, termPreviewProcess(timestamp));
     }
   }
 }
@@ -162,7 +174,7 @@ export function watchFocusedTermPreviews(): () => void {
     previousNode = focused?.id;
     previousGenerating = focused?.generating;
     previousVersions = versions;
-    if (focused && project && !focused.generating) for (const version of versions) {
+    if (focused && project && (focused.chat || !focused.generating)) for (const version of versions) {
       // Term marking is not controlled by the optional preview preference.
       // Opening a detached answer also resumes work interrupted before copying.
       if (version.chat) void ensureAnswerTerms(project.id, focused.id,

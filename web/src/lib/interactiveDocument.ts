@@ -1,5 +1,6 @@
 import { installClickFlash } from './clickFlashRuntime';
 import { installInteractiveCapture } from './interactiveCaptureRuntime';
+import { installInteractiveAudioMute } from './interactiveAudioMute';
 import { normalizeScreenshotControls, rasterizeScreenshotSvg } from './screenshotRasterize';
 
 /** Default starting surface; individual programs may choose another shape.
@@ -37,10 +38,19 @@ export function preferredInteractiveViewport(html: string): InteractiveViewport 
   return { width: dimension('width', 960), height: dimension('height', 720) };
 }
 
-export function interactiveDisplaySize(value?: { viewportWidth?: number; viewportHeight?: number }, viewer = false): InteractiveViewport {
-  if (!value?.viewportWidth || !value.viewportHeight) return { width: viewer ? 960 : 764, height: viewer ? 720 : 573 };
+export function interactiveDisplaySize(value?: { viewportWidth?: number; viewportHeight?: number }, viewer = false, canvasWidth?: number): InteractiveViewport {
+  const validViewport = value?.viewportWidth && Number.isFinite(value.viewportWidth) && value.viewportWidth > 0
+    && value.viewportHeight && Number.isFinite(value.viewportHeight) && value.viewportHeight > 0;
+  const source = validViewport ? { width: value.viewportWidth!, height: value.viewportHeight! }
+    : { width: INTERACTIVE_VIEWPORT_WIDTH, height: INTERACTIVE_VIEWPORT_HEIGHT };
+  // Resizing scales the canvas presentation only. Keep the program's own
+  // viewport (and enlarged viewer) unchanged, so its layout and state survive.
+  if (!viewer && canvasWidth != null && Number.isFinite(canvasWidth) && canvasWidth > 0) {
+    const width = Math.max(280, Math.round(canvasWidth));
+    return { width, height: Math.round(width * source.height / source.width) };
+  }
   const scale = viewer ? 1 : INTERACTIVE_PREVIEW_WIDTH / INTERACTIVE_VIEWPORT_WIDTH;
-  return { width: Math.round(value.viewportWidth * scale), height: Math.round(value.viewportHeight * scale) };
+  return { width: Math.round(source.width * scale), height: Math.round(source.height * scale) };
 }
 
 /** Resolve persisted viewport metadata without migrating old 580px-square
@@ -209,12 +219,14 @@ export function buildInteractiveSrcDoc(
     width: INTERACTIVE_VIEWPORT_WIDTH,
     height: INTERACTIVE_VIEWPORT_HEIGHT,
   },
+  options: { muteAudio?: boolean } = {},
 ): string {
   const safeChannel = JSON.stringify(channel);
   const safeState = JSON.stringify(initialState).replace(/</g, '\\u003c');
   const injected = `<meta http-equiv="Content-Security-Policy" content="${CSP}">
 <style>html,body{box-sizing:border-box;width:100%;height:100%;margin:0;overflow:hidden;background:var(--sc-bg);color:var(--sc-text);font-family:var(--sc-font-family,Arial,sans-serif);font-size:var(--sc-font-size,14px);line-height:var(--sc-line-height,1.45);color-scheme:light}*,*::before,*::after{box-sizing:border-box}html[data-sc-paused] *,html[data-sc-paused] *::before,html[data-sc-paused] *::after{animation-play-state:paused!important}</style>
 <script>(function(){
+  ${options.muteAudio ? `(${installInteractiveAudioMute.toString()})();` : ''}
   var channel=${safeChannel};
   (${installInteractiveCapture.toString()})(channel, (${rasterizeScreenshotSvg.toString()}), (${normalizeScreenshotControls.toString()}));
   var hostState=${safeState};

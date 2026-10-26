@@ -205,6 +205,20 @@ describe('InteractiveExplanationView', () => {
     expect(iframe.style.transform).toMatch(/^translate\(-50%, -50%\) scale\(/);
   });
 
+  it('resizes without replacing the iframe, changing its source, or changing the viewer size', () => {
+    const props = { nodeId: 'resized', versionIndex: 0, interactive: landscapeInteractive, active: true, generating: false };
+    const view = render(<InteractiveExplanationView {...props} />);
+    const iframe = view.container.querySelector('iframe')!;
+    const source = iframe.srcdoc;
+    view.rerender(<InteractiveExplanationView {...props} canvasWidth={480} />);
+    expect(view.container.querySelector('iframe')).toBe(iframe);
+    expect(iframe.srcdoc).toBe(source);
+    expect(iframe).toHaveStyle({ width: '960px', height: '720px', transform: 'translate(-50%, -50%) scale(0.5)' });
+    expect(iframe.parentElement).toHaveStyle({ width: '480px', height: '360px' });
+    view.rerender(<InteractiveExplanationView {...props} canvasWidth={480} presentation="viewer" />);
+    expect(iframe.parentElement).toHaveStyle({ width: '960px', height: '720px' });
+  });
+
   it('activates only the full-window viewer and fills its native 960 by 720 surface', async () => {
     const { container } = render(
       <InteractiveExplanationView

@@ -36,8 +36,8 @@ function clamp(v: number, lo: number, hi: number): number {
 
 /** Height-per-unit-width. Falls back to 9:16 (i.e. 16:9 landscape) when the
  *  intrinsic dimensions are unknown — used for embeds before/without oEmbed. */
-function heightPerWidth(natW: number, natH: number): number {
-  if (natW > 0 && natH > 0) return natH / natW;
+export function mediaHeightPerWidth(natW: number, natH: number): number {
+  if (Number.isFinite(natW) && natW > 0 && Number.isFinite(natH) && natH > 0) return natH / natW;
   return 9 / 16;
 }
 
@@ -46,7 +46,7 @@ function heightPerWidth(natW: number, natH: number): number {
  *  removed via CSS), so the height is derived from the FULL card width. */
 export function aspectResize(natW: number, natH: number, proposedW: number): FitResult {
   const width = Math.max(MEDIA_MIN_W, Math.round(Number.isFinite(proposedW) ? proposedW : MEDIA_MIN_W));
-  const bodyMaxHeight = Math.max(1, Math.round(width * heightPerWidth(natW, natH)));
+  const bodyMaxHeight = Math.max(1, Math.round(width * mediaHeightPerWidth(natW, natH)));
   return { width, bodyMaxHeight };
 }
 
@@ -54,7 +54,7 @@ export function aspectResize(natW: number, natH: number, proposedW: number): Fit
  *  preserving aspect — so neither a wide nor a tall photo spawns oversized.
  *  (The user can still resize larger afterwards via aspectResize.) */
 export function fitMediaToWidth(natW: number, natH: number, targetCardW?: number): FitResult {
-  const r = heightPerWidth(natW, natH); // height per unit width
+  const r = mediaHeightPerWidth(natW, natH); // height per unit width
   let width = Math.min(targetCardW ?? (natW > 0 ? natW : DEFAULT_NODE_W), MEDIA_SPAWN_MAX_W);
   // If that width would make it taller than the box, drive from the height cap.
   if (width * r > MEDIA_SPAWN_MAX_W && r > 0) width = MEDIA_SPAWN_MAX_W / r;

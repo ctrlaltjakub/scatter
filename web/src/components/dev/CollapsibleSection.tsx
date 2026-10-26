@@ -22,7 +22,7 @@ export function CollapsibleSection({
   const [open, setOpen] = useState(defaultOpen);
   const id = useId();
   return (
-    <div style={{ borderBottom: '1px solid var(--ui-line)' }}>
+    <div className="settings-collapsible">
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <button
           type="button"
@@ -31,6 +31,7 @@ export function CollapsibleSection({
           aria-label={title}
           aria-controls={`${id}-content`}
           aria-describedby={description ? `${id}-description` : undefined}
+          className="settings-collapsible-trigger"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -39,11 +40,9 @@ export function CollapsibleSection({
             minWidth: 0,
             background: 'none',
             border: 'none',
-            padding: '9px 0',
             cursor: 'var(--cur-click)',
             color: 'var(--text)',
             fontWeight: 600,
-            fontSize: 13,
             textAlign: 'left',
           }}
         >

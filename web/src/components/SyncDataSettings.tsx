@@ -191,6 +191,7 @@ export function SyncDataSettings({ onRestored, onWorkingChange }: { onRestored?:
   return (
     <section className="sync-settings" aria-labelledby="sync-settings-title">
       {releaseChannel() === 'beta' && <p className="field-help"><strong>Beta sync is separate.</strong> Projects and settings sync only with other beta instances, even when using the same Google Drive or WebDAV account. Import a project file to copy it from stable.</p>}
+      <div className="settings-card sync-connection">
       <div className="sync-settings-title-row">
         <div>
           <div id="sync-settings-title" className="sync-settings-title">
@@ -362,19 +363,20 @@ export function SyncDataSettings({ onRestored, onWorkingChange }: { onRestored?:
         </div>
       ) : null}
 
-      {!onRestored && <div className="sync-key-setting">
+      {connected && <div className="sync-summary-grid">
+        <span>Provider<strong>{config.provider === 'google-drive' ? 'Google Drive' : 'WebDAV / Nextcloud'}</strong></span>
+        <span>Last synchronized<strong>{formatTime(ledger.lastSyncedAt)}</strong></span>
+      </div>}
+      </div>
+
+      {!onRestored && <div className="sync-key-setting settings-card">
         <SettingsToggle title="Sync model-provider API keys" checked={syncApiKeys} onChange={setSyncApiKeys}
           description={<><strong>Use at your own risk.</strong> Cloud snapshots are not encrypted by the app. Anyone with access can use these keys.</>} />
         <p className="field-help">Applies across synced devices. <strong>Older snapshots may retain keys</strong> after you turn this off. Sync-service credentials stay local.</p>
       </div>}
 
-      {connected && <div className="sync-summary-grid">
-        <span>Provider<strong>{config.provider === 'google-drive' ? 'Google Drive' : 'WebDAV / Nextcloud'}</strong></span>
-        <span>Last synchronized<strong>{formatTime(ledger.lastSyncedAt)}</strong></span>
-      </div>}
-
       {connected && !onRestored ? (
-        <div className="sync-history">
+        <div className="sync-history settings-card">
           <div className="sync-history-heading">Cloud snapshot history</div>
           <p className="field-help">
             Sync keeps <strong>previous copies of each project and your app settings</strong>.

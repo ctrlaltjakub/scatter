@@ -211,7 +211,7 @@ interface GraphState {
   setVersionSize: (
     id: string,
     patch: Partial<Pick<NodeVersion,
-      'width' | 'minWidth' | 'bodyMaxHeight' | 'minBodyHeight' | 'fullBodyHeight' | 'freeTextHeight' | 'expandedMeasureWidth'>>,
+      'width' | 'interactiveCanvasWidth' | 'minWidth' | 'bodyMaxHeight' | 'minBodyHeight' | 'fullBodyHeight' | 'freeTextHeight' | 'expandedMeasureWidth'>>,
   ) => void;
   /**
    * Bulk position update — single store mutation for every node moved

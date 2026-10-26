@@ -1,6 +1,7 @@
 'use client';
 import { ReleaseFooter } from './settings/ReleaseFooter';
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { colorToCss } from '@/lib/groupColor';
 import {
   X,
   Trash2,
@@ -316,6 +317,7 @@ export function ProvidersTab({ onboarding = false }: { onboarding?: boolean } = 
           AI requests go <strong>directly to your chosen provider</strong> from the browser.
         </p>
       </div>
+      <section className="settings-card settings-connections">
       <div className="settings-inline-heading settings-providers-heading">
         <h3>
           Your connections <span>{providers.length}</span>
@@ -374,6 +376,7 @@ export function ProvidersTab({ onboarding = false }: { onboarding?: boolean } = 
           />
         ))}
       </div>
+      </section>
       <ModelRolesGuide />
       {!onboarding && <div className="settings-footnote">
         Assign your connected models in <strong>Models and generation</strong>.
@@ -419,8 +422,8 @@ function ChatSettings() {
   const setDefaultChunking = useSettingsStore(s => s.setDefaultChatInformationChunking);
   return (
     <SettingsSection title="Chat">
-      <label className="field-label" htmlFor="normal-chat-instructions"><strong>Normal chat instructions</strong></label>
-      <p className="field-help" id="normal-chat-instructions-help">Applies to <strong>new and regenerated chat answers</strong> when <strong>Information chunking is off</strong>.</p>
+      <label className="field-label" htmlFor="normal-chat-instructions"><strong>Chat instructions</strong></label>
+      <p className="field-help" id="normal-chat-instructions-help">Applies to <strong>new and regenerated chat answers</strong>, with <strong>Information chunking on or off</strong>.</p>
       <textarea
         id="normal-chat-instructions"
         aria-describedby="normal-chat-instructions-help"
@@ -443,7 +446,7 @@ function PromptsTab() {
         title="System prompts"
         description={<>Edit the app’s <strong>system instructions and task templates</strong> for conversations, nodes, previews, images, sources, and background tasks. Changes apply to <strong>future requests</strong>. Existing content stays unchanged.</>}
       >
-        <div className="settings-callout"><p><strong>Custom system prompts can break generation.</strong> App updates overwrite a customized prompt when its built-in default changes. Imports and sync follow the same rule. <strong>No saved versions or recovery copies are kept.</strong> Normal chat instructions are not affected.</p></div>
+        <div className="settings-callout"><p><strong>Custom system prompts can break generation.</strong> App updates overwrite a customized prompt when its built-in default changes. Imports and sync follow the same rule. <strong>No saved versions or recovery copies are kept.</strong> Chat instructions are not affected.</p></div>
         <PromptsEditor />
       </SettingsSection>
     </>
@@ -940,6 +943,7 @@ function ShortcutsTab() {
 
   return (
     <>
+      <SettingsSection title="App and canvas">
       <input
         className="input settings-model-search"
         type="search"
@@ -1096,8 +1100,8 @@ function ShortcutsTab() {
           )}
         </tbody>
       </table>
-      <h3 className="settings-context-shortcuts-heading">Contextual shortcuts</h3>
-      <p className="field-help">These <strong>fixed shortcuts</strong> work only in the named view or interaction. Typing in a field keeps its normal text-editing keys.</p>
+      </SettingsSection>
+      <SettingsSection title="Contextual shortcuts" description={<>These <strong>fixed shortcuts</strong> work only in the named view or interaction. Typing in a field keeps its normal text-editing keys.</>}>
       <table className="shortcut-table settings-shortcuts" aria-label="Contextual shortcuts">
         <tbody>{CONTEXT_SHORTCUTS.filter(item => `${item.group} ${item.label} ${item.keys}`.toLowerCase().includes(filter.toLowerCase())).map(item => (
           <tr key={item.id} className="settings-shortcut-row">
@@ -1106,6 +1110,7 @@ function ShortcutsTab() {
           </tr>
         ))}</tbody>
       </table>
+      </SettingsSection>
       {matchingActions.length === 0 && !CONTEXT_SHORTCUTS.some(item => `${item.group} ${item.label} ${item.keys}`.toLowerCase().includes(filter.toLowerCase())) && <p className="field-help">No shortcuts match “{filter}”.</p>}
       <div className="settings-footnote">
         <CollapsibleSection title="About browser-reserved shortcuts">
@@ -1540,6 +1545,7 @@ const SETTINGS_ICONS: Record<Tab, LucideIcon> = {
 };
 
 export function SettingsModal({ open, onClose, initialPage }: Props) {
+  const projectColor = useGraphStore(state => state.project?.color);
   const hasOpenRouter = useSettingsStore(s => s.providers.some(p => p.preset === 'openrouter' && !!p.apiKey.trim()));
   const [tab, setTab] = useState<Tab>(initialPage ?? 'theme');
   const [query, setQuery] = useState('');
@@ -1622,6 +1628,7 @@ export function SettingsModal({ open, onClose, initialPage }: Props) {
         aria-modal="true"
         aria-label="Settings"
         className="modal settings-modal"
+        style={{ '--settings-accent': projectColor ? colorToCss(projectColor) : 'var(--mauve)' } as CSSProperties}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-header settings-header">

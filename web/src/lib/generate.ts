@@ -873,7 +873,7 @@ function writeVersionBodyInPlace(
  * or undo step (writes go through updateGenNode, which is undo-paused). Restores
  * `retryArgs` so the Retry button replays the user's action, not the chip pass.
  */
-async function addChipsToCurrentVersion(nodeId: string, targetVersionIndex?: number): Promise<void> {
+async function addChipsToCurrentVersion(nodeId: string, targetVersionIndex?: number, retryPreviews = false): Promise<void> {
   const projId = useGraphStore.getState().activeProjectId;
   if (!projId) return;
   const node = getGenProject(projId)?.nodes[nodeId];
@@ -916,7 +916,7 @@ async function addChipsToCurrentVersion(nodeId: string, targetVersionIndex?: num
     setGenFlags(nodeId, { generating: false });
     useNodeStatusStore.getState().clearStatus(nodeId);
     if (!ctrl.signal.aborted && imageVersion && useGraphStore.getState().activeProjectId === projId) {
-      void generateTermPreviews(nodeId, imageVersion.createdAt);
+      void generateTermPreviews(nodeId, imageVersion.createdAt, retryPreviews);
     }
   }
 }
@@ -957,7 +957,7 @@ export async function redoTermMarking(nodeId: string): Promise<void> {
     versions,
     currentVersionIndex: versions.length - 1,
   });
-  await addChipsToCurrentVersion(nodeId);            // undo-paused in-place writes
+  await addChipsToCurrentVersion(nodeId, undefined, true); // undo-paused in-place writes; retry missing previews
   if (projectId && generationSession) {
     finishGenerationSession(projectId, nodeId, generationSession.id);
   }

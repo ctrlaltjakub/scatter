@@ -27,6 +27,12 @@
 .sc-animated-collapse-content { display: flow-root; }
 .sc-animated-collapse[data-expanded="true"][data-animating="false"] > .sc-animated-collapse-clip { overflow: visible; }
 .sc-collapse-chevron { transition: transform 180ms ease-out; }
+.settings-collapsible { border-bottom: 1px solid var(--ui-line); }
+.settings-collapsible-trigger { padding: 9px 0; font-size: 13px; }
+.settings-collapsible-trigger:focus-visible { outline: 2px solid var(--overlay1); outline-offset: 3px; }
+/* Browsers may retain :focus-visible when clicking an already keyboard-focused
+   control. Pointer hover/press still must not frame a disclosure heading. */
+.settings-collapsible .settings-collapsible-trigger:is(:hover, :active) { outline: none; }
 @media (prefers-reduced-motion: reduce) {
   .sc-animated-collapse, .sc-collapse-chevron { transition: none; }
 }
@@ -6570,6 +6576,7 @@ select.input {
 }
 .interactive-node-body { padding: 0 !important; width: 764px; height: 573px; min-height: 573px; overflow: hidden; }
 .interactive-node-body--viewer { width: 960px; height: 720px; min-height: 720px; }
+.interactive-node-body > :is(.sc-interactive-state, .sc-interactive-generation-skeleton) { width: 100%; height: 100%; flex-basis: auto; }
 .node.interactive-standalone.interactive-generating { background: var(--card-bg); }
 .node.interactive-standalone.interactive-generating .node-body::before { display: none; }
 .sc-interactive-frame-wrap--canvas { border: 0; border-radius: 0; }
@@ -7844,7 +7851,7 @@ select.input {
 
 /* Hover and keyboard focus reveal the same 6% highlight used by a hovered
    project/group row, together with its one-pixel colored perimeter. */
-[data-theme="mocha"] button:not(:disabled):not(.ref-chip):not(.node-tag-btn):not(.node-type-menu-chip):not(.gc-swatch):not(.sc-media-play-btn):not(.sc-media-edit-overlay):not(.welcome-start-tab):is(:hover, :focus-visible) {
+[data-theme="mocha"] button:not(:disabled):not(.ref-chip):not(.node-tag-btn):not(.node-type-menu-chip):not(.gc-swatch):not(.sc-media-play-btn):not(.sc-media-edit-overlay):not(.welcome-start-tab):not(.settings-collapsible-trigger):is(:hover, :focus-visible) {
   background: color-mix(in oklab, var(--control-accent, var(--text)) 6%, transparent);
   outline: 1px solid color-mix(in oklab, var(--control-accent, var(--text)) 70%, transparent);
   outline-offset: -1px;
@@ -7863,7 +7870,7 @@ select.input {
   [aria-selected="true"],
   [aria-checked="true"]
 ),
-[data-theme="mocha"] button:not(:disabled):not(.ref-chip):not(.node-tag-btn):not(.node-type-menu-chip):not(.gc-swatch):not(.sc-media-play-btn):not(.sc-media-edit-overlay):not(.welcome-start-tab):active {
+[data-theme="mocha"] button:not(:disabled):not(.ref-chip):not(.node-tag-btn):not(.node-type-menu-chip):not(.gc-swatch):not(.sc-media-play-btn):not(.sc-media-edit-overlay):not(.welcome-start-tab):not(.settings-collapsible-trigger):active {
   background: color-mix(in oklab, var(--control-accent, var(--text)) 8%, transparent);
   outline: 2px solid color-mix(in oklab, var(--control-accent, var(--text)) 82%, transparent);
   outline-offset: -2px;

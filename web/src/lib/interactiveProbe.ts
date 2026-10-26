@@ -61,7 +61,9 @@ async function checkVisibleInteractiveDocument(
   // native-timer equivalent, without changing the model program's scheduler.
   const renderer = library ? `(function(){var later=window.setTimeout.bind(window);(function(requestAnimationFrame){${library}\n})(function(callback){return later(function(){callback(performance.now())},0)})})();` : '';
   const probe = `<script>${renderer}\n;(${interactiveProbeRuntime.toString()})(${payload}, (${rasterizeScreenshotSvg.toString()}), (${normalizeScreenshotControls.toString()}));</script>`;
-  const compiled = buildInteractiveSrcDoc(html, channel, { active: true, theme: effectiveTheme }, viewport);
+  // Verification must execute normally (including sequencer clocks), but the
+  // invisible draft must never be audible. This also covers capability tests.
+  const compiled = buildInteractiveSrcDoc(html, channel, { active: true, theme: effectiveTheme }, viewport, { muteAudio: true });
   const src = compiled.replace(/<head(?:\s[^>]*)?>/i, tag => tag + probe);
   const frame = document.createElement('iframe');
   frame.setAttribute('sandbox', 'allow-scripts');

@@ -6,6 +6,8 @@ import { answerVersion, conversationPath, sameChatPath, validMemoryForPath } fro
 import { stripChips } from '@/lib/bulletParse';
 import { withoutEmbeddedImageData } from '@/lib/embeddedImageText';
 import { buildKeywordIndex, chunkSourceBlocks, searchKeywordIndex } from '@/lib/sourceIndexing';
+import { chatFormattingPrompt } from '@/lib/chatFormatting';
+import { useSettingsStore } from '@/store/useSettingsStore';
 
 /** A quoted old alternative cannot silently consume the entire context window.
  * Keep its beginning plus query-relevant original passages; the same exact
@@ -27,9 +29,8 @@ export function boundedReferencedAnswer(body: string, question: string, limit = 
   return { text: [...indices].sort((a, b) => a - b).map((index) => chunks[index]?.text ?? '').join('\n[Passage boundary]\n'), excerpted: true };
 }
 
-export function chatSystemPrompt(chunked: boolean, normalInstructions: string, webSearch: boolean): string {
-  return [configuredPrompt('chatBase'), chunked ? configuredPrompt('chatChunking') :
-    configuredPrompt('chatNormal', { normalInstructions: normalInstructions.trim() }),
+export function chatSystemPrompt(chunked: boolean, instructions: string, webSearch: boolean): string {
+  return [configuredPrompt('chatBase'), chatFormattingPrompt(chunked, instructions, useSettingsStore.getState().customPrompts),
   webSearch ? configuredPrompt('chatWebSearch') : '',
   ].filter(Boolean).join('\n\n');
 }

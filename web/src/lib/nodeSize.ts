@@ -30,8 +30,7 @@ export function currentVersion(n: Versioned): NodeVersion | undefined {
 export const DEFAULT_NODE_W = 624;
 export const ROOT_NODE_W = 640;
 export const MIN_NODE_W = 624;
-/** Stable card width and full-bleed interactive viewport. It remains fixed
- * while the program is shown or hidden. */
+/** Default interactive card width before a manual resize. */
 export const INTERACTIVE_NODE_W = 764;
 
 /**
@@ -153,14 +152,18 @@ export const MIN_BODY_MAX_H = 80;
 export function nodeWidth(n: Versioned): number {
   const version = currentVersion(n);
   if (version?.contentType === 'interactive') {
-    return interactiveDisplaySize(currentVersion(n)?.interactive).width;
+    return interactiveDisplaySize(version.interactive, false, version.interactiveCanvasWidth).width;
   }
   return version?.width ?? DEFAULT_NODE_W;
 }
 
 /** Resolve the effective body max-height for a node (current version). */
 export function nodeBodyMaxH(n: Versioned): number {
-  return currentVersion(n)?.bodyMaxHeight ?? DEFAULT_BODY_MAX_H;
+  const version = currentVersion(n);
+  if (version?.contentType === 'interactive') {
+    return interactiveDisplaySize(version.interactive, false, version.interactiveCanvasWidth).height;
+  }
+  return version?.bodyMaxHeight ?? DEFAULT_BODY_MAX_H;
 }
 
 /** Resolve the rendered card height for physics / arrow endpoint math.

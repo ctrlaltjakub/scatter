@@ -409,6 +409,9 @@ export interface NodeVersion {
   // change; the user's manual resize writes width / bodyMaxHeight here too.
   /** Total card width (canvas px). Falls back to DEFAULT_NODE_W. */
   width?: number;
+  /** Manual interactive canvas size. Separate from legacy text width; the
+   * program's intrinsic viewport and enlarged viewer never change on resize. */
+  interactiveCanvasWidth?: number;
   /** Per-version MINIMUM card width — raised by the 3:2 aspect cap (see
    *  the node-level docs that previously lived here). The floor labs
    *  measure at this width and resize can't go narrower. */
@@ -859,7 +862,8 @@ export interface Settings {
   nodeFontId: string;
   /** Embedded files travel with settings exports and cloud preferences. */
   customNodeFonts: CustomNodeFont[];
-  /** Applied only to subsequent normal-mode chat answers. */
+  /** Chat instructions apply to new/regenerated answers in both chunking modes.
+   * Keep the stored key for compatibility with existing exports and sync. */
   normalChatInstructions?: string;
   /** Justify the node's opening paragraph (vs. left-align). Default false
    *  (left). Independent of `sentencePerLine`. Pure render-level preference. */

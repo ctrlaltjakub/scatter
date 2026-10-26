@@ -3,6 +3,7 @@ import { effectivePrompt, substitute } from './promptDefaults';
 import { termSelectionPrompt } from './termSelectionPrompt';
 import { DEFAULT_MAX_L1_BULLETS } from './nodeContentType';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { chatFormattingPrompt } from './chatFormatting';
 
 
 export interface ContextNode {
@@ -180,7 +181,7 @@ export function buildMessages(input: {
   const custom = useSettingsStore.getState().customPrompts;
   if (input.variant.kind === 'answer' || (input.variant.kind === 'modify-selection' && input.variant.mode === 'answer')) {
     return [
-      { role: 'system', content: substitute(effectivePrompt('answerBase', custom), { formatting: input.variant.informationChunking ? effectivePrompt('chatChunking', custom) : substitute(effectivePrompt('answerNormal', custom), { normalInstructions: useSettingsStore.getState().normalChatInstructions ?? '' }) }) },
+      { role: 'system', content: substitute(effectivePrompt('answerBase', custom), { formatting: chatFormattingPrompt(!!input.variant.informationChunking, useSettingsStore.getState().normalChatInstructions ?? '', custom, true) }) },
       { role: 'user', content: buildContextBlock(input.context, custom) + buildTaskBlock(input.variant, custom) },
     ];
   }

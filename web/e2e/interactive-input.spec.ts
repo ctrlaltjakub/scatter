@@ -128,6 +128,39 @@ test('real pointer input keeps the embedded program active and its controls resp
   await page.screenshot({ path: info.outputPath('interactive-input-working.png') });
 });
 
+test('corner resizing preserves proportions and program state, including vertical drags', async ({ page }, info) => {
+  await seed(page);
+  await clickControl(page, '#add');
+  const node = page.locator('.node[data-node-id="interactive-input"]');
+  const body = node.locator('.interactive-node-body');
+  const frame = page.frameLocator('iframe[title="Interactive program"]');
+  await expect(node.locator('.node-resize')).toHaveCount(4);
+  for (const corner of ['br', 'tr', 'bl', 'tl']) {
+    const before = await node.boundingBox();
+    const handle = await node.locator(`.node-resize.${corner}`).boundingBox();
+    if (!before || !handle) throw new Error('Resize handle is missing');
+    const left = corner.endsWith('l');
+    const top = corner.startsWith('t');
+    const x = handle.x + handle.width / 2;
+    const y = handle.y + handle.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + (corner === 'br' ? 0 : left ? -30 : 30), y + (top ? -30 : 30), { steps: 5 });
+    await page.mouse.up();
+    await expect.poll(async () => (await node.boundingBox())!.width).toBeGreaterThan(before.width + 20);
+    const after = (await node.boundingBox())!;
+    const surface = (await body.boundingBox())!;
+    expect(Math.abs(surface.height - surface.width * .75)).toBeLessThan(1);
+    expect(Math.abs((left ? after.x + after.width : after.x) - (left ? before.x + before.width : before.x))).toBeLessThan(2);
+    expect(Math.abs((top ? after.y + after.height : after.y) - (top ? before.y + before.height : before.y))).toBeLessThan(2);
+    await expect(frame.locator('#count')).toHaveText('1');
+  }
+  await clickControl(page, '#add');
+  await expect(frame.locator('#count')).toHaveText('2');
+  await expect(node.locator('.sc-interactive-frame-wrap')).not.toHaveClass(/is-paused/);
+  await page.screenshot({ path: info.outputPath('interactive-resized.png') });
+});
+
 test('embedded controls show the same brief pointer-press feedback as app controls', async ({ page }) => {
   await seed(page);
   const frame = page.frameLocator('iframe[title="Interactive program"]');
@@ -275,4 +308,89 @@ test('pinching over an interactive frame zooms the canvas, not the browser page'
   await clickControl(page, '#add');
   await expect(page.frameLocator('iframe[title="Interactive program"]').locator('#count')).toHaveText('1');
   await page.screenshot({ path: info.outputPath('pinch-canvas-not-page.png') });
+});
+
+test('generation and capability probes are silent without muting finished programs', async ({ page }) => {
+  test.setTimeout(90_000);
+  // Observe the native output boundary before the host installs its sandbox
+  // hooks. Never play a test tone or speak to the person running this suite.
+  await page.addInitScript(() => {
+    const win = window as any;
+    win.audioTestRoutes = [];
+    win.audioTestSpeech = [];
+    const connect = AudioNode.prototype.connect;
+    AudioNode.prototype.connect = function (this: AudioNode, ...args: any[]) {
+      win.audioTestRoutes.push({ from: this, to: args[0] });
+      return Reflect.apply(connect, this, args);
+    } as AudioNode['connect'];
+    if (typeof SpeechSynthesis !== 'undefined') SpeechSynthesis.prototype.speak = function (utterance) {
+      win.audioTestSpeech.push(utterance.volume);
+    };
+  });
+  const html = `<!doctype html><html><head><style>
+    body{padding:24px;background:var(--sc-bg);color:var(--sc-text);font:18px sans-serif}
+    button{padding:12px;background:var(--sc-primary)}output{display:block}audio,video{display:none}
+    </style></head><body><button id="play">Start sequencer</button>
+    <output id="gate"></output><output id="media"></output><output id="speech"></output>
+    <output id="offline"></output><output id="chain"></output><output id="ticks">0</output>
+    <output id="clicked">0</output><audio id="parser" autoplay></audio><script>
+    const context=new AudioContext();
+    const output=context.createGain();output.gain.value=0;
+    // A finished node connects directly; a probe adds its private silent gate.
+    // The fixture's own output is also zero, so even a failing test is silent.
+    const chained=output.connect(context.destination)===context.destination;
+    output.disconnect(context.destination);output.connect(context.destination,0,0);
+    const intermediate=context.createGain();output.connect(intermediate);output.disconnect(intermediate);
+    output.connect(intermediate.gain);output.disconnect(intermediate.gain);
+    document.querySelector('#chain').textContent=chained?'preserved':'broken';
+    const audio=new Audio();audio.muted=false;
+    const video=document.createElement('video');video.autoplay=true;video.muted=false;document.body.append(video);
+    const detached=document.createElement('audio');detached.muted=false;
+    let clicks=0,ticks=0;
+    function report(){
+      const routes=window.audioTestRoutes.filter(r=>r.to===context.destination);
+      document.querySelector('#gate').textContent=routes.length&&routes.every(r=>r.from!==output&&r.from.gain.value===0)?'silent':'direct';
+      document.querySelector('#media').textContent=[audio,video,detached,document.querySelector('#parser')].every(m=>m.muted)?'silent':'normal';
+      document.querySelector('#speech').textContent=typeof speechSynthesis==='undefined'?'unavailable':window.audioTestSpeech.at(-1)===0?'silent':'normal';
+    }
+    setInterval(()=>{document.querySelector('#ticks').textContent=String(++ticks)},30);
+    document.querySelector('#play').onclick=()=>{
+      context.resume().catch(()=>{});
+      [audio,video,detached,document.querySelector('#parser')].forEach(m=>{m.muted=false;m.play().catch(()=>{})});
+      if(typeof speechSynthesis!=='undefined'){
+        const utterance=new SpeechSynthesisUtterance('Test');utterance.volume=.8;speechSynthesis.speak(utterance);
+      }
+      document.querySelector('#clicked').textContent=String(++clicks);report();
+    };
+    const offline=new OfflineAudioContext(1,128,44100),source=offline.createConstantSource();
+    source.offset.value=.25;source.connect(offline.destination);source.start();
+    offline.startRendering().then(buffer=>document.querySelector('#offline').textContent=buffer.getChannelData(0)[0]===.25?'preserved':'muted');
+    setTimeout(report,50);
+    </script></body></html>`;
+  await seed(page, true);
+  const result = await page.evaluate(async html => {
+    const get = (window as any).inputExport;
+    return get('checkInteractiveDocument')(html, get('DEFAULT_INTERACTIVE_HOST_STATE').theme, new AbortController().signal,
+      [{ selector: '#play', action: 'click' }], { assertions: [
+        ...['gate', 'media', 'speech'].map(id => ({ selector: `#${id}`, property: 'text', operator: 'equals', expected: 'silent' })),
+        ...['offline', 'chain'].map(id => ({ selector: `#${id}`, property: 'text', operator: 'equals', expected: 'preserved' })),
+        { selector: '#clicked', property: 'text', operator: 'equals', expected: '1' },
+        { selector: '#ticks', property: 'text', operator: 'greaterThan', expected: 0 },
+      ] });
+  }, html);
+  expect(result.errors).toEqual([]);
+  expect(result.ok).toBe(true);
+  expect(result.assertions).toHaveLength(7);
+  expect(result.assertions.every((item: { passed: boolean }) => item.passed)).toBe(true);
+  await expect(page.locator('iframe[title="Checking interactive program"]')).toHaveCount(0);
+
+  await seed(page, false, html);
+  await clickControl(page, '#play');
+  const frame = page.frameLocator('iframe[title="Interactive program"]');
+  await expect(frame.locator('#gate')).toHaveText('direct');
+  await expect(frame.locator('#media')).toHaveText('normal');
+  await expect(frame.locator('#speech')).toHaveText('normal');
+  await expect(frame.locator('#offline')).toHaveText('preserved');
+  await expect(frame.locator('#chain')).toHaveText('preserved');
+  await expect(frame.locator('#clicked')).toHaveText('1');
 });

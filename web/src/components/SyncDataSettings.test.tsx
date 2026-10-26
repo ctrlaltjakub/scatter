@@ -111,16 +111,18 @@ describe('sync connection and history controls', () => {
     expect(screen.getByRole('button', { name: 'History for' })).toHaveTextContent('Project 4');
   });
 
-  it('orders connection controls, API-key syncing, provider summary, then history', () => {
+  it('groups connection controls with their summary, followed by API-key syncing and history', () => {
     useSyncStore.setState(state => ({ config: { ...state.config, provider: 'google-drive', enabled: false } }));
     render(<SyncDataSettings />);
     const device = screen.getByLabelText("This device's name");
     const keys = screen.getByRole('switch', { name: /Sync model-provider API keys/ });
     const provider = screen.getByText('Provider');
     const history = screen.getByText('Cloud snapshot history');
-    expect(device.compareDocumentPosition(keys) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(keys.compareDocumentPosition(provider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(provider.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(device.compareDocumentPosition(provider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(provider.compareDocumentPosition(keys) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(keys.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(device.closest('.settings-card')).toBe(provider.closest('.settings-card'));
+    expect(keys.closest('.settings-card')).not.toBe(device.closest('.settings-card'));
   });
 
   function renderHistory() {

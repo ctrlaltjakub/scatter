@@ -2,11 +2,16 @@
    scoped: onboarding and node-side model pickers retain their own density. */
 .modal.settings-modal {
   --settings-line: var(--ui-line);
+  --settings-section-bg: color-mix(in srgb, var(--settings-accent) 7%, transparent);
+  --settings-section-line: color-mix(in srgb, var(--settings-accent) 18%, var(--settings-line));
   border-color: var(--settings-line);
   width: 1120px;
   height: min(850px, calc(100dvh - 64px));
   max-height: calc(100dvh - 64px);
   max-width: calc(100vw - 48px);
+}
+[data-theme='mocha'] .modal.settings-modal {
+  --settings-section-bg: color-mix(in srgb, var(--settings-accent) 10%, transparent);
 }
 .settings-modal .settings-header {
   border-color: var(--settings-line);
@@ -196,12 +201,38 @@
   color: var(--subtext0);
   line-height: 1.5;
 }
-.settings-section + .settings-section {
-  border-top: 1px solid var(--settings-line);
-  padding-top: 26px;
-}
 .settings-section {
   margin-bottom: 28px;
+}
+.settings-modal :is(.settings-section, .settings-card, .settings-collapsible) {
+  padding: 20px;
+  margin: 0 0 16px;
+  min-width: 0;
+  border: 1px solid var(--settings-section-line);
+  border-radius: var(--r-lg);
+  background: var(--settings-section-bg);
+}
+.settings-modal :is(.settings-section, .settings-card) > :last-child {
+  margin-bottom: 0;
+}
+.settings-modal .settings-collapsible {
+  padding-block: 8px;
+}
+.settings-modal .settings-collapsible-trigger {
+  font-size: 15px;
+  padding-block: 10px;
+}
+.settings-modal .settings-connections .settings-providers-heading {
+  margin-top: 0;
+}
+.settings-modal .settings-callout + .settings-card {
+  margin-top: 16px;
+}
+.settings-modal .settings-callout + .settings-callout { margin-top: 12px; }
+.settings-modal .settings-card > .settings-toggle-row:first-child { border-top: 0; }
+.settings-modal :is(.settings-model-guide > h3, .sync-settings-title, .sync-history-heading) {
+  font-size: 15px;
+  font-weight: 600;
 }
 .settings-section-heading {
   margin-bottom: 17px;
@@ -994,9 +1025,9 @@ dialog.local-model-guide::backdrop { background: color-mix(in oklab, var(--crust
   border-left: 2px solid var(--overlay0);
 }
 .settings-modal .sync-settings {
-  padding: 20px;
-  background: var(--tint-1);
-  border-color: var(--settings-line);
+  padding: 0;
+  background: none;
+  border: 0;
 }
 .settings-modal .sync-webdav-fields {
   margin-left: 0;
@@ -1008,22 +1039,14 @@ dialog.local-model-guide::backdrop { background: color-mix(in oklab, var(--crust
 }
 .settings-modal .sync-summary-grid {
   margin-block: 18px;
-  padding-block: 15px;
-  border-block: 1px solid var(--settings-line);
+  padding-block: 15px 0;
+  border-top: 1px solid var(--settings-line);
 }
 .settings-modal .sync-summary-grid strong {
   font-size: 13px;
   margin-top: 5px;
 }
-.settings-modal .sync-summary-grid:has(+ .sync-history) {
-  border-bottom: 0;
-  margin-bottom: 0;
-  padding-bottom: 0;
-}
-.settings-modal .sync-history {
-  margin-top: 24px;
-  padding-top: 22px;
-}
+.settings-modal .sync-key-setting.settings-card { padding-block: 12px 20px; }
 .settings-sync-providers {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1159,11 +1182,6 @@ dialog.local-model-guide::backdrop { background: color-mix(in oklab, var(--crust
 .settings-modal .settings-prompt-footer .input {
   min-width: 150px;
 }
-.settings-context-shortcuts-heading {
-  margin: 28px 0 8px;
-  font-size: 15px;
-  font-weight: 700;
-}
 .settings-modal .settings-shortcuts .shortcut-label {
   white-space: normal;
   width: 46%;
@@ -1186,10 +1204,6 @@ dialog.local-model-guide::backdrop { background: color-mix(in oklab, var(--crust
 }
 .settings-dev-sections {
   margin-top: 20px;
-}
-.settings-dev-sections > div > div > button {
-  padding: 18px 0 !important;
-  font-size: 14px !important;
 }
 .settings-slider-row {
   display: flex;
@@ -1324,9 +1338,8 @@ dialog.local-model-guide::backdrop { background: color-mix(in oklab, var(--crust
   .settings-modal .sc-model-badges {
     max-width: 42%;
   }
-  .settings-modal .sync-settings {
-    padding: 16px;
-  }
+  .settings-modal :is(.settings-section, .settings-card) { padding: 16px; }
+  .settings-modal .settings-collapsible { padding-inline: 16px; }
   .settings-modal .sync-webdav-fields {
     grid-template-columns: 1fr;
   }

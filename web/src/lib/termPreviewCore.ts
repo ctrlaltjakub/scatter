@@ -28,11 +28,11 @@ export function termPreviewFingerprint(version: NodeVersion): string {
 /** Re-marking changes delimiters, not meaning. Reuse only verified caches with
  * the exact same prose, subject and node kind; real edits still invalidate them.
  * Keep unmarked entries too, so a later redo can mark the term again for free. */
-export function reusableTermPreviews(version: NodeVersion, candidates: readonly NodeVersion[]): NodeVersion['termPreviews'] {
+export function reusableTermPreviews(version: NodeVersion, candidates: readonly NodeVersion[], retryFailed = false): NodeVersion['termPreviews'] {
   const fingerprint = termPreviewFingerprint(version);
   const current = version.termPreviews?.fingerprint === fingerprint ? version.termPreviews : undefined;
   let entries = current?.entries;
-  const exhaustedTerms = new Set(current?.exhaustedTerms ?? []);
+  const exhaustedTerms = new Set(retryFailed ? [] : current?.exhaustedTerms ?? []);
   let plain: string | undefined;
   for (const candidate of candidates) {
     const cache = candidate.termPreviews;
@@ -49,10 +49,14 @@ export function reusableTermPreviews(version: NodeVersion, candidates: readonly 
       if (entries === current?.entries) entries = Object.assign(Object.create(null), entries) as Record<string, string>;
       entries![key] = value;
     }
-    if (candidate.body === version.body) for (const term of cache.exhaustedTerms ?? []) exhaustedTerms.add(term);
+    // Once this version has its own cache, its retry state is authoritative.
+    // Older failed attempts must not suppress an explicit retry on this version.
+    if (!retryFailed && !current && candidate.body === version.body) {
+      for (const term of cache.exhaustedTerms ?? []) exhaustedTerms.add(term);
+    }
   }
-  if (entries === current?.entries && exhaustedTerms.size === (current?.exhaustedTerms?.length ?? 0)) return current;
-  return entries || exhaustedTerms.size ? { fingerprint, entries: entries ?? {},
+  if (!retryFailed && entries === current?.entries && exhaustedTerms.size === (current?.exhaustedTerms?.length ?? 0)) return current;
+  return retryFailed || entries || exhaustedTerms.size ? { fingerprint, entries: entries ?? {},
     ...(exhaustedTerms.size ? { exhaustedTerms: [...exhaustedTerms] } : {}) } : undefined;
 }
 

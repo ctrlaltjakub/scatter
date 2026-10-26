@@ -31,7 +31,7 @@ describe('chat history no longer needs AI turn summaries', () => {
     expect(changed.versions).toHaveLength(1);
     expect(changed.versions[0]).toMatchObject({ body: '**[[Working memory]]** matters.', header: 'My saved answer', contentType: 'answer' });
     expect(secondaryTaskCompletion).toHaveBeenCalledTimes(1);
-    expect(generateTermPreviews).toHaveBeenCalledWith(node.id, 2);
+    expect(generateTermPreviews).toHaveBeenCalledWith(node.id, 2, true);
     expect(useGraphStore.temporal.getState().pastStates).toHaveLength(1);
     useGraphStore.temporal.getState().undo();
     expect(useGraphStore.getState().project?.nodes[node.id]?.versions[0]?.body).toBe('**Working memory** matters.');

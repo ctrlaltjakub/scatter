@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  fitMediaToWidth, aspectResize, chooserWidth,
+  fitMediaToWidth, aspectResize, chooserWidth, mediaHeightPerWidth,
   MEDIA_MIN_W, MEDIA_SPAWN_MAX_W, CHOOSER_MIN_W, CHOOSER_MAX_W,
 } from './mediaSizing';
 
@@ -41,6 +41,12 @@ describe('manual resize has no upper size limit', () => {
 });
 
 describe('aspectResize', () => {
+  it('keeps unknown or invalid media dimensions locked to the same fallback as initial attachment', () => {
+    for (const [w, h] of [[0, 0], [1920, 0], [0, 1080], [NaN, 720], [1920, Infinity], [-1, 720]]) {
+      expect(mediaHeightPerWidth(w!, h!)).toBe(9 / 16);
+      expect(aspectResize(w!, h!, 800)).toEqual({ width: 800, bodyMaxHeight: 450 });
+    }
+  });
   it('preserves the aspect ratio at an arbitrary proposed width', () => {
     const r = aspectResize(1600, 900, 600);
     expect(r.width).toBe(600);

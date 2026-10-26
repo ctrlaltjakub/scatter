@@ -15,6 +15,15 @@ import {
 const VALID = '<!doctype html><html><head></head><body><button>Try it</button><script>document.body.dataset.ready="yes"</script></body></html>';
 
 describe('interactive document isolation', () => {
+  it('mutes only verification documents, before generated code executes', () => {
+    const normal = buildInteractiveSrcDoc(VALID, 'finished');
+    const muted = buildInteractiveSrcDoc(VALID, 'verification', undefined, undefined, { muteAudio: true });
+    expect(normal).not.toContain('silentDestination');
+    expect(muted).toContain('silentDestination');
+    expect(muted.indexOf('silentDestination')).toBeLessThan(muted.indexOf('dataset.ready'));
+    expect(muted).toContain('SpeechSynthesis.prototype.speak');
+  });
+
   it('accepts a complete self-contained document and strips a markdown fence', () => {
     expect(validateInteractiveDocument(`\`\`\`html\n${VALID}\n\`\`\``)).toBe(VALID);
   });
@@ -66,6 +75,16 @@ describe('interactive document isolation', () => {
     expect(preferredInteractiveViewport('<meta name="scatter-viewport" content="width=99999,height=1">')).toEqual({ width: 1600, height: 480 });
     expect(interactiveDisplaySize({ viewportWidth: 720, viewportHeight: 960 })).toEqual({ width: 573, height: 764 });
     expect(interactiveDisplaySize()).toEqual({ width: 764, height: 573 });
+  });
+
+  it('scales only the canvas presentation and guards invalid saved sizes', () => {
+    const viewport = { viewportWidth: 960, viewportHeight: 720 };
+    expect(interactiveDisplaySize(viewport, false, 400)).toEqual({ width: 400, height: 300 });
+    expect(interactiveDisplaySize(viewport, true, 400)).toEqual({ width: 960, height: 720 });
+    expect(interactiveDisplaySize(viewport, false, 20)).toEqual({ width: 280, height: 210 });
+    for (const bad of [0, -1, NaN, Infinity]) {
+      expect(interactiveDisplaySize(viewport, false, bad)).toEqual({ width: 764, height: 573 });
+    }
   });
 
   it('can require the core Scatter design tokens for newly generated programs', () => {
