@@ -16,6 +16,7 @@ import { VerletRopeSim, type RopeConfig, type RopeRealNode } from './verletRope'
 import type { PhysicsConfig } from '@/store/types';
 import type { SizeWake } from './physicsClient';
 import type { SourcePort } from './sourcePort';
+import { localActivity, LAYOUT_ALPHA_MIN } from './localActivity';
 
 let cfg: PhysicsConfig = { ...DEFAULT_PHYSICS_CONFIG };
 
@@ -433,9 +434,24 @@ export function endLoadFrictionForTest(): void {
   frictionWakeMs = null;
 }
 
-function rebuild() {
+/** Keep the timer alive without reheating unrelated layout forces. */
+function scheduleTicks(alpha: number) {
+  sim?.alpha(Math.max(sim.alpha(), alpha)).restart();
+}
+
+function wakeNodes(ids: Iterable<string>, alpha: number) {
+  for (const id of ids) {
+    const n = realNode(id);
+    if (n) n.layoutAlpha = Math.max(n.layoutAlpha ?? 0, alpha);
+  }
+  scheduleTicks(alpha);
+}
+
+function rebuild(alpha = 1) {
   if (sim) sim.stop();
+  for (const n of nodes) n.layoutAlpha = alpha;
   sim = forceSimulation(nodes)
+    .force('activity', localActivity(links, cfg, draggingIds, isLinked))
     .force('linkedRepel', pairwiseRepel(
       cfg.linkedRepelStrength,
       cfg.repelRange,
@@ -478,9 +494,11 @@ function rebuild() {
     .force('velocityCap', velocityCap(420 / 4))
     .alphaDecay(cfg.alphaDecay)
     .velocityDecay(cfg.velocityDecay)
-    .alphaMin(0.005)
+    .alpha(alpha)
+    .alphaMin(LAYOUT_ALPHA_MIN)
     .on('tick', runTickSideEffects);
   for (const n of nodes) {
+    if (draggingIds.has(n.id)) continue;
     if (n.frozen) { n.fx = n.x; n.fy = n.y; } else { n.fx = null; n.fy = null; }
   }
 }
@@ -495,6 +513,7 @@ export function dispatchMessage(m: InMsg): void {
       break;
     }
     case 'init': {
+      draggingIds.clear();
       lastEmittedNode.clear();
       lastEmittedAnchors.clear();
       // Start each project (and each headless test) from a self-contained
@@ -537,17 +556,9 @@ export function dispatchMessage(m: InMsg): void {
         lastEmittedAnchors.set(arrowId, anchors.map((point) => ({ ...point })));
       }
       rebuildLinkedEdges();
-      rebuild();
-      // Force alpha to 0 right after init so the saved positions don't drift.
-      // forceSimulation defaults to alpha=1 and ticks ~130 times before
-      // quieting (alphaDecay 0.04 → alphaMin 0.005); during those ticks
-      // every force fires at full strength on already-settled positions and
-      // micro-imbalances accumulate into a visible "gentle nudge" on every
-      // page reload. Setting alpha=0 makes the next tick stop the timer
-      // immediately (alpha < alphaMin), so the rope/node positions stay
-      // exactly where they were saved. User interactions (drag, resize,
-      // add-node, etc.) raise alpha again via .alpha(...).restart().
-      sim?.alpha(0);
+      rebuild(0);
+      // Start both the shared timer and local layout activity asleep so
+      // restored positions stay exact until a relevant interaction wakes them.
       // R6.5 — arm the friction ramp; it starts when the sim next wakes.
       frictionArmed = true;
       frictionWakeMs = null;
@@ -580,6 +591,7 @@ export function dispatchMessage(m: InMsg): void {
     }
     case 'remove-nodes': {
       const drop = new Set(m.ids);
+      for (const id of drop) draggingIds.delete(id);
       nodes = nodes.filter(n => !drop.has(n.id));
       const removedArrowIds = new Set<string>();
       links = links.filter(l => {
@@ -611,11 +623,8 @@ export function dispatchMessage(m: InMsg): void {
           // Only release the pin when no other reason holds it (active drag).
           n.fx = null; n.fy = null;
         }
-        // Gentle kick — pin/unpin doesn't actually need a graph-wide
-        // re-equilibration, just enough alpha for the toggled node's own
-        // forces to apply. A heavier kick (e.g. 0.3) visibly shakes
-        // every other unpinned node for ~30 ticks before settling.
-        sim?.alpha(0.05).restart();
+        // Pin/unpin only wakes this node and its physical neighborhood.
+        wakeNodes([m.id], 0.05);
       }
       break;
     }
@@ -662,7 +671,7 @@ export function dispatchMessage(m: InMsg): void {
           const targetAlpha = m.wake === 'gentle'
             ? Math.min(0.08, Math.max(0.02, maxDelta / 600))
             : normalAlpha;
-          sim?.alpha(Math.max(sim.alpha(), targetAlpha)).restart();
+          wakeNodes([m.id], targetAlpha);
         }
       }
       break;
@@ -680,14 +689,9 @@ export function dispatchMessage(m: InMsg): void {
         // Mark as dragging so the rope sim treats this rect as invisible
         // until drag-end. Idempotent on repeat drag-move.
         draggingIds.add(m.id);
-        // Gentle alpha kick rather than full re-energization. Each
-        // drag-move arrives at ~60 Hz, and the old 0.6 value kept every
-        // force (pairwiseRepel, rectLink) firing at near-peak strength
-        // continuously — which, when chain-pushing through multiple
-        // unpinned nodes, produced sustained oscillation. 0.15 still
-        // lets rectCollide cascade the chain through but with enough
-        // damping that the system actually settles between ticks.
-        sim?.alpha(0.15).restart();
+        // Reheat only this node's physical neighborhood. The timer is
+        // shared, but remote clusters keep their own cooling schedule.
+        wakeNodes([m.id], 0.15);
       }
       break;
     }
@@ -735,22 +739,22 @@ export function dispatchMessage(m: InMsg): void {
       }
       // No rebuild() — fx/fy live on the SimNode and forces read them by
       // reference each tick, same as size.
-      sim?.alpha(0.3).restart();
+      wakeNodes(ids, 0.3);
       break;
     }
     case 'arrow-drag-start': {
       verletRope.startAnchorDrag(m.arrowId, m.x, m.y);
-      sim?.alpha(0.3).restart();
+      scheduleTicks(0.3);
       break;
     }
     case 'arrow-drag-move': {
       verletRope.moveDraggedAnchor(m.arrowId, m.x, m.y);
-      sim?.alpha(0.3).restart();
+      scheduleTicks(0.3);
       break;
     }
     case 'arrow-drag-end': {
       verletRope.endAnchorDrag(m.arrowId);
-      sim?.alpha(0.2).restart();
+      scheduleTicks(0.2);
       break;
     }
     case 'set-physics-config': {
@@ -767,18 +771,17 @@ export function dispatchMessage(m: InMsg): void {
       if (changed) {
         cfg = next;
         verletRope.markAllForReroute();
-        rebuild();
+        rebuild(0.3);
         // The load-time push of the user's saved (non-default) config
         // DOES wake the sim here — but the R6.5 post-load friction ramp
         // (applied per tick) keeps the woken nodes from visibly drifting
         // while it re-settles. A later slider edit kicks the same way,
         // after the ramp has ended, so it re-settles normally.
-        sim?.alpha(0.3).restart();
       }
       break;
     }
     case 'pause': sim?.stop(); break;
-    case 'resume': sim?.alpha(0.1).restart(); break;
+    case 'resume': wakeNodes(nodes.map(n => n.id), 0.1); break;
   }
 }
 

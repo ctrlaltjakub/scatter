@@ -18,6 +18,17 @@ export interface SimNode extends SimulationNodeDatum {
   frozen?: boolean;
   width?: number;
   height?: number;
+  /** Worker-only activity; undefined keeps standalone forces using d3 alpha. */
+  layoutAlpha?: number;
+}
+
+/** A collision can create a new contact within a solver pass. Carry activity
+ * to the newly touched movable node immediately; never through a fixed pin. */
+function pairActivity(a: SimNode, b: SimNode, alpha: number): number {
+  const local = Math.max(a.layoutAlpha ?? alpha, b.layoutAlpha ?? alpha);
+  if (a.layoutAlpha != null && a.fx == null && a.fy == null) a.layoutAlpha = local;
+  if (b.layoutAlpha != null && b.fx == null && b.fy == null) b.layoutAlpha = local;
+  return local;
 }
 
 export interface SimLink extends SimulationLinkDatum<SimNode> {
@@ -69,6 +80,7 @@ export function rectCollide(defaultWidth: number, defaultHeight: number, padding
         for (let j = i + 1; j < nodes.length; j++) {
           const b = nodes[j]!;
           if (b.x == null || b.y == null) continue;
+          if (a.layoutAlpha === 0 && b.layoutAlpha === 0) continue;
           const bW = b.width ?? defaultWidth;
           const bH = b.height ?? defaultHeight;
           const bLeft = b.x - padding;
@@ -78,6 +90,7 @@ export function rectCollide(defaultWidth: number, defaultHeight: number, padding
           const overlapX = Math.min(aRight, bRight) - Math.max(aLeft, bLeft);
           const overlapY = Math.min(aBottom, bBottom) - Math.max(aTop, bTop);
           if (overlapX > 0 && overlapY > 0) {
+            if (pairActivity(a, b, 1) === 0) continue;
             const aCx = (aLeft + aRight) / 2;
             const aCy = (aTop + aBottom) / 2;
             const bCx = (bLeft + bRight) / 2;
@@ -225,6 +238,7 @@ export function rectLink(
       const a = nodeById.get(sourceId);
       const b = nodeById.get(targetId);
       if (!a || !b || a.x == null || a.y == null || b.x == null || b.y == null) continue;
+      if (a.layoutAlpha === 0 && b.layoutAlpha === 0) continue;
       const aW = a.width ?? defaultWidth;
       const aH = a.height ?? defaultHeight;
       const bW = b.width ?? defaultWidth;
@@ -242,7 +256,7 @@ export function rectLink(
       const ux = dxC / distC, uy = dyC / distC;
       // Positive error = too far apart, pull together. Negative = too close, push apart.
       const error = borderDist - targetBorderDistance;
-      const correction = error * strength * alpha;
+      const correction = error * strength * pairActivity(a, b, alpha);
       if (a.fx == null) a.vx = (a.vx ?? 0) + ux * correction;
       if (a.fy == null) a.vy = (a.vy ?? 0) + uy * correction;
       if (b.fx == null) b.vx = (b.vx ?? 0) - ux * correction;
@@ -379,6 +393,7 @@ export function pairwiseRepel(
       for (let j = i + 1; j < nodes.length; j++) {
         const b = nodes[j]!;
         if (b.x == null || b.y == null) continue;
+        if (a.layoutAlpha === 0 && b.layoutAlpha === 0) continue;
         if (!pairFilter(a.id, b.id)) continue;
         const bW = b.width ?? 420;
         const bH = b.height ?? 120;
@@ -402,7 +417,7 @@ export function pairwiseRepel(
         const ux = distC < 0.001 ? 1 : dxC / distC;
         const uy = distC < 0.001 ? 0 : dyC / distC;
         const falloff = 1 - borderDist / range;
-        const mag = -strength * alpha * falloff;
+        const mag = -strength * pairActivity(a, b, alpha) * falloff;
         if (a.fx == null) a.vx = (a.vx ?? 0) - ux * mag;
         if (a.fy == null) a.vy = (a.vy ?? 0) - uy * mag;
         if (b.fx == null) b.vx = (b.vx ?? 0) + ux * mag;
