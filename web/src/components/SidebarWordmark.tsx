@@ -79,7 +79,8 @@ export function SidebarWordmark({
   }, [hovered, palette]);
 
   return (
-    <a href={LANDING_URL} className="app-wordmark" data-link-control aria-label="Scatter landing page"
+    <a href={LANDING_URL} target="_blank" rel="noopener noreferrer"
+      className="app-wordmark" data-link-control aria-label="Scatter landing page (opens in a new tab)"
       onMouseEnter={() => { setHovered(true); setPattern(generateWordmarkPattern(palette)); }}
       onMouseLeave={() => setHovered(false)}
       onFocus={() => setPattern(generateWordmarkPattern(palette))}>

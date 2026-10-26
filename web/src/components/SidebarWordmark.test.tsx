@@ -24,9 +24,11 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('shared sidebar wordmark', () => {
   it('opts out of underlined text links and rerandomizes on hover and keyboard focus', () => {
     const { container } = render(<SidebarWordmark />);
-    const link = screen.getByRole('link', { name: 'Scatter landing page' });
+    const link = screen.getByRole('link', { name: 'Scatter landing page (opens in a new tab)' });
     expect(link).toHaveAttribute('data-link-control');
     expect(link).toHaveAttribute('href', 'https://www.scatter.study/?landing=1');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     const initial = colors(container);
     fireEvent.mouseEnter(link);
     expect(colors(container)).not.toEqual(initial);

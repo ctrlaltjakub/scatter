@@ -13,6 +13,7 @@ export function releaseChannel(
 export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0';
 export const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
 export const LANDING_URL = 'https://www.scatter.study/?landing=1';
+export const REPOSITORY_URL = 'https://github.com/ctrlaltjakub/scatter';
 export const appPath = (path = '/') => `${APP_BASE_PATH}${path === '/' ? '' : path}` || '/';
 
 export function markAppVisited() {
