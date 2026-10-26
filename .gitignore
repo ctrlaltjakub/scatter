@@ -39,3 +39,4 @@ AGENTS.md
 **/recordings/
 *.trace.zip
 *.tsbuildinfo
+.next*/

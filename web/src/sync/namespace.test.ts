@@ -52,10 +52,10 @@ describe('release-channel cloud isolation', () => {
       .mockResolvedValueOnce(new Response('', { status: 200 }));
     const provider = new GoogleDriveSyncProvider();
     expect(await provider.list()).toEqual([{ id: 'beta', name, namespace: 'beta' }]);
-    expect(String(fetcher.mock.calls[0][0])).toContain(encodeURIComponent('scatter-beta-v1.'));
+    expect(String(fetcher.mock.calls[0]![0])).toContain(encodeURIComponent('scatter-beta-v1.'));
     expect((await provider.changes('cursor')).objects).toEqual([{ id: 'beta', name, namespace: 'beta' }]);
     const written = await provider.write(name, new Blob(['x']));
-    expect(await (fetcher.mock.calls[2][1]!.body as Blob).text()).toContain(betaName);
+    expect(await (fetcher.mock.calls[2]![1]!.body as Blob).text()).toContain(betaName);
     await provider.read(written);
     await provider.remove(written);
     expect(await provider.indexScope()).toMatch(/:beta$/);
