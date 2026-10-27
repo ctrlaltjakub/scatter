@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   answerVersion, appendChatAnswer, captureChatParent, chatInitialBodyHeight,
   chatParentPending, conversationPath, createChatNode, forkChatConversation,
-  recoverChatNode, removeLastChatTurn, selectLatestChatAlternative, updateChatAnswer,
+  recoverChatNode, removeChatAnswer, removeLastChatTurn, selectLatestChatAlternative, updateChatAnswer,
 } from './model';
 
 const initial = () => createChatNode({ id: 'chat', createdAt: 1,
@@ -133,6 +133,62 @@ describe('chat conversation ownership', () => {
     expect(deleted.versions).toHaveLength(2);
     expect(deleted.chat?.memory).toBeUndefined();
     expect(node.chat?.turns).toHaveLength(2);
+  });
+
+  it.each([[2, 3], [3, 2], [4, 3]])('deletes answer %s and selects its nearest preceding survivor (%s)', (deletedAt, selectedAt) => {
+    let node = first();
+    for (const createdAt of [3, 4]) node = appendChatAnswer(node, {
+      turnId: 'a', createdAt, question: `Question ${createdAt}`, replaceLatest: true,
+    });
+    node = { ...selectLatestChatAlternative(node, { turnId: 'a', versionCreatedAt: deletedAt }),
+      generating: false, currentVersionIndex: deletedAt - 1 };
+    const original = structuredClone(node);
+    const next = removeChatAnswer(node, { turnId: 'a', versionCreatedAt: deletedAt });
+    expect(next.chat?.turns).toEqual([{ id: 'a', versionCreatedAts: [2, 3, 4].filter(at => at !== deletedAt),
+      selectedVersionCreatedAt: selectedAt }]);
+    expect(next.versions[next.currentVersionIndex]?.createdAt).toBe(selectedAt);
+    expect(next.versions).toEqual(original.versions.filter(version => version.createdAt !== deletedAt));
+    expect(node).toEqual(original);
+  });
+
+  it('keeps other turns, metadata and compaction that does not cover the deleted alternative', () => {
+    let node = updateChatAnswer(first(), { turnId: 'a', versionCreatedAt: 2 }, {
+      language: 'ar', body: '**المعرفة** — 日本語 — हिन्दी — café `value.x`',
+      sources: [{ n: 1, url: 'https://example.com' }],
+    }, { state: 'complete' });
+    node = appendChatAnswer(node, { turnId: 'b', createdAt: 3, question: 'Follow-up' });
+    node = appendChatAnswer(node, { turnId: 'b', createdAt: 4, question: 'Edited follow-up', replaceLatest: true });
+    node = { ...node, generating: false, currentVersionIndex: 1 };
+    const memory = { id: 'm', createdAt: 5, summary: 'First answer', coveredPath: conversationPath(node).slice(0, 1) };
+    node.chat!.memory = memory;
+    node.chat!.compactions = [{ memory }];
+    const next = removeChatAnswer(node, { turnId: 'b', versionCreatedAt: 3 });
+    expect(next.versions[next.currentVersionIndex]).toBe(node.versions[1]);
+    expect(next.chat?.turns[0]).toBe(node.chat?.turns[0]);
+    expect(next.chat?.turns[1]?.selectedVersionCreatedAt).toBe(4);
+    expect(next.chat?.memory).toBe(memory);
+    expect(next.chat?.compactions).toEqual([{ memory }]);
+    expect(next.versions.at(-1)?.chat?.contextPath).toEqual([{ turnId: 'a', versionCreatedAt: 2 }]);
+  });
+
+  it('drops compaction that includes a deleted answer, without touching remaining answer data', () => {
+    let node = appendChatAnswer(first(), { turnId: 'a', createdAt: 3, question: 'Again', replaceLatest: true });
+    const memory = { id: 'm', createdAt: 4, summary: 'Removed answer', coveredPath: conversationPath(node) };
+    node = { ...node, generating: false, chat: { ...node.chat!, memory, compactions: [{ memory }] } };
+    const next = removeChatAnswer(node, { turnId: 'a', versionCreatedAt: 3 });
+    expect(next.chat?.memory).toBeUndefined();
+    expect(next.chat?.compactions).toEqual([]);
+    expect(next.versions[1]).toBe(node.versions[1]);
+  });
+
+  it('rejects missing, historical and final-answer deletion; never silently deletes the turn', () => {
+    let node = appendChatAnswer(first(), { turnId: 'a', createdAt: 3, question: 'Again', replaceLatest: true });
+    expect(() => removeChatAnswer(node, { turnId: 'a', versionCreatedAt: 3 })).toThrow(/Stop/);
+    node = { ...appendChatAnswer(node, { turnId: 'b', createdAt: 4, question: 'Next' }), generating: false };
+    for (const ref of [{ turnId: 'b', versionCreatedAt: 4 }, { turnId: 'a', versionCreatedAt: 2 },
+      { turnId: 'b', versionCreatedAt: 999 }, { turnId: 'missing', versionCreatedAt: 4 }]) {
+      expect(removeChatAnswer(node, ref)).toBe(node);
+    }
   });
 
   it('recovers interruptions on a copy and never replays jobs', () => {

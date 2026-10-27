@@ -2,16 +2,18 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatAssistantActions, ChatUserActions } from './ChatMessageActions';
 import { appendChatAnswer, createChatNode, updateChatAnswer } from '@/lib/chat/model';
-import { activateChatAnswer, askAboutChatAnswer, deleteLastChatTurn, editLastChatQuestion, forkChat, spawnChatAnswer, submitChat } from '@/lib/chat/actions';
+import { activateChatAnswer, askAboutChatAnswer, deleteChatAnswer, deleteLastChatTurn, editLastChatQuestion, forkChat, spawnChatAnswer, submitChat } from '@/lib/chat/actions';
 import { startFactCheck } from '@/lib/factCheck';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { useFactCheckTaskStore } from '@/store/useFactCheckTaskStore';
 import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 
 vi.mock('@/lib/chat/actions', () => ({ activateChatAnswer: vi.fn(), askAboutChatAnswer: vi.fn(),
-  deleteLastChatTurn: vi.fn(), editLastChatQuestion: vi.fn(), forkChat: vi.fn(() => 'forked-chat'), spawnChatAnswer: vi.fn(), submitChat: vi.fn() }));
+  deleteChatAnswer: vi.fn(), deleteLastChatTurn: vi.fn(), editLastChatQuestion: vi.fn(), forkChat: vi.fn(() => 'forked-chat'), spawnChatAnswer: vi.fn(), submitChat: vi.fn() }));
 vi.mock('@/lib/factCheck', () => ({ factCheckAvailability: () => ({ available: true }),
   startFactCheck: vi.fn(async () => {}), stopFactCheck: vi.fn() }));
+
+const answerProps = { turnId: 'turn', versionCreatedAt: 2, answerCount: 1 };
 
 function version() {
   let node = createChatNode({ id: 'chat', createdAt: 1, position: { x: 0, y: 0 }, bodyHeight: 300 });
@@ -36,9 +38,9 @@ beforeEach(() => {
 
 describe('chat message actions', () => {
   it('only shows editing actions below the latest question', () => {
-    const view = render(<ChatUserActions nodeId="chat" question="Question" latest={false} busy={false} />);
+    const view = render(<ChatUserActions {...answerProps} nodeId="chat" question="Question" latest={false} busy={false} />);
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['Copy text']);
-    view.rerender(<ChatUserActions nodeId="chat" question="Question" latest busy={false} />);
+    view.rerender(<ChatUserActions {...answerProps} nodeId="chat" question="Question" latest busy={false} />);
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }));
     fireEvent.click(screen.getByRole('button', { name: 'Delete turn' }));
@@ -46,8 +48,24 @@ describe('chat message actions', () => {
     expect(submitChat).toHaveBeenCalledWith('chat', { regenerate: true });
     expect(deleteLastChatTurn).toHaveBeenCalledWith('chat');
   });
+  it('deletes the displayed alternative and returns to Delete turn when one answer remains', () => {
+    const displayed = { turnId: 'turn', versionCreatedAt: 3 };
+    const view = render(<ChatUserActions nodeId="chat" question="Edited question" {...displayed} answerCount={3} latest busy={false} />);
+    expect(screen.queryByRole('button', { name: 'Delete turn' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete answer' }));
+    expect(deleteChatAnswer).toHaveBeenCalledWith('chat', displayed);
+    expect(deleteLastChatTurn).not.toHaveBeenCalled();
+    view.rerender(<ChatUserActions {...answerProps} nodeId="chat" question="Question" latest busy={false} />);
+    expect(screen.queryByRole('button', { name: 'Delete answer' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete turn' }));
+    expect(deleteLastChatTurn).toHaveBeenCalledWith('chat');
+  });
+  it('disables answer deletion while generating or compacting', () => {
+    render(<ChatUserActions {...answerProps} nodeId="chat" question="Question" answerCount={2} latest busy />);
+    expect(screen.getByRole('button', { name: 'Delete answer' })).toBeDisabled();
+  });
   it('copies a question verbatim', async () => {
-    render(<ChatUserActions nodeId="chat" question={'Original\nquestion'} latest={false} busy={false} />);
+    render(<ChatUserActions {...answerProps} nodeId="chat" question={'Original\nquestion'} latest={false} busy={false} />);
     fireEvent.click(screen.getByRole('button', { name: 'Copy text' }));
     await screen.findByRole('button', { name: 'Copied' });
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('Original\nquestion');
@@ -73,7 +91,7 @@ describe('chat message actions', () => {
     expect(vi.mocked(activateChatAnswer).mock.invocationCallOrder[0]).toBeLessThan(vi.mocked(startFactCheck).mock.invocationCallOrder[0]!);
   });
   it('keeps Copy available while edits and generation actions are blocked', () => {
-    render(<ChatUserActions nodeId="chat" question="Question" latest busy />);
+    render(<ChatUserActions {...answerProps} nodeId="chat" question="Question" latest busy />);
     expect(screen.getByRole('button', { name: 'Copy text' })).toBeEnabled();
     for (const name of ['Edit', 'Regenerate', 'Delete turn']) expect(screen.getByRole('button', { name })).toBeDisabled();
   });
@@ -90,7 +108,7 @@ describe('chat message actions', () => {
   });
   it('reports clipboard failure without an unhandled rejection', async () => {
     vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('Denied'));
-    render(<ChatUserActions nodeId="chat" question="Question" latest={false} busy={false} />);
+    render(<ChatUserActions {...answerProps} nodeId="chat" question="Question" latest={false} busy={false} />);
     fireEvent.click(screen.getByRole('button', { name: 'Copy text' }));
     expect(await screen.findByRole('button', { name: 'Copy failed' })).toHaveAttribute('data-tip', expect.stringContaining('manually'));
   });

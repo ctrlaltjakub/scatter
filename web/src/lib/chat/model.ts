@@ -169,6 +169,33 @@ export function selectLatestChatAlternative(node: ScatterNode, ref: ChatAnswerRe
     ? { ...turn, selectedVersionCreatedAt: ref.versionCreatedAt } : turn) } };
 }
 
+/** Only the latest turn is editable: older answers may be in later context paths.
+ * The last remaining answer is deliberately left to the whole-turn action. */
+export function removeChatAnswer(node: ScatterNode, ref: ChatAnswerRef): ScatterNode {
+  const last = node.chat?.turns.at(-1);
+  if (!node.chat || last?.id !== ref.turnId || last.versionCreatedAts.length < 2
+    || !last.versionCreatedAts.includes(ref.versionCreatedAt) || !answerVersion(node, ref)) return node;
+  if (node.generating) throw new Error('Stop generating before deleting an answer.');
+  const deletedIndex = last.versionCreatedAts.indexOf(ref.versionCreatedAt);
+  const versionCreatedAts = last.versionCreatedAts.filter(createdAt => createdAt !== ref.versionCreatedAt);
+  const selectedVersionCreatedAt = last.selectedVersionCreatedAt === ref.versionCreatedAt
+    ? versionCreatedAts[Math.max(0, deletedIndex - 1)]! : last.selectedVersionCreatedAt;
+  const versions = node.versions.filter(version => version.createdAt !== ref.versionCreatedAt);
+  const displayedAt = node.versions[node.currentVersionIndex]?.createdAt;
+  const affectedMemory = (memory: ChatConversation['memory']) => memory?.coveredPath.some(item =>
+    item.turnId === ref.turnId && item.versionCreatedAt === ref.versionCreatedAt);
+  return { ...node, versions,
+    currentVersionIndex: Math.max(0, versions.findIndex(version => version.createdAt ===
+      (displayedAt === ref.versionCreatedAt ? selectedVersionCreatedAt : displayedAt))),
+    chat: { ...node.chat,
+      turns: node.chat.turns.map(turn => turn.id === ref.turnId ? { ...turn, versionCreatedAts, selectedVersionCreatedAt } : turn),
+      memory: affectedMemory(node.chat.memory) ? undefined : node.chat.memory,
+      compactions: node.chat.compactions.filter(item => !affectedMemory(item.memory))
+        .map(item => affectedMemory(item.previousMemory) ? { ...item, previousMemory: undefined } : item),
+    },
+  };
+}
+
 export function removeLastChatTurn(node: ScatterNode): ScatterNode {
   if (!node.chat || !node.chat.turns.length) return node;
   if (node.generating) throw new Error('Stop generating before deleting the last turn.');

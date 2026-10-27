@@ -22,7 +22,7 @@ import { waitForProjectSources } from '@/lib/sourceProcessing';
 import { buildSources, extractInlineCitations, placeCitationMarkersReliable,
   renumberCitations, stripIncompleteCitationTail } from '@/lib/citations';
 import type { Citation } from '@/providers/types';
-import type { ChatAnswerRef, ChatAttachment, ChatMemory, ChatParentSnapshot, ChatQuestionReference } from '@/store/chatTypes';
+import type { ChatAnswerRef, ChatAttachment, ChatDraft, ChatMemory, ChatParentSnapshot, ChatQuestionReference } from '@/store/chatTypes';
 import type { Arrow, FactCheckReport, ImageQuestionContext, NodeSource, NodeVersion, ScatterNode } from '@/store/types';
 import { useNodeTextSelectionStore, type NodeTextSelection } from '@/store/useNodeTextSelectionStore';
 import { chatSelectionReference } from './selectionReference';
@@ -31,7 +31,7 @@ import { prepareImageQuestion } from '@/lib/imageRegionInput';
 import { secondaryTaskCompletion } from '@/lib/secondaryTaskCompletion';
 import { appendChatAnswer, answerVersion, captureChatParent, chatInitialBodyHeight,
   conversationPath, createChatNode, CHAT_NODE_WIDTH, selectLatestChatAlternative, updateChatAnswer,
-  removeLastChatTurn, forkChatConversation, validMemoryForPath } from './model';
+  removeChatAnswer, removeLastChatTurn, forkChatConversation, validMemoryForPath } from './model';
 import { chatAvailability } from './availability';
 import { buildChatContext, chatSystemPrompt, estimateMessagesTokens, compactionPrefix,
   commitChatMemory, undoChatCompaction, chatCompactionBatches, estimateChatTokens } from './context';
@@ -564,12 +564,29 @@ export function reverseChatCompaction(nodeId: string): void {
 export function deleteLastChatTurn(nodeId: string): void {
   const graph = useGraphStore.getState();
   const node = graph.project?.nodes[nodeId];
-  if (!node?.chat || node.generating) return;
+  if (!graph.project || !node?.chat || node.generating || jobs.has(keyOf(graph.project.id, nodeId))
+    || useChatRuntimeStore.getState().views[nodeId]?.compacting) return;
+  finishChatDeletion(nodeId, node, removeLastChatTurn(node));
+}
+
+export function deleteChatAnswer(nodeId: string, ref: ChatAnswerRef): void {
+  const graph = useGraphStore.getState();
+  const node = graph.project?.nodes[nodeId];
+  if (!graph.project || !node?.chat || node.generating || jobs.has(keyOf(graph.project.id, nodeId))
+    || useChatRuntimeStore.getState().views[nodeId]?.compacting) return;
+  // A stale click never falls through to deleting the whole turn.
+  finishChatDeletion(nodeId, node, removeChatAnswer(node, ref));
+}
+
+function finishChatDeletion(nodeId: string, node: ScatterNode, next: ScatterNode): void {
+  if (next === node) return;
+  const graph = useGraphStore.getState();
   const runtime = useChatRuntimeStore.getState();
   const old = runtime.views[nodeId];
-  const next = removeLastChatTurn(node);
   const active = old?.active && answerVersion(next, old.active) ? old.active : conversationPath(next).at(-1);
   if (active) next.currentVersionIndex = next.versions.findIndex((version) => version.createdAt === active.versionCreatedAt);
+  // One content/history entry. Existing task subscriptions cancel work for a
+  // removed answer; shared enrichment can continue for independent node copies.
   graph.updateNode(nodeId, next);
   runtime.view(nodeId, { active, previews: Object.fromEntries(Object.entries(old?.previews ?? {})
     .filter(([turnId, versionCreatedAt]) => !!answerVersion(next, { turnId, versionCreatedAt }))) });
@@ -578,7 +595,17 @@ export function deleteLastChatTurn(nodeId: string): void {
     && !next.versions.some(version => version.createdAt === panel.factVersionCreatedAt)) panel.close();
   const projectId = graph.project!.id;
   const draft = getChatDraft(projectId, nodeId);
-  if (draft.editingTurnId === node.chat.turns.at(-1)?.id) runtime.setDraft(projectId, nodeId, draft.previousDraft ?? EMPTY_CHAT_DRAFT);
+  const keptDraft: ChatDraft = draft.editingTurnId && !next.chat?.turns.some(turn => turn.id === draft.editingTurnId)
+    ? draft.previousDraft ?? EMPTY_CHAT_DRAFT : draft;
+  const reference = keptDraft.reference && answerVersion(next, keptDraft.reference) ? keptDraft.reference : undefined;
+  const previousDraft = keptDraft.previousDraft?.reference && !answerVersion(next, keptDraft.previousDraft.reference)
+    ? { ...keptDraft.previousDraft, reference: undefined } : keptDraft.previousDraft;
+  if (keptDraft !== draft || reference !== draft.reference || previousDraft !== draft.previousDraft) {
+    runtime.setDraft(projectId, nodeId, { ...keptDraft, reference, previousDraft });
+  }
+  // Version indices can shift even when the selected text belonged to a
+  // surviving answer. Do not leave a toolbar targeting the old index.
+  if (useNodeTextSelectionStore.getState().selection?.nodeId === nodeId) useNodeTextSelectionStore.getState().clear();
 }
 export function forkChat(nodeId: string, ref: ChatAnswerRef): string | null {
   const graph = useGraphStore.getState();

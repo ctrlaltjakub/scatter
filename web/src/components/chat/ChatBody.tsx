@@ -170,6 +170,7 @@ export function ChatBody({ node, selected, style }: { node: ScatterNode; selecte
               </div>}
             </div>
             <ChatUserActions nodeId={node.id} question={version.chat.question} latest={index === node.chat!.turns.length - 1}
+              turnId={turn.id} versionCreatedAt={createdAt} answerCount={turn.versionCreatedAts.length}
               busy={!!node.generating || view.compacting} />
             <div className="chat-assistant" data-chat-answer={turn.id} data-chat-answer-created-at={createdAt}>
               {turn.versionCreatedAts.length > 1 && <div className="chat-alternatives" data-reading-exclude="true">

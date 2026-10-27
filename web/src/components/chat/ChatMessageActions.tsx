@@ -9,7 +9,7 @@ import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { factCheckTaskKey, useFactCheckTaskStore } from '@/store/useFactCheckTaskStore';
 import { factCheckAvailability, startFactCheck, stopFactCheck } from '@/lib/factCheck';
 import { canResumeFactCheck } from '@/lib/factCheckCore';
-import { activateChatAnswer, askAboutChatAnswer, deleteLastChatTurn, editLastChatQuestion,
+import { activateChatAnswer, askAboutChatAnswer, deleteChatAnswer, deleteLastChatTurn, editLastChatQuestion,
   forkChat, spawnChatAnswer, submitChat } from '@/lib/chat/actions';
 import { stripChips } from '@/lib/bulletParse';
 import { useGraphStore } from '@/store/useGraphStore';
@@ -33,8 +33,9 @@ export function CopyMessage({ text, panel = false }: { text: string; panel?: boo
     }}><span className={panel ? 'side-action-icon' : undefined}>{status === 'copied' ? <Check size={panel ? 15 : 14} /> : <Copy size={panel ? 15 : 14} />}</span><span aria-live="polite">{status === 'copied' ? 'Copied' : status === 'failed' ? 'Copy failed' : 'Copy text'}</span></button>;
 }
 
-export const ChatUserActions = memo(function ChatUserActions({ nodeId, question, latest, busy }:
-  { nodeId: string; question: string; latest: boolean; busy: boolean }) {
+export const ChatUserActions = memo(function ChatUserActions({ nodeId, question, turnId, versionCreatedAt, answerCount, latest, busy }:
+  { nodeId: string; question: string; turnId: string; versionCreatedAt: number; answerCount: number; latest: boolean; busy: boolean }) {
+  const hasAlternatives = answerCount > 1;
   return <div className="chat-message-actions chat-user-actions" data-reading-exclude="true" role="group" aria-label="Question actions">
     <CopyMessage text={question} />
     {latest && <>
@@ -42,8 +43,11 @@ export const ChatUserActions = memo(function ChatUserActions({ nodeId, question,
         onClick={() => void submitChat(nodeId, { regenerate: true })}><RotateCcw size={14} />Regenerate</button>
       <button type="button" disabled={busy} data-tip="Edit the latest question"
         onClick={() => editLastChatQuestion(nodeId)}><Pencil size={14} />Edit</button>
-      <button type="button" disabled={busy} data-tip="Delete this question and its answer versions. Undo restores the turn."
-        onClick={() => deleteLastChatTurn(nodeId)}><Trash size={14} />Delete turn</button>
+      <button type="button" disabled={busy} data-tip={hasAlternatives
+        ? 'Delete the displayed answer version. Other versions are kept. Undo restores the answer.'
+        : 'Delete this question and its answer. Undo restores the turn.'}
+        onClick={() => hasAlternatives ? deleteChatAnswer(nodeId, { turnId, versionCreatedAt }) : deleteLastChatTurn(nodeId)}>
+        <Trash size={14} />{hasAlternatives ? 'Delete answer' : 'Delete turn'}</button>
     </>}
   </div>;
 });

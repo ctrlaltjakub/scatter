@@ -5,7 +5,7 @@ import { useModelCatalogStore } from '@/store/useModelCatalogStore';
 import { useChatRuntimeStore, getChatDraft } from '@/store/useChatRuntimeStore';
 import { getAdapter } from '@/providers/registry';
 import { createChatNode, appendChatAnswer, updateChatAnswer, conversationPath, CHAT_NODE_WIDTH, chatInitialBodyHeight } from './model';
-import { activateChatAnswer, askAboutChatAnswer, cancelChatEdit, compactChat, deleteLastChatTurn, editLastChatQuestion, forkChat, showChatAlternative, spawnChatAnswer, startChat, startFollowUpChat, stopChat, submitChat } from './actions';
+import { activateChatAnswer, askAboutChatAnswer, cancelChatEdit, compactChat, deleteChatAnswer, deleteLastChatTurn, editLastChatQuestion, forkChat, showChatAlternative, spawnChatAnswer, startChat, startFollowUpChat, stopChat, submitChat } from './actions';
 import type { ChatChunk, StreamChatOpts } from '@/providers/types';
 import type { Project } from '@/store/types';
 import { loadAsset } from '@/opfs/assetsIO';
@@ -454,6 +454,82 @@ describe('chat action lifecycle', () => {
     expect(conversationPath(chat())).toHaveLength(2);
     expect(chat().versions[chat().currentVersionIndex]?.createdAt).toBe(2);
     expect(getChatDraft('chat-test', 'chat').text).toBe('Keep this unsent draft');
+  });
+  it('deletes the displayed answer, cleans its UI references and restores the exact content with undo', () => {
+    let current = chat();
+    for (const createdAt of [2, 3, 4]) {
+      current = appendChatAnswer(current, { turnId: 't', createdAt, question: `Question ${createdAt}`, replaceLatest: createdAt > 2 });
+      current = updateChatAnswer(current, { turnId: 't', versionCreatedAt: createdAt }, {
+        body: `Answer ${createdAt}.`, language: 'ja', sources: [{ n: 1, url: 'https://example.com' }],
+      }, { state: 'complete' });
+    }
+    useGraphStore.getState().updateNode('chat', { ...current, generating: false, streamingText: false, generatingVersionIndex: undefined });
+    const ref = { turnId: 't', versionCreatedAt: 3 };
+    showChatAlternative('chat', ref);
+    const before = structuredClone(chat());
+    useChatRuntimeStore.getState().view('chat', { previews: { t: 3 } });
+    useChatRuntimeStore.getState().setDraft('chat-test', 'chat', {
+      text: 'Keep my unsent text', reference: { ...ref, title: 'Question 3' },
+      previousDraft: { text: 'Previous draft', reference: { ...ref, title: 'Question 3' } },
+    });
+    useCitationPanelStore.getState().openFact('chat', 3);
+    useNodeTextSelectionStore.getState().set({ nodeId: 'chat', versionIndex: 2, sourceBody: 'Answer 3.', text: 'Answer', start: 0, end: 6 });
+    useGraphStore.temporal.getState().clear();
+    deleteChatAnswer('chat', ref);
+    expect(chat().chat?.turns).toEqual([{ id: 't', versionCreatedAts: [2, 4], selectedVersionCreatedAt: 2 }]);
+    expect(chat().versions[chat().currentVersionIndex]?.createdAt).toBe(2);
+    expect(useChatRuntimeStore.getState().views.chat).toMatchObject({ active: { turnId: 't', versionCreatedAt: 2 }, previews: {} });
+    expect(getChatDraft('chat-test', 'chat')).toMatchObject({ text: 'Keep my unsent text', reference: undefined,
+      previousDraft: { text: 'Previous draft', reference: undefined } });
+    expect(useCitationPanelStore.getState().nodeId).toBeNull();
+    expect(useNodeTextSelectionStore.getState().selection).toBeNull();
+    expect(useGraphStore.temporal.getState().pastStates).toHaveLength(1);
+    useGraphStore.temporal.getState().undo();
+    expect(chat().versions).toEqual(before.versions);
+    expect(chat().chat).toEqual(before.chat);
+    useGraphStore.temporal.getState().redo();
+    expect(chat().chat?.turns[0]?.versionCreatedAts).toEqual([2, 4]);
+  });
+  it('keeps earlier active answers, their fact-check panels, related nodes and unfinished edits', () => {
+    let current = appendChatAnswer(chat(), { turnId: 'first', createdAt: 2, question: 'First question' });
+    current = appendChatAnswer(current, { turnId: 'last', createdAt: 3, question: 'Last question' });
+    current = appendChatAnswer(current, { turnId: 'last', createdAt: 4, question: 'Edited question', replaceLatest: true });
+    useGraphStore.getState().updateNode('chat', { ...current, generating: false });
+    activateChatAnswer('chat', { turnId: 'first', versionCreatedAt: 2 });
+    useCitationPanelStore.getState().openFact('chat', 2);
+    useChatRuntimeStore.getState().setDraft('chat-test', 'chat', { text: 'Unfinished edit', editingTurnId: 'last' });
+    const arrows = useGraphStore.getState().project!.arrows;
+    const parent = useGraphStore.getState().project!.nodes.parent;
+    deleteChatAnswer('chat', { turnId: 'last', versionCreatedAt: 4 });
+    expect(chat().versions[chat().currentVersionIndex]?.createdAt).toBe(2);
+    expect(chat().chat?.turns).toHaveLength(2);
+    expect(useCitationPanelStore.getState()).toMatchObject({ nodeId: 'chat', factVersionCreatedAt: 2 });
+    expect(getChatDraft('chat-test', 'chat')).toMatchObject({ text: 'Unfinished edit', editingTurnId: 'last' });
+    expect(useGraphStore.getState().project!.arrows).toBe(arrows);
+    expect(useGraphStore.getState().project!.nodes.parent).toBe(parent);
+  });
+  it('makes stale deletions harmless and blocks both deletion actions while busy', () => {
+    const ref = { turnId: 't', versionCreatedAt: 3 };
+    let current = appendChatAnswer(chat(), { turnId: 't', createdAt: 2, question: 'Question' });
+    current = appendChatAnswer(current, { turnId: 't', createdAt: 3, question: 'Question', replaceLatest: true });
+    useGraphStore.getState().updateNode('chat', current);
+    deleteChatAnswer('chat', ref); deleteLastChatTurn('chat');
+    expect(chat().versions).toHaveLength(3);
+    useGraphStore.getState().updateNode('chat', { generating: false });
+    useChatRuntimeStore.getState().view('chat', { compacting: true });
+    deleteChatAnswer('chat', ref); deleteLastChatTurn('chat');
+    expect(chat().versions).toHaveLength(3);
+    useChatRuntimeStore.getState().view('chat', { compacting: false });
+    deleteChatAnswer('chat', ref);
+    useGraphStore.temporal.getState().clear();
+    deleteChatAnswer('chat', ref);
+    deleteChatAnswer('chat', { turnId: 't', versionCreatedAt: 2 });
+    expect(chat().chat?.turns).toEqual([{ id: 't', versionCreatedAts: [2], selectedVersionCreatedAt: 2 }]);
+    expect(useGraphStore.temporal.getState().pastStates).toHaveLength(0);
+    deleteLastChatTurn('chat');
+    expect(chat().chat?.turns).toEqual([]);
+    expect(chat().versions).toHaveLength(1);
+    expect(chat().currentVersionIndex).toBe(0);
   });
   it('commits manual compaction as one undoable action without altering the transcript', async () => {
     let current = chat();
