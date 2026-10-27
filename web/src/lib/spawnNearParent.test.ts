@@ -23,8 +23,7 @@ function node(
   };
 }
 
-/** Which 90° quadrant the spawned child's CENTER lands in, relative to the
- *  parent's center. Mirrors spawnNearParent's own classification. */
+/** Test helper describing the child's centre relative to its parent. */
 function quadrant(
   parent: ScatterNode,
   child: { x: number; y: number },
@@ -50,13 +49,23 @@ function rectsOverlap(
 describe('spawnNearParent', () => {
   it.each([
     ['below', .45, .85], ['above', .45, .05], ['left', .02, .45], ['right', .88, .45],
-  ] as const)('places an image selection near the %s edge on that side', (side, x, y) => {
+  ] as const)('uses the direct-right preference even for an image selection near the %s edge', (_side, x, y) => {
     const parent = node('p', 0, 0);
     const res = spawnNearParent(parent, [parent], undefined, undefined, [{ x, y, width: .1, height: .1 }]);
-    expect(quadrant(parent, res)).toBe(side);
+    expect(res).toEqual(spawnNearParent(parent, [parent]));
+    expect(quadrant(parent, res)).toBe('right');
+    expect(res.y).toBe(0);
   });
 
-  it('uses another free side when the edge closest to an image selection is occupied', () => {
+  it('uses directly left for an image question when the right slot is occupied', () => {
+    const parent = node('p', 0, 0);
+    const blocker = node('b', 720, 0);
+    const res = spawnNearParent(parent, [parent, blocker], undefined, undefined, [{ x: .88, y: .45, width: .1, height: .1 }]);
+    expect(quadrant(parent, res)).toBe('left');
+    expect(res.y).toBe(0);
+  });
+
+  it('finds a free side for image questions when an adjacent row blocks the direct slots', () => {
     const parent = node('p', 0, 0);
     const blocker = node('b', -1000, 410, { width: 3000, renderedHeight: 700 });
     const res = spawnNearParent(parent, [parent, blocker], undefined, undefined, [{ x: .45, y: .85, width: .1, height: .1 }]);
