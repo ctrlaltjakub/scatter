@@ -4,6 +4,8 @@ import type { Project, Arrow, ScatterNode, ImageQuestionContext } from '@/store/
 import { nodeWidth, nodeRenderedH } from '@/lib/nodeSize';
 import { useArrowAnchorsStore } from '@/store/useArrowAnchorsStore';
 import { useGraphStore } from '@/store/useGraphStore';
+import { birthIsPending, useNodeBirthStore } from '@/store/useNodeBirthStore';
+import { useNodeEntranceStyle } from '@/lib/nodeEntrance';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { rectBorderToward } from '@/physics/verletRope';
 import { DEFAULT_PHYSICS_CONFIG } from '@/physics/defaults';
@@ -220,6 +222,10 @@ export const ImageArrowItem = memo(function ImageArrowItem(p: ArrowItemProps & {
  */
 const ArrowItem = memo(function ArrowItem(p: ArrowItemProps) {
   const a = p.arrow;
+  const fromBirth = useNodeBirthStore(s => s.byNode[a.fromNodeId]);
+  const toBirth = useNodeBirthStore(s => s.byNode[a.toNodeId]);
+  const birth = birthIsPending(fromBirth) ? fromBirth : toBirth ?? fromBirth;
+  const entranceStyle = useNodeEntranceStyle(birth);
   // PERF R7: only fire this subscription when THIS arrow's chain
   // actually changes (≥ 0.01 px on any point) — see chainsEqual.
   const chain = useArrowChain(a.id);
@@ -326,7 +332,7 @@ const ArrowItem = memo(function ArrowItem(p: ArrowItemProps) {
     // swell-and-settle on highlight so the emphasis reads as a pulse,
     // not a slow fade; the fast inline transition eases it back out.
     return (
-      <g>
+      <g data-arrow-entrance={a.id} style={entranceStyle}>
         {imageRect && extent && !p.overlayOnly && <defs>
           <clipPath id={`${clipId}-outside`}><path clipRule="evenodd" d={`M${extent.left},${extent.top}H${extent.right}V${extent.bottom}H${extent.left}Z M${imageRect.x},${imageRect.y}h${imageRect.width}v${imageRect.height}h${-imageRect.width}Z`} /></clipPath>
           <clipPath id={`${clipId}-inside`}><rect {...imageRect} /></clipPath>

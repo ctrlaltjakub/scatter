@@ -21,7 +21,7 @@ const physicsMock = vi.hoisted(() => {
   const instances: unknown[] = [];
   const make = () => {
     const inst = {
-      init: vi.fn(), addNode: vi.fn(), addLink: vi.fn(), removeNodes: vi.fn(),
+      init: vi.fn(), addNode: vi.fn(), addGraph: vi.fn(), addLink: vi.fn(), removeNodes: vi.fn(), onFailure: vi.fn(() => () => {}),
       setSize: vi.fn(), setFrozen: vi.fn(), setConfig: vi.fn(),
       dragStart: vi.fn(), dragMove: vi.fn(), dragEnd: vi.fn(),
       onTick: vi.fn(() => () => {}), onInput: vi.fn(() => () => {}), terminate: vi.fn(),

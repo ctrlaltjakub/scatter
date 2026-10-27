@@ -6,6 +6,7 @@ import { useLivePositionsStore } from '@/store/useLivePositionsStore';
 import { useArrowAnchorsStore } from '@/store/useArrowAnchorsStore';
 import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { useNodeBirthStore } from '@/store/useNodeBirthStore';
 import { Canvas } from './Canvas';
 import type { ComponentProps } from 'react';
 import type { NodeView } from './NodeView';
@@ -16,6 +17,7 @@ const physicsMock = vi.hoisted(() => {
   type Instance = {
     init: ReturnType<typeof vi.fn>;
     addNode: ReturnType<typeof vi.fn>;
+    addGraph: ReturnType<typeof vi.fn>;
     addLink: ReturnType<typeof vi.fn>;
     removeNodes: ReturnType<typeof vi.fn>;
     removeLinks: ReturnType<typeof vi.fn>;
@@ -27,6 +29,7 @@ const physicsMock = vi.hoisted(() => {
     dragEnd: ReturnType<typeof vi.fn>;
     dragEndMany: ReturnType<typeof vi.fn>;
     onTick: ReturnType<typeof vi.fn>;
+    onFailure: ReturnType<typeof vi.fn>;
     onInput: ReturnType<typeof vi.fn>;
     terminate: ReturnType<typeof vi.fn>;
   };
@@ -37,6 +40,7 @@ const physicsMock = vi.hoisted(() => {
       const inst: Instance = {
         init: vi.fn(),
         addNode: vi.fn(),
+        addGraph: vi.fn(),
         addLink: vi.fn(),
         removeNodes: vi.fn(),
         removeLinks: vi.fn(),
@@ -48,6 +52,7 @@ const physicsMock = vi.hoisted(() => {
         dragEnd: vi.fn(),
         dragEndMany: vi.fn(),
         onTick: vi.fn(() => () => {}),
+        onFailure: vi.fn(() => () => {}),
         onInput: vi.fn(() => () => {}),
         terminate: vi.fn(),
       };
@@ -174,6 +179,100 @@ afterEach(() => {
 });
 
 describe('Canvas physics sync', () => {
+  it('does not move the camera toward a provisional position while placement is pending', () => {
+    const frames = new Map<number, FrameRequestCallback>();
+    let nextFrame = 0;
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++nextFrame, callback); return nextFrame; });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    const frame = (time: number) => act(() => {
+      const pending = [...frames.values()]; frames.clear(); pending.forEach(callback => callback(time));
+    });
+    seedProject(1);
+    const { container } = renderCanvas();
+    Object.defineProperties(container.querySelector('.canvas-host')!, {
+      clientWidth: { value: 1200 }, clientHeight: { value: 800 },
+    });
+    const before = { ...useLiveViewportStore.getState() };
+    act(() => {
+      useGraphStore.getState().addNodeWithArrow({ ...node('child', 780), position: { x: 9000, y: 9000 } },
+        { id: 'arrow', fromNodeId: 'n0', toNodeId: 'child', kind: 'auto' });
+      useGraphStore.getState().requestPanTo('child', 'n0', 'newNodes');
+    });
+    frame(0); frame(16); frame(1000);
+    expect(useLiveViewportStore.getState()).toMatchObject({ x: before.x, y: before.y, zoom: before.zoom });
+    act(() => useNodeBirthStore.getState().measure('child', 624, 780));
+    frame(1016);
+    expect(useLiveViewportStore.getState()).toMatchObject({ x: before.x, y: before.y, zoom: before.zoom });
+    act(() => physicsMock.instances[0]!.onTick.mock.calls[0]![0](
+      [{ id: 'child', x: 686.5, y: 0 }], {}, [], [{ id: 'child', token: useNodeBirthStore.getState().byNode.child!.token }],
+    ));
+    frame(1032); frame(1048); frame(1064); frame(2000);
+    expect(useLiveViewportStore.getState().x).not.toBe(before.x);
+    expect(Math.abs(useLiveViewportStore.getState().x)).toBeLessThan(2000);
+    expect(Math.abs(useLiveViewportStore.getState().y)).toBeLessThan(2000);
+  });
+
+  it('waits for measurement, batches the card and arrow, then reveals without another undo step', () => {
+    seedProject(1);
+    renderCanvas();
+    const phx = physicsMock.instances[0]!;
+    useGraphStore.temporal.getState().clear();
+    act(() => useGraphStore.getState().addNodeWithArrow(node('child', 780),
+      { id: 'child-arrow', fromNodeId: 'n0', toNodeId: 'child', kind: 'auto' }));
+    expect(phx.addGraph).not.toHaveBeenCalled();
+    expect(phx.addLink).not.toHaveBeenCalled();
+    const token = useNodeBirthStore.getState().byNode.child!.token;
+    act(() => useNodeBirthStore.getState().measure('child', 624, 780));
+    expect(phx.addGraph).toHaveBeenCalledExactlyOnceWith([
+      expect.objectContaining({ id: 'child', width: 624, height: 780, birth: { token, parentId: 'n0', regions: undefined } }),
+    ], [expect.objectContaining({ source: 'n0', target: 'child', arrowId: 'child-arrow' })]);
+    expect(phx.setSize.mock.calls.filter(call => call[0] === 'child')).toEqual([]);
+    expect(useNodeBirthStore.getState().byNode.child!.phase).toBe('placing');
+    // This canvas captured rAF support at mount, so drain its queued callback.
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
+    const tick = phx.onTick.mock.calls[0]![0];
+    act(() => tick([{ id: 'child', x: 686.5, y: -240 }], { 'child-arrow': [{ x: 624, y: 150 }, { x: 686.5, y: 150 }] }, [], [{ id: 'child', token }]));
+    act(() => frames.splice(0).forEach(frame => frame(1)));
+    expect(useNodeBirthStore.getState().byNode.child!.phase).toBe('entering');
+    expect(useGraphStore.getState().project!.nodes.child!.position).toEqual({ x: 686.5, y: -240 });
+    expect(useArrowAnchorsStore.getState().anchors['child-arrow']).toHaveLength(2);
+    expect(useGraphStore.temporal.getState().pastStates).toHaveLength(1);
+  });
+
+  it('does not insert a cancelled child or wait forever after a worker failure', () => {
+    seedProject(1);
+    renderCanvas();
+    const phx = physicsMock.instances[0]!;
+    act(() => useGraphStore.getState().addNode(node('cancelled', 780)));
+    act(() => useGraphStore.temporal.getState().undo());
+    act(() => useNodeBirthStore.getState().measure('cancelled', 624, 780));
+    expect(phx.addGraph).not.toHaveBeenCalled();
+    expect(useNodeBirthStore.getState().byNode.cancelled).toBeUndefined();
+    act(() => useGraphStore.getState().addNodeWithArrow(node('child', 780),
+      { id: 'child-arrow', fromNodeId: 'n0', toNodeId: 'child', kind: 'auto' }));
+    act(() => useNodeBirthStore.getState().measure('child', 624, 780));
+    act(() => phx.onFailure.mock.calls[0]![0]());
+    expect(useNodeBirthStore.getState().byNode.child!.phase).toBe('entering');
+    expect(useGraphStore.getState().project!.nodes.child!.position.x).toBeGreaterThanOrEqual(624);
+  });
+
+  it('waits for a newly-created parent even if its child is measured first', () => {
+    seedProject(1); renderCanvas();
+    const phx = physicsMock.instances[0]!;
+    act(() => {
+      useGraphStore.getState().addNodeWithArrow(node('parent', 780),
+        { id: 'parent-arrow', fromNodeId: 'n0', toNodeId: 'parent', kind: 'auto' });
+      useGraphStore.getState().addNodeWithArrow(node('child', 390),
+        { id: 'child-arrow', fromNodeId: 'parent', toNodeId: 'child', kind: 'auto' });
+      useNodeBirthStore.getState().measure('child', 624, 390);
+    });
+    expect(phx.addGraph).not.toHaveBeenCalled();
+    act(() => useNodeBirthStore.getState().measure('parent', 624, 780));
+    expect(phx.addGraph.mock.calls[0]![0].map((n: { id: string }) => n.id)).toEqual(['parent', 'child']);
+    expect(phx.addGraph.mock.calls[0]![1]).toHaveLength(2);
+  });
+
   it.each(['interactive-build-log', 'interactive-build-error'])('scrolls an unfocused %s without moving the camera', className => {
     seedProject(1);
     const view = renderCanvas();

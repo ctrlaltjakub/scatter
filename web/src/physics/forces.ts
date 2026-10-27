@@ -37,6 +37,8 @@ export interface SimLink extends SimulationLinkDatum<SimNode> {
   kind: 'auto' | 'dotted';
   gravitates: boolean;
   arrowId: string;
+  /** Only new structural connections ease into attraction (about 200ms). */
+  entranceTicks?: number;
 }
 
 export type EdgeKey = string;
@@ -256,7 +258,8 @@ export function rectLink(
       const ux = dxC / distC, uy = dyC / distC;
       // Positive error = too far apart, pull together. Negative = too close, push apart.
       const error = borderDist - targetBorderDistance;
-      const correction = error * strength * pairActivity(a, b, alpha);
+      const ramp = link.entranceTicks ? 1 - .8 * link.entranceTicks-- / 12 : 1;
+      const correction = error * strength * pairActivity(a, b, alpha) * ramp;
       if (a.fx == null) a.vx = (a.vx ?? 0) + ux * correction;
       if (a.fy == null) a.vy = (a.vy ?? 0) + uy * correction;
       if (b.fx == null) b.vx = (b.vx ?? 0) - ux * correction;

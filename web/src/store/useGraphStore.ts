@@ -30,6 +30,7 @@ import {
 } from '@/lib/sidebarGroupMemory';
 import { clampViewportZoom } from '@/lib/zoomLimits';
 import { useLiveViewportStore } from './useLiveViewportStore';
+import { useNodeBirthStore } from './useNodeBirthStore';
 import {
   describeHistoryChange,
   graphHistorySlicesEqual,
@@ -341,14 +342,17 @@ export const useGraphStore = create<GraphState>()(
     (set, get) => ({
       project: null,
       projectLoadRevision: 0,
-      setProject: (project, options) => set((state) => ({
-        project: project
-          ? { ...project, viewport: clampViewportZoom(project.viewport) }
-          : null,
-        projectLoadRevision: state.projectLoadRevision + (options?.resetRuntime ? 1 : 0),
-        ...(project?.id !== state.project?.id || (state.selectedGroupId && !project?.groups[state.selectedGroupId])
-          ? { selectedGroupId: null } : {}),
-      })),
+      setProject: (project, options) => set((state) => {
+        if (project?.id !== state.project?.id || options?.resetRuntime) useNodeBirthStore.getState().clear();
+        return {
+          project: project
+            ? { ...project, viewport: clampViewportZoom(project.viewport) }
+            : null,
+          projectLoadRevision: state.projectLoadRevision + (options?.resetRuntime ? 1 : 0),
+          ...(project?.id !== state.project?.id || (state.selectedGroupId && !project?.groups[state.selectedGroupId])
+            ? { selectedGroupId: null } : {}),
+        };
+      }),
       projectList: [],
       activeProjectId: null,
       setProjectList: (list) => set({ projectList: list }),
@@ -357,6 +361,7 @@ export const useGraphStore = create<GraphState>()(
       setPickerOpen: (v) => set({ pickerOpen: v }),
       addNode: (node) => set((s) => {
         if (!s.project) return s;
+        if (!s.project.nodes[node.id]) useNodeBirthStore.getState().begin(s.project.id, node.id);
         return { project: { ...s.project, nodes: { ...s.project.nodes, [node.id]: node }, updatedAt: Date.now() } };
       }),
       updateNode: (id, patch) => set((s) => {
@@ -410,6 +415,7 @@ export const useGraphStore = create<GraphState>()(
       }),
       addNodeWithArrow: (node, arrow, references = []) => set((s) => {
         if (!s.project) return s;
+        if (!s.project.nodes[node.id]) useNodeBirthStore.getState().begin(s.project.id, node.id, arrow.fromNodeId, arrow.sourceImage?.regions);
         return {
           project: {
             ...s.project,
@@ -425,6 +431,7 @@ export const useGraphStore = create<GraphState>()(
         if (!parent) return s;
         const pv = parent.versions[parent.currentVersionIndex];
         if (!pv) return s;
+        useNodeBirthStore.getState().begin(s.project.id, child.id, parentId);
         const versions = [...parent.versions];
         versions[parent.currentVersionIndex] = { ...pv, body: newParentBody };
         return {

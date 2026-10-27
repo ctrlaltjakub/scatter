@@ -1,10 +1,15 @@
 import type { PhysicsConfig } from '@/store/types';
 import type { SourcePort } from './sourcePort';
+import type { PlacementRegion } from '@/lib/nodePlacement';
 
 type Position = { id: string; x: number; y: number };
 type AnchorPos = { x: number; y: number };
 type ArrowAnchors = Record<string /* arrowId */, AnchorPos[]>;
-type OnTick = (positions: Position[], arrowAnchors: ArrowAnchors, removedArrowIds: string[]) => void;
+export type PlacedNode = { id: string; token: number };
+export type NodeInsertion = Position & { frozen: boolean; width: number; height: number;
+  birth?: { token: number; parentId?: string; regions?: readonly PlacementRegion[] } };
+export type LinkInsertion = { source: string; target: string; kind: 'auto' | 'dotted'; gravitates: boolean; arrowId: string; anchors?: AnchorPos[] };
+type OnTick = (positions: Position[], arrowAnchors: ArrowAnchors, removedArrowIds: string[], placedNodes?: PlacedNode[]) => void;
 export type SizeWake = 'normal' | 'gentle' | 'none';
 
 /** User-input events that drive the simulation. Captured by the sandbox
@@ -25,6 +30,19 @@ export class PhysicsClient {
   private worker: Worker;
   private listeners = new Set<OnTick>();
   private inputListeners = new Set<OnInput>();
+  private failureListeners = new Set<() => void>();
+  private failed = false;
+
+  private fail(): void {
+    this.failed = true;
+    for (const fn of this.failureListeners) fn();
+  }
+
+  onFailure(fn: () => void): () => void {
+    this.failureListeners.add(fn);
+    if (this.failed) fn();
+    return () => this.failureListeners.delete(fn);
+  }
 
   private emitInput(e: InputEvent): void {
     for (const fn of this.inputListeners) fn(e);
@@ -35,7 +53,7 @@ export class PhysicsClient {
     this.worker.onmessage = (e: MessageEvent) => {
       const m = e.data;
       if (m?.type === 'tick') {
-        for (const fn of this.listeners) fn(m.nodes, m.arrowAnchors, m.removedArrowIds ?? []);
+        for (const fn of this.listeners) fn(m.nodes, m.arrowAnchors, m.removedArrowIds ?? [], m.placedNodes);
       }
     };
     // A worker that fails to load/parse (bad chunk URL, blocked, unsupported)
@@ -44,10 +62,12 @@ export class PhysicsClient {
     this.worker.onerror = (e: ErrorEvent) => {
       // eslint-disable-next-line no-console
       console.error('[physics] worker failed — simulation not running:', e.message || e);
+      this.fail();
     };
     this.worker.onmessageerror = (e) => {
       // eslint-disable-next-line no-console
       console.error('[physics] worker message could not be deserialized:', e);
+      this.fail();
     };
   }
 
@@ -58,6 +78,10 @@ export class PhysicsClient {
   }
   addNode(node: { id: string; x: number; y: number; frozen: boolean }) {
     this.worker.postMessage({ type: 'add-node', node });
+  }
+  /** One worker transaction: measured rectangles + all their connections. */
+  addGraph(nodes: NodeInsertion[], links: LinkInsertion[]) {
+    this.worker.postMessage({ type: 'add-graph', nodes, links });
   }
   addLink(link: { source: string; target: string; kind: 'auto' | 'dotted'; gravitates: boolean; arrowId: string; anchors?: AnchorPos[] }) {
     this.worker.postMessage({ type: 'add-link', link });

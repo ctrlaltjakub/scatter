@@ -32,6 +32,7 @@
  *     mid-flight reversals for the other renderer.
  */
 import { useGraphStore } from '@/store/useGraphStore';
+import { birthIsPending, useNodeBirthStore } from '@/store/useNodeBirthStore';
 import { useLivePositionsStore } from '@/store/useLivePositionsStore';
 import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import { nodeWidth, nodeRenderedH } from '@/lib/nodeSize';
@@ -226,6 +227,7 @@ export function createAuraSceneState(opts: {
   let lastPanToRef: object | null = null;
   let lastPanArrivalRef: object | null = null;
   let lastGroupsRef: object | null = null;
+  let lastBirthsRef: object | null = null;
   // recolorProject changes ONLY project.color — none of the four refs above
   // move, so without tracking it the walk (accents + palette) never re-runs.
   let lastProjectColor: string | undefined;
@@ -235,6 +237,7 @@ export function createAuraSceneState(opts: {
     const project = gs.project;
     if (!project) return;
     const now = performance.now();
+    const births = useNodeBirthStore.getState().byNode;
 
     // Viewport — sourced from the live viewport store (PERF R4: the
     // runtime source of truth; project.viewport only updates at
@@ -259,6 +262,7 @@ export function createAuraSceneState(opts: {
       && gs.panArrival === lastPanArrivalRef
       && project.groups === lastGroupsRef
       && project.color === lastProjectColor
+      && births === lastBirthsRef
     ) {
       return;
     }
@@ -275,9 +279,11 @@ export function createAuraSceneState(opts: {
     lastPanArrivalRef = gs.panArrival;
     lastGroupsRef = project.groups;
     lastProjectColor = project.color;
+    lastBirthsRef = births;
 
     const newKnown = new Set<string>();
     for (const id of Object.keys(project.nodes)) {
+      if (birthIsPending(births[id])) continue;
       newKnown.add(id);
       if (!knownNodeIds.has(id)) {
         state.waves.set(id, { kind: 'spawn', t0: now });
@@ -509,8 +515,9 @@ export function createAuraSceneState(opts: {
       // live viewport store needs its own subscription. The perf
       // short-circuit keeps per-tick work microscopic.
       const unsub3 = useLiveViewportStore.subscribe(handleGraph);
+      const unsub4 = useNodeBirthStore.subscribe(handleGraph);
       handleGraph();
-      return () => { unsub1(); unsub2(); unsub3(); };
+      return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
     },
 
     pruneExpired(now: number) {

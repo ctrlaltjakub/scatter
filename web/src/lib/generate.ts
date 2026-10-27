@@ -6,7 +6,6 @@ import { explicitFollowUpIntent } from './followUpIntent';
 import { secondaryOutputTokens, mainOutputTokens } from './generationLimits';
 import { checkFinishReason } from './generationValidation';
 import { useGraphStore } from '@/store/useGraphStore';
-import { useLivePositionsStore } from '@/store/useLivePositionsStore';
 import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useNodeStatusStore } from '@/store/useNodeStatusStore';
@@ -72,10 +71,7 @@ import { EmbeddedImageText } from './embeddedImageText';
 import { unchipHeaders } from './parser';
 import { makeBulletCommitGate, type CommitGate } from './streamCommitGate';
 import { makeFrameCoalescer } from './frameCoalesce';
-import {
-  DEFAULT_NODE_W, ROOT_NODE_W,
-  nodeWidth,
-} from './nodeSize';
+import { ROOT_NODE_W } from './nodeSize';
 import type { ScatterNode, NodeVersion, NodeKind, Arrow, ReasoningEffort, NodeSource, HeaderParts, FactCheckReport, InternalNodeSource } from '@/store/types';
 import type { NodeTextSelection, NodeTextSelectionPart } from '@/store/useNodeTextSelectionStore';
 import { createArrowSourceSelection } from './sourceSelection';
@@ -93,139 +89,10 @@ import { startWikimediaDiscovery } from './wikimediaDiscovery';
 import type { ChatAnswerRef } from '@/store/chatTypes';
 import type { ImageQuestionContext } from '@/store/types';
 import { prepareImageQuestion } from './imageRegionInput';
-import { imageRegionBounds } from './imageRegions';
 import { modelSupportsVision } from './modelMeta';
 
-/**
- * Compute a position for a new child node around its parent.
- *
- * Placement preference (most natural on a screen that's wider than tall,
- * and for left-to-right reading): RIGHT first, then LEFT, then BELOW,
- * then ABOVE — with diagonals folded into 90°-wide quadrants centered on
- * each cardinal. We sample candidate slots on rings of increasing radius
- * around the parent, keep only the free (non-overlapping) ones, and pick
- * the lowest-cost slot where cost = distance-to-parent + a per-direction
- * penalty. This keeps children close while strongly favouring the right:
- * a near RIGHT slot wins, but when the right is blocked nearby the child
- * falls back to a nearer LEFT (then BELOW, then ABOVE) rather than being
- * flung far to the right — matching "right near it if there's any, else
- * left". The seed is then relaxed by the physics sim (link spring +
- * collision), so it biases rather than fixes the final resting spot.
- */
-// Minimum border-to-border gap a spawn slot must clear from every existing
-// node. Kept at/above the physics rest gap (2 × collidePadding = 62.5 px) so a
-// freshly spawned child already satisfies rectCollide — otherwise the first
-// physics tick shoves the (unpinned) parent to open the gap, which reads as the
-// parent "shaking" the instant a child appears.
-const SPAWN_PAD = 70;
-const TYPICAL_NODE_H = 400;
-const SPAWN_RADII = [560, 640, 720, 800, 880, 960, 1040, 1120, 1240];
-const SPAWN_NUM_ANGLES = 16;
-
-/** Penalty (in px) added per step down the direction-preference ladder
- *  (right → left → below → above). Big enough that a closer-but-wrong
- *  direction loses to a slightly-farther preferred one, yet bounded by
- *  the max ring radius so we never fling a node absurdly far just to
- *  honour the direction. ~5 rings' worth. */
-const SPAWN_DIR_PENALTY = 400;
-
-/**
- * Classify a candidate's CENTER offset from the parent center into one of
- * four 90°-wide quadrants (centered on each cardinal) and return its
- * preference rank + how far it sits from that quadrant's exact cardinal
- * axis. Screen coords: +x is right, +y is DOWN. Preference per the user's
- * request: right(0) → left(1) → below(2) → above(3).
- */
-function quadrantRankDev(dx: number, dy: number): { rank: number; dev: number } {
-  const deg = (Math.atan2(dy, dx) * 180) / Math.PI; // (-180,180]; 0 = right, +90 = down
-  if (deg > -45 && deg <= 45) return { rank: 0, dev: Math.abs(deg) };          // RIGHT
-  if (deg > 135 || deg <= -135) return { rank: 1, dev: 180 - Math.abs(deg) };  // LEFT
-  if (deg > 45 && deg <= 135) return { rank: 2, dev: Math.abs(deg - 90) };     // BELOW
-  return { rank: 3, dev: Math.abs(deg + 90) };                                 // ABOVE
-}
-
-export function spawnNearParent(parent: ScatterNode, allNodes: ScatterNode[], newW = DEFAULT_NODE_W, newH = TYPICAL_NODE_H, imageRegions?: ImageQuestionContext['regions']): { x: number; y: number } {
-  const livePositions = useLivePositionsStore.getState().positions;
-  const posOf = (n: ScatterNode) => {
-    const lp = livePositions[n.id];
-    return { x: lp?.x ?? n.position.x, y: lp?.y ?? n.position.y };
-  };
-  const heightOf = (n: ScatterNode) => {
-    const rh = n.renderedHeight;
-    return rh && rh > 0 ? rh : TYPICAL_NODE_H;
-  };
-  const parentPos = posOf(parent);
-  const parentW = nodeWidth(parent);
-  const parentH = heightOf(parent);
-  const parentCx = parentPos.x + parentW / 2;
-  const parentCy = parentPos.y + parentH / 2;
-
-  const overlapsAny = (x: number, y: number): boolean => {
-    for (const n of allNodes) {
-      const nW = nodeWidth(n);
-      const nH = heightOf(n);
-      const { x: nx, y: ny } = posOf(n);
-      if (
-        x + newW + SPAWN_PAD <= nx ||
-        x - SPAWN_PAD >= nx + nW ||
-        y + newH + SPAWN_PAD <= ny ||
-        y - SPAWN_PAD >= ny + nH
-      ) continue;
-      return true;
-    }
-    return false;
-  };
-
-  // Image questions follow the selected region, not the usual reading-order
-  // preference. Try the closest free edge first; never overlap another node.
-  const region = imageRegions && imageRegionBounds(imageRegions);
-  if (region) {
-    const cx = (region.x + region.width / 2) * parentW;
-    const cy = (region.y + region.height / 2) * parentH;
-    const candidates = [
-      { distance: parentW - cx, x: parentPos.x + parentW + SPAWN_PAD, y: parentPos.y + cy - newH / 2 },
-      { distance: cx, x: parentPos.x - newW - SPAWN_PAD, y: parentPos.y + cy - newH / 2 },
-      { distance: parentH - cy, x: parentPos.x + cx - newW / 2, y: parentPos.y + parentH + SPAWN_PAD },
-      { distance: cy, x: parentPos.x + cx - newW / 2, y: parentPos.y - newH - SPAWN_PAD },
-    ].sort((a, b) => a.distance - b.distance);
-    const free = candidates.find(({ x, y }) => !overlapsAny(x, y));
-    if (free) return { x: free.x, y: free.y };
-  }
-
-  // Scan every free (non-overlapping) slot across all rings and pick the
-  // one with the lowest cost = distance + direction-penalty + a tiny
-  // deviation tiebreak. Distance is scanned globally (not first-ring-only)
-  // because the parent is wide: a straight-RIGHT slot only clears the
-  // parent a ring or two out, while DOWN/UP clear sooner — so a pure
-  // nearest-ring rule would wrongly spawn children downward. The
-  // direction penalty makes RIGHT win across that small distance gap,
-  // while still falling back to a nearer LEFT/BELOW when RIGHT is far.
-  let bestX = 0, bestY = 0, bestCost = Infinity;
-  for (const radius of SPAWN_RADII) {
-    for (let i = 0; i < SPAWN_NUM_ANGLES; i++) {
-      // Deterministic sampling (no random start) so the RIGHT axis is
-      // always sampled exactly and placement is reproducible.
-      const angle = (2 * Math.PI * i) / SPAWN_NUM_ANGLES;
-      const x = parentPos.x + Math.cos(angle) * radius;
-      const y = parentPos.y + Math.sin(angle) * radius;
-      if (overlapsAny(x, y)) continue;
-      const dx = x + newW / 2 - parentCx;
-      const dy = y + newH / 2 - parentCy;
-      const { rank, dev } = quadrantRankDev(dx, dy);
-      // dev weight (3) prefers a clean cardinal slot over a diagonal at a
-      // similar distance, but its max (45·3 = 135) stays below
-      // SPAWN_DIR_PENALTY so it can never flip the quadrant preference.
-      const cost = Math.hypot(dx, dy) + rank * SPAWN_DIR_PENALTY + dev * 3;
-      if (cost < bestCost) { bestCost = cost; bestX = x; bestY = y; }
-    }
-  }
-  if (bestCost !== Infinity) return { x: bestX, y: bestY };
-  // Nothing free at any sampled ring — push far out to the RIGHT.
-  return {
-    x: parentPos.x + 1600,
-    y: parentPos.y,
-  };
-}
+import { spawnNearParent } from './spawnNearParent';
+export { spawnNearParent } from './spawnNearParent';
 
 // In-memory map of nodeId → last generation args, used by retryGeneration.
 // Module-level state; not persisted.

@@ -17,6 +17,8 @@ import { ImageNodeFollowUpBar } from '@/components/node/ImageFollowUpBar';
 import { ImageAtlasOverlay } from '@/components/node/ImageAtlasOverlay';
 import { isStillImageMedia } from '@/lib/imageEditActions';
 import { useGraphStore } from '@/store/useGraphStore';
+import { birthIsPending, useNodeBirthStore } from '@/store/useNodeBirthStore';
+import { useNodeEntranceStyle } from '@/lib/nodeEntrance';
 import { useLivePositionsStore } from '@/store/useLivePositionsStore';
 import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import { useDragArmStore } from '@/store/useDragArmStore';
@@ -150,6 +152,9 @@ interface ResizeState {
 
 function NodeViewImpl(p: Props) {
   const nodeProjectId = useGraphStore((s) => s.project?.id ?? null);
+  const birth = useNodeBirthStore(s => s.byNode[p.node.id]);
+  const entranceStyle = useNodeEntranceStyle(birth);
+  const birthSizeRef = useRef<{ width: number; height: number } | null>(null);
   const v = p.node.versions[p.node.currentVersionIndex];
   const readingTypography = useReadingTypography(v?.language, `${v?.header ?? ''}\n${v?.body ?? ''}`);
   const { fontFamily: readingFamily, fontSizeAdjust: _readingSize, ...readingVariables } = readingTypography;
@@ -343,7 +348,7 @@ function NodeViewImpl(p: Props) {
   }, []);
   const publishRenderedHeight = useCallback((h: number) => {
     if (h <= 0) return;
-    if (Math.abs(h - lastReportedHeight.current) >= 4) {
+    if (Math.abs(h - lastReportedHeight.current) >= 4 || birthSizeRef.current) {
       lastReportedHeight.current = h;
       pendingRenderedHeightRef.current = h;
     }
@@ -351,7 +356,7 @@ function NodeViewImpl(p: Props) {
       fitAfterBulletRevealRef.current = false;
       fitAfterHeightFrameRef.current = true;
     }
-    if (pendingRenderedHeightRef.current == null && !fitAfterHeightFrameRef.current) return;
+    if (pendingRenderedHeightRef.current == null && !fitAfterHeightFrameRef.current && !birthSizeRef.current) return;
     if (renderedHeightFrameRef.current != null) return;
     // ResizeObserver runs during the browser's pre-paint layout delivery.
     // Writing to Zustand synchronously from there can re-render the canvas,
@@ -363,12 +368,18 @@ function NodeViewImpl(p: Props) {
       pendingRenderedHeightRef.current = null;
       const projectId = useGraphStore.getState().project?.id;
       if (projectId === nodeProjectId && nextHeight != null) {
-        useGraphStore.temporal.getState().pause();
+        const history = useGraphStore.temporal.getState(), wasTracking = history.isTracking;
+        history.pause();
         try {
           useGraphStore.getState().updateNode(p.node.id, { renderedHeight: nextHeight });
         } finally {
-          useGraphStore.temporal.getState().resume();
+          if (wasTracking) history.resume();
         }
+      }
+      const birthSize = birthSizeRef.current;
+      birthSizeRef.current = null;
+      if (projectId === nodeProjectId && birthSize) {
+        useNodeBirthStore.getState().measure(p.node.id, birthSize.width, birthSize.height);
       }
       if (projectId === nodeProjectId && fitAfterHeightFrameRef.current) {
         fitAfterHeightFrameRef.current = false;
@@ -928,6 +939,7 @@ function NodeViewImpl(p: Props) {
   const bodyMaxH = v.bodyMaxHeight;
   const cardStyle: React.CSSProperties = {
     transform: `translate3d(${posX}px, ${posY}px, 0)`,
+    ...entranceStyle,
   };
   if (cardW != null) cardStyle.width = `${cardW}px`;
   if (initialTextFrame) cardStyle.height = `${cardW * (ct === 'explain' ? .625 : 1.25)}px`;
@@ -1021,7 +1033,7 @@ function NodeViewImpl(p: Props) {
   // Old files can contain the former generic 300px placeholder. Verify it
   // once, and repair any saved footprint too short to contain the known body.
   const knownBodyHeight = typeof bodyStyle?.height === 'string' ? parseFloat(bodyStyle.height) : 0;
-  const needsInitialMeasurement = !p.node.renderedHeight
+  const needsInitialMeasurement = birthIsPending(birth) || !p.node.renderedHeight
     || (p.node.renderedHeight === 300 && !verifiedPlaceholderHeight)
     || (Number.isFinite(knownBodyHeight) && knownBodyHeight >= p.node.renderedHeight);
   // Remains null during ordinary resizing; only invalid saved sizes need
@@ -1039,6 +1051,10 @@ function NodeViewImpl(p: Props) {
       for (const entry of entries) {
         const h = Math.round(entry.contentRect.height);
         if (h <= 0) continue;
+        if (useNodeBirthStore.getState().byNode[p.node.id]?.phase === 'measuring') {
+          // contentRect is in unscaled canvas pixels, even at overview zoom.
+          birthSizeRef.current = { width: entry.contentRect.width, height: h };
+        }
         // A genuinely ~300px card is safe to cache (the height reporter has
         // a 4px dead zone). Otherwise keep real layout until next frame's fix.
         if (verifyPlaceholderHeightRef.current && Math.abs(h - 300) < 4) {
@@ -1062,6 +1078,7 @@ function NodeViewImpl(p: Props) {
       // The floating side panel locates its anchor node by this id (it
       // lives in a sibling subtree, so it can't reach the node via refs).
       data-node-id={p.node.id}
+      data-node-birth={birth?.phase}
       lang={languageInfo(v?.language).locale}
       data-language-direction={p.node.chat ? undefined : languageDirection(v?.language)}
       data-node-overview-active={overviewInitiallyActive ? '' : undefined}

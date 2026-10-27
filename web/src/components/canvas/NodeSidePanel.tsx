@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { useGraphStore } from '@/store/useGraphStore';
+import { useNodeBirthStore } from '@/store/useNodeBirthStore';
+import { useNodeEntranceStyle } from '@/lib/nodeEntrance';
 import { useEditorStore } from '@/store/useEditorStore';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { colorToCss } from '@/lib/groupColor';
@@ -150,6 +152,8 @@ export function NodeSidePanel() {
   // different node" case where the panel persists.
 
   const selectedId = project?.selection.length === 1 ? project.selection[0]! : '';
+  const birth = useNodeBirthStore(s => s.byNode[selectedId]);
+  const entranceStyle = useNodeEntranceStyle(birth);
   const selectedNode = selectedId ? project?.nodes[selectedId] : undefined;
   const selectedVersionCreatedAt = selectedNode
     ?.versions[selectedNode.currentVersionIndex]
@@ -437,7 +441,7 @@ export function NodeSidePanel() {
 
   // Chat answer navigation also updates currentVersionIndex, so this follows
   // only the active answer/alternative, never all conversation versions.
-  const panelProps = { panelRef, style: panelStyle, snippets: v.googleSearchSuggestions,
+  const panelProps = { panelRef, style: { ...panelStyle, ...entranceStyle }, snippets: v.googleSearchSuggestions,
     disclosure: { open: openSection, setOpen: (section: SidePanelSection | null) => {
       const panel = useCitationPanelStore.getState();
       if (panel.nodeId === selectedId && ((panel.mode === 'fact-check' && section !== 'fact')

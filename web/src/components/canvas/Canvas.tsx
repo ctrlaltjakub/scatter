@@ -16,7 +16,9 @@ import { RelationHoverPreview } from './RelationHoverPreview';
 import { NodeOverviewController } from './NodeOverviewController';
 import { CanvasToolbar } from './CanvasToolbar';
 import { PixelRuler } from '@/components/dev/PixelRuler';
-import { PhysicsClient, type SizeWake } from '@/physics/physicsClient';
+import { PhysicsClient, type SizeWake, type NodeInsertion, type LinkInsertion, type PlacedNode } from '@/physics/physicsClient';
+import { useNodeBirthStore, birthIsPending } from '@/store/useNodeBirthStore';
+import { findNodePlacement } from '@/lib/nodePlacement';
 import { retryGeneration, hasRetryArgs } from '@/lib/generate';
 import { hasImageRetryArgs, retryImageGeneration } from '@/lib/imageGeneration';
 import { nodeWidth, nodeRenderedH } from '@/lib/nodeSize';
@@ -237,6 +239,8 @@ export function Canvas(props: Props) {
   const setViewport = useGraphStore((s) => s.setViewport);
 
   const physicsConfig = useSettingsStore((s) => s.physicsConfig);
+  const nodeBirths = useNodeBirthStore(s => s.byNode);
+  const [physicsFailed, setPhysicsFailed] = useState(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   useNodeSelectionDismiss(containerRef);
@@ -375,6 +379,14 @@ export function Canvas(props: Props) {
       return state.project?.id === physicsProjectId && state.projectLoadRevision === physicsRevision;
     };
     const phx = new PhysicsClient();
+    setPhysicsFailed(false);
+    const unsubscribeFailure = phx.onFailure(() => {
+      if (isCurrentSnapshot()) setPhysicsFailed(true);
+    });
+    const birthsAtLoad = useNodeBirthStore.getState().byNode;
+    const restoredNodes = Object.values(project.nodes).filter(n => !birthIsPending(birthsAtLoad[n.id]));
+    const restoredIds = new Set(restoredNodes.map(n => n.id));
+    const restoredArrows = Object.values(project.arrows).filter(a => restoredIds.has(a.fromNodeId) && restoredIds.has(a.toNodeId));
     const initialPhysicsConfig = { ...DEFAULT_PHYSICS_CONFIG, ...(physicsConfig ?? {}) };
     const restoredAnchors: Record<string, { x: number; y: number }[]> = {};
     for (const [id, arrow] of Object.entries(project.arrows)) {
@@ -386,8 +398,8 @@ export function Canvas(props: Props) {
       if (compact) restoredAnchors[id] = compact;
     }
     phx.init(
-      Object.values(project.nodes).map(n => ({ id: n.id, x: n.position.x, y: n.position.y, frozen: n.frozen })),
-      Object.values(project.arrows).map(a => ({
+      restoredNodes.map(n => ({ id: n.id, x: n.position.x, y: n.position.y, frozen: n.frozen })),
+      restoredArrows.map(a => ({
         source: a.fromNodeId, target: a.toNodeId,
         kind: a.kind, gravitates: !!a.gravitates,
         arrowId: a.id,
@@ -409,8 +421,8 @@ export function Canvas(props: Props) {
         useArrowAnchorsStore.getState().setAnchors(initial);
       }
     }
-    knownNodesRef.current = new Set(Object.keys(project.nodes));
-    knownArrowsRef.current = new Map(Object.entries(project.arrows));
+    knownNodesRef.current = restoredIds;
+    knownArrowsRef.current = new Map(restoredArrows.map(a => [a.id, a]));
     lastPhysicsNodeStateRef.current = {};
     // PERF R2: seed live positions from the just-loaded project so the
     // first paint has the right transforms before the worker has had a
@@ -445,6 +457,7 @@ export function Canvas(props: Props) {
       positions: { id: string; x: number; y: number }[];
       arrowAnchors: Record<string, { x: number; y: number }[]>;
       removedArrowIds: string[];
+      placedNodes: PlacedNode[];
     };
     let pendingTick: TickPayload | null = null;
     let rafId: number | null = null;
@@ -460,7 +473,7 @@ export function Canvas(props: Props) {
         pendingTick = null;
         return;
       }
-      const { positions, arrowAnchors, removedArrowIds } = pendingTick;
+      const { positions, arrowAnchors, removedArrowIds, placedNodes } = pendingTick;
       pendingTick = null;
       // PERF R2: physics ticks write to the LIVE position store only;
       // `project.nodes[id].position` is no longer mutated on every
@@ -476,13 +489,28 @@ export function Canvas(props: Props) {
       // card alternate between the two values = the resize shake. Skip just
       // that one node (others still update so neighbours visibly make room).
       const skip = resizingNodeIdRef.current;
-      const live = skip ? positions.filter((p) => p.id !== skip) : positions;
+      const currentProject = useGraphStore.getState().project!;
+      const live = positions.filter(p => p.id !== skip && !!currentProject.nodes[p.id]);
       useLivePositionsStore.getState().setPositions(live);
       // Anchor chains: runtime-only, no temporal. Worker already shapes the
       // payload as Record<arrowId, AnchorPos[]> so we forward it directly.
       const anchorStore = useArrowAnchorsStore.getState();
-      anchorStore.mergeAnchors(arrowAnchors);
+      anchorStore.mergeAnchors(Object.fromEntries(Object.entries(arrowAnchors).filter(([id]) => !!currentProject.arrows[id])));
       anchorStore.removeAnchors(removedArrowIds);
+      // Persist the final creation position as layout, not another undo step.
+      // Reveal only after both live card positions and arrow routes are ready.
+      const births = useNodeBirthStore.getState();
+      const arrivals = placedNodes.filter(p => births.byNode[p.id]?.token === p.token
+        && !!useGraphStore.getState().project?.nodes[p.id]);
+      if (arrivals.length) {
+        const history = useGraphStore.temporal.getState(), wasTracking = history.isTracking;
+        history.pause();
+        try {
+          const live = useLivePositionsStore.getState().positions;
+          useGraphStore.getState().setNodePositions(arrivals.flatMap(p => live[p.id] ? [{ id: p.id, ...live[p.id]! }] : []));
+        } finally { if (wasTracking) history.resume(); }
+        for (const p of arrivals) births.reveal(p.id, p.token);
+      }
       // The sandbox recorder asks for complete frames. Normal app canvases
       // have no callback and retain the worker/main-thread delta path.
       if (onPhysicsTickRef.current) {
@@ -491,15 +519,16 @@ export function Canvas(props: Props) {
         onPhysicsTickRef.current(allPositions, useArrowAnchorsStore.getState().anchors);
       }
     };
-    const unsubscribeTick = phx.onTick((positions, arrowAnchors, removedArrowIds) => {
+    const unsubscribeTick = phx.onTick((positions, arrowAnchors, removedArrowIds, placedNodes = []) => {
       if (!isCurrentSnapshot()) return;
       pendingTick = pendingTick
         ? {
             positions: [...pendingTick.positions, ...positions],
             arrowAnchors: { ...pendingTick.arrowAnchors, ...arrowAnchors },
             removedArrowIds: [...new Set([...pendingTick.removedArrowIds, ...removedArrowIds])],
+            placedNodes: [...pendingTick.placedNodes, ...placedNodes],
           }
-        : { positions, arrowAnchors, removedArrowIds };
+        : { positions, arrowAnchors, removedArrowIds, placedNodes };
       if (!hasRaf) { flushPendingTick(); return; }
       if (rafId === null) rafId = window.requestAnimationFrame(flushPendingTick);
     });
@@ -512,6 +541,7 @@ export function Canvas(props: Props) {
     });
     onPhysicsReadyRef.current?.(phx);
     return () => {
+      unsubscribeFailure();
       // PERF R6: cancel any pending rAF before terminating the worker
       // so we don't try to flush against a torn-down store.
       if (rafId !== null && hasRaf) {
@@ -543,15 +573,64 @@ export function Canvas(props: Props) {
   useEffect(() => {
     const phx = physicsRef.current;
     if (!phx || !project) return;
+    useNodeBirthStore.getState().prune(project.id, new Set(Object.keys(project.nodes)));
+    const births = useNodeBirthStore.getState().byNode;
+    if (physicsFailed) {
+      // A blocked/crashed worker must not leave new content invisible. Use
+      // measured static packing as a fallback; the client logs the failure.
+      const live = useLivePositionsStore.getState().positions;
+      const rects = Object.values(project.nodes).filter(n => !birthIsPending(births[n.id]))
+        .map(n => ({ id: n.id, ...(live[n.id] ?? n.position), width: nodeWidth(n), height: nodeRenderedH(n) }));
+      const config = { ...DEFAULT_PHYSICS_CONFIG, ...useSettingsStore.getState().physicsConfig };
+      const placed: { id: string; x: number; y: number; token: number }[] = [];
+      for (const [id, birth] of Object.entries(births)) {
+        const node = project.nodes[id];
+        if (!node || birth.phase !== 'placing' || !birth.size) continue;
+        const parent = rects.find(r => r.id === birth.parentId);
+        if (birth.parentId && project.nodes[birth.parentId] && !parent) continue;
+        const position = parent ? findNodePlacement(parent, rects, birth.size, {
+          gap: config.collidePadding * 2, restGap: config.linkDistance, regions: birth.regions,
+        }) : node.position;
+        rects.push({ id, ...position, ...birth.size });
+        placed.push({ id, ...position, token: birth.token });
+      }
+      if (placed.length) {
+        useLivePositionsStore.getState().setPositions(placed);
+        const history = useGraphStore.temporal.getState(), wasTracking = history.isTracking;
+        history.pause();
+        try { useGraphStore.getState().setNodePositions(placed); }
+        finally { if (wasTracking) history.resume(); }
+        for (const n of placed) useNodeBirthStore.getState().reveal(n.id, n.token);
+      }
+      return;
+    }
+    const insertions: NodeInsertion[] = [];
+    const insertedIds = new Set<string>();
+    const connections: LinkInsertion[] = [];
     // PERF R2: when a node is added (spawn, undo of a delete), seed
     // its live position from the project so NodeView has the right
     // transform before the worker emits its first tick covering it.
-    for (const id in project.nodes) {
-      if (!knownNodesRef.current.has(id)) {
+    const waiting = new Set(Object.keys(project.nodes).filter(id => !knownNodesRef.current.has(id)));
+    let progress = true;
+    while (waiting.size && progress) {
+      progress = false;
+      for (const id of waiting) {
         const n = project.nodes[id]!;
-        phx.addNode({ id: n.id, x: n.position.x, y: n.position.y, frozen: n.frozen });
+        const birth = births[id];
+        if (birth?.phase === 'measuring') continue;
+        // A child can finish measuring before its newly-created parent.
+        // Keep the dependency order in the same worker transaction.
+        if (birth?.parentId && birth.parentId !== id && project.nodes[birth.parentId]
+          && !knownNodesRef.current.has(birth.parentId)) continue;
+        insertions.push({ id: n.id, x: n.position.x, y: n.position.y, frozen: n.frozen,
+          width: birth?.size?.width ?? nodeWidth(n), height: birth?.size?.height ?? nodeRenderedH(n),
+          ...(birthIsPending(birth) ? { birth: { token: birth!.token, parentId: birth!.parentId, regions: birth!.regions } } : {}),
+        });
+        insertedIds.add(id);
         knownNodesRef.current.add(id);
         useLivePositionsStore.getState().setPosition(id, n.position.x, n.position.y);
+        waiting.delete(id);
+        progress = true;
       }
     }
     const toRemove: string[] = [];
@@ -568,6 +647,7 @@ export function Canvas(props: Props) {
     }
     for (const id in project.arrows) {
       const a = project.arrows[id]!;
+      if (!knownNodesRef.current.has(a.fromNodeId) || !knownNodesRef.current.has(a.toNodeId)) continue;
       const previous = knownArrowsRef.current.get(id);
       if (!previous || previous.kind !== a.kind || previous.fromNodeId !== a.fromNodeId || previous.toNodeId !== a.toNodeId) {
         // Promotion (and its undo) changes physics even though the arrow ID
@@ -582,12 +662,14 @@ export function Canvas(props: Props) {
           currentPhysicsConfig.ropeMaxSegmentLength,
           currentPhysicsConfig.ropeMaxAnchorCount,
         );
-        phx.addLink({
+        const link: LinkInsertion = {
           source: a.fromNodeId, target: a.toNodeId,
           kind: a.kind, gravitates: !!a.gravitates,
           arrowId: a.id,
           anchors: compactAnchors,
-        });
+        };
+        if (insertedIds.has(a.fromNodeId) || insertedIds.has(a.toNodeId)) connections.push(link);
+        else phx.addLink(link);
         imageSourceSyncRef.current?.forget(id);
         if (compactAnchors) {
           useArrowAnchorsStore.getState().mergeAnchors({ [a.id]: compactAnchors });
@@ -610,16 +692,17 @@ export function Canvas(props: Props) {
     const nextPhysics: Record<string, PhysicsNodeState> = {};
     for (const id in project.nodes) {
       const n = project.nodes[id]!;
+      if (!knownNodesRef.current.has(id)) continue;
       const state: PhysicsNodeState = {
-        width: nodeWidth(n),
-        height: nodeRenderedH(n),
+        width: insertedIds.has(id) ? births[id]?.size?.width ?? nodeWidth(n) : nodeWidth(n),
+        height: insertedIds.has(id) ? births[id]?.size?.height ?? nodeRenderedH(n) : nodeRenderedH(n),
         frozen: !!n.frozen,
       };
       const prev = lastPhysics[id];
       const sizeChanged = !prev
         || Math.abs(prev.width - state.width) > 0.01
         || Math.abs(prev.height - state.height) > 0.01;
-      if (sizeChanged) {
+      if (sizeChanged && !insertedIds.has(id)) {
         phx.setSize(id, state.width, state.height, { wake: sizeWakeForNode(n, prev, state) });
       }
       if (prev && prev.frozen !== state.frozen) {
@@ -628,6 +711,7 @@ export function Canvas(props: Props) {
       nextPhysics[id] = state;
     }
     lastPhysicsNodeStateRef.current = nextPhysics;
+    if (insertions.length) phx.addGraph(insertions, connections);
     imageSourceSyncRef.current?.sync(project);
     // PERF R2: project → live position sync, but ONLY for nodes whose
     // project.position actually changed in THIS update. We track the
@@ -666,7 +750,7 @@ export function Canvas(props: Props) {
       useLiveViewportStore.getState().seedFrom(pv, project.viewportUpdatedAt);
     }
     lastViewportRef.current = { x: pv.x, y: pv.y, zoom: pv.zoom };
-  }, [project]);
+  }, [project, nodeBirths, physicsFailed]);
 
   // When physicsConfig changes (e.g. after slider drag or revertPhysicsSnapshot),
   // push the new values to the worker. Skip the first mount because init
@@ -853,6 +937,12 @@ export function Canvas(props: Props) {
       }
       const nodes = requestedNodes();
       if (nodes.length === 0) { requestPanTo(null); return; }
+      // Never frame a provisional spawn location or its pre-measurement box.
+      // User input above can still cancel while this handshake is pending.
+      if (phase === 'init' && nodes.some(n => birthIsPending(useNodeBirthStore.getState().byNode[n.id]))) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
       const anyGenerating = nodes.some((node) => node.generating);
       // A header click can issue an ordinary focus request after cancelling
       // initial-root following. Fit once, but do not restart that follow loop.

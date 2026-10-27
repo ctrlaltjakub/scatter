@@ -143,6 +143,17 @@ export const ROOT_BODY_MAX_H = 720;
  *  rendered height via ResizeObserver. */
 export const FALLBACK_NODE_H = 120;
 
+/** Creation-time reservation only. A real DOM measurement replaces this before
+ * the card enters physics or becomes visible; never mistake it for a measured
+ * renderedHeight when restoring projects or reading different fonts. */
+export function estimatedNodeHeight(n: Versioned): number {
+  const v = currentVersion(n);
+  if (v?.emptyText || v?.initialTextFrame) return nodeWidth(n) * (v.contentType === 'explain' ? .625 : 1.25);
+  if (v?.contentType === 'interactive') return nodeBodyMaxH(n) + APPROX_HEADER_CHROME;
+  if (v?.bodyMaxHeight != null) return v.bodyMaxHeight + APPROX_HEADER_CHROME;
+  return v?.contentType === 'explain' ? 240 : 400;
+}
+
 /** Minimum body height the resize handle is allowed to shrink to —
  *  AdaptiveBullets will normally have stored a more accurate per-node
  *  floor (node.minBodyHeight) by the time the user can interact. */

@@ -9,11 +9,13 @@ import { useChatRuntimeStore } from '@/store/useChatRuntimeStore';
 import { ChatComposer } from './ChatComposer';
 import { useNodeTextSelectionStore } from '@/store/useNodeTextSelectionStore';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
+import { useNodeBirthStore } from '@/store/useNodeBirthStore';
 
 vi.mock('@/lib/chat/actions', () => ({ cancelChatEdit: vi.fn(), stopChat: vi.fn(), submitChat: vi.fn() }));
 vi.mock('@/lib/chat/availability', () => ({ chatAvailability: () => ({ available: true, reason: '' }) }));
 
 beforeEach(() => {
+  useNodeBirthStore.getState().clear();
   const node = createChatNode({ id: 'chat', createdAt: 1, position: { x: 0, y: 0 }, bodyHeight: 300 });
   const project = createBlankProject('Attachment button test', node.id);
   useGraphStore.setState({ project: { ...project, nodes: { [node.id]: node } } });
@@ -24,6 +26,19 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('chat attachment button', () => {
+  it('delays initial typing focus until the newly-created card is visible', () => {
+    const project = useGraphStore.getState().project!;
+    useNodeBirthStore.getState().begin(project.id, 'chat');
+    useChatRuntimeStore.getState().view('chat', { composerFocusNonce: 1 });
+    render(<ChatComposer nodeId="chat" />);
+    const input = screen.getByRole('textbox', { name: 'Chat message' });
+    expect(input).not.toHaveFocus();
+    act(() => {
+      useNodeBirthStore.getState().measure('chat', 624, 700);
+      useNodeBirthStore.getState().reveal('chat', useNodeBirthStore.getState().byNode.chat!.token);
+    });
+    expect(input).toHaveFocus();
+  });
   it.each(['typing', 'newline'])('deactivates fact-check display on %s, not merely focusing the composer', action => {
     useCitationPanelStore.getState().openFact('chat', 1);
     render(<ChatComposer nodeId="chat" />);
@@ -70,6 +85,9 @@ describe('chat attachment button', () => {
   });
 
   it('shows a paperclip and Attach label, and opens the existing file dialog', async () => {
+    // Compile the lazy module before starting the DOM wait; unrelated test
+    // compilation can otherwise exhaust findByRole's one-second timeout.
+    await import('./ChatAttachmentOverlay');
     render(<ChatComposer nodeId="chat" />);
     const button = screen.getByRole('button', { name: 'Attach files' });
     expect(button).toHaveTextContent('Attach');

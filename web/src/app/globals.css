@@ -2397,6 +2397,13 @@ select.input {
   transition: opacity 0.2s, filter 0.2s;
   cursor: var(--cur-pointer);
 }
+@keyframes node-enter { from { opacity: 0; } }
+.node[data-node-birth] { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  .node[data-node-birth="entering"], .node-side-panel-stack, [data-arrow-entrance] {
+    animation-duration: 0ms !important;
+  }
+}
 /* The node defaults to non-selectable (above) so the header drag-handle and
    chrome never start a selection. Opt the BODY text back in so the user can
    select / copy it. Interactive chrome inside the body (chips, links, the

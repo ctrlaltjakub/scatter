@@ -14,9 +14,10 @@ import {
 } from './forces';
 import { VerletRopeSim, type RopeConfig, type RopeRealNode } from './verletRope';
 import type { PhysicsConfig } from '@/store/types';
-import type { SizeWake } from './physicsClient';
+import type { SizeWake, NodeInsertion, LinkInsertion, PlacedNode } from './physicsClient';
 import type { SourcePort } from './sourcePort';
 import { localActivity, LAYOUT_ALPHA_MIN } from './localActivity';
+import { findNodePlacement } from '@/lib/nodePlacement';
 
 let cfg: PhysicsConfig = { ...DEFAULT_PHYSICS_CONFIG };
 
@@ -225,6 +226,7 @@ type LinkInit = {
 };
 
 type InMsg =
+  | { type: 'add-graph'; nodes: NodeInsertion[]; links: LinkInsertion[] }
   | { type: 'set-arrow-sources'; sources: { arrowId: string; sourcePort?: SourcePort }[] }
   | { type: 'init'; nodes: { id: string; x: number; y: number; frozen: boolean }[]; links: LinkInit[]; config?: PhysicsConfig }
   | { type: 'set-frozen'; id: string; frozen: boolean }
@@ -250,6 +252,7 @@ type OutMsg = {
   arrowAnchors: Record<string /* arrowId */, { x: number; y: number }[]>;
   /** Chains removed since the previous message. */
   removedArrowIds?: string[];
+  placedNodes?: PlacedNode[];
 };
 
 let nodes: SimNode[] = [];
@@ -323,7 +326,7 @@ const POS_EMIT_THRESHOLD = 0.25; // px — below this, skip the emit
 let forceEmitEveryTick = false;
 export function setForceEmitEveryTick(v: boolean): void { forceEmitEveryTick = v; }
 
-function runTickSideEffects(): void {
+function runTickSideEffects(placedNodes?: PlacedNode[]): void {
   // R6.5 — apply the post-load friction ramp, anchored to the wake.
   if (sim && frictionArmed) {
     const now = (typeof performance !== 'undefined' ? performance.now() : 0);
@@ -351,7 +354,7 @@ function runTickSideEffects(): void {
   const arrowAnchors = verletRope.snapshot();
 
   if (forceEmitEveryTick) {
-    emit({ type: 'tick', nodes: realNodes, arrowAnchors } as OutMsg);
+    emit({ type: 'tick', nodes: realNodes, arrowAnchors, placedNodes } as OutMsg);
     return;
   }
 
@@ -359,9 +362,10 @@ function runTickSideEffects(): void {
   // every active tick. Canvas merges these changed records into its runtime
   // stores; the full snapshot path above remains available to diagnostics.
   const changedNodes: { id: string; x: number; y: number }[] = [];
+  const placements = new Set(placedNodes?.map(n => n.id));
   for (const n of realNodes) {
     const last = lastEmittedNode.get(n.id);
-    if (!last || Math.abs(n.x - last.x) > POS_EMIT_THRESHOLD || Math.abs(n.y - last.y) > POS_EMIT_THRESHOLD) {
+    if (!last || placements.has(n.id) || Math.abs(n.x - last.x) > POS_EMIT_THRESHOLD || Math.abs(n.y - last.y) > POS_EMIT_THRESHOLD) {
       changedNodes.push(n);
     }
   }
@@ -386,7 +390,7 @@ function runTickSideEffects(): void {
   }
   if (changedNodes.length === 0
     && Object.keys(changedAnchors).length === 0
-    && removedArrowIds.length === 0) return;
+    && removedArrowIds.length === 0 && !placedNodes?.length) return;
 
   for (const n of changedNodes) lastEmittedNode.set(n.id, { x: n.x, y: n.y });
   for (const [aid, anchors] of Object.entries(changedAnchors)) {
@@ -398,6 +402,7 @@ function runTickSideEffects(): void {
     nodes: changedNodes,
     arrowAnchors: changedAnchors,
     removedArrowIds: removedArrowIds.length > 0 ? removedArrowIds : undefined,
+    ...(placedNodes?.length ? { placedNodes } : {}),
   } as OutMsg);
 }
 
@@ -447,9 +452,14 @@ function wakeNodes(ids: Iterable<string>, alpha: number) {
   scheduleTicks(alpha);
 }
 
-function rebuild(alpha = 1) {
+function rebuild(alpha: number | null = 1) {
+  const previousDecay = sim?.velocityDecay();
   if (sim) sim.stop();
-  for (const n of nodes) n.layoutAlpha = alpha;
+  // Topology edits rebuild force lookup tables without restarting distant
+  // clusters or changing their cooling trajectories. Config changes/init may
+  // still explicitly set every node's activity.
+  if (alpha != null) for (const n of nodes) n.layoutAlpha = alpha;
+  const timerAlpha = alpha ?? nodes.reduce((max, n) => Math.max(max, n.layoutAlpha ?? 0), .02);
   sim = forceSimulation(nodes)
     .force('activity', localActivity(links, cfg, draggingIds, isLinked))
     .force('linkedRepel', pairwiseRepel(
@@ -493,10 +503,10 @@ function rebuild(alpha = 1) {
     // other forces. 1/4 default node width per tick; only fires on runaway.
     .force('velocityCap', velocityCap(420 / 4))
     .alphaDecay(cfg.alphaDecay)
-    .velocityDecay(cfg.velocityDecay)
-    .alpha(alpha)
+    .velocityDecay(alpha == null ? previousDecay ?? cfg.velocityDecay : cfg.velocityDecay)
+    .alpha(timerAlpha)
     .alphaMin(LAYOUT_ALPHA_MIN)
-    .on('tick', runTickSideEffects);
+    .on('tick', () => runTickSideEffects());
   for (const n of nodes) {
     if (draggingIds.has(n.id)) continue;
     if (n.frozen) { n.fx = n.x; n.fy = n.y; } else { n.fx = null; n.fy = null; }
@@ -564,13 +574,53 @@ export function dispatchMessage(m: InMsg): void {
       frictionWakeMs = null;
       break;
     }
+    case 'add-graph': {
+      const placed: PlacedNode[] = [];
+      for (const input of m.nodes) {
+        if (realNode(input.id)) {
+          // Idempotent acknowledgement: a reset/undo race must never leave a
+          // measured card hidden merely because the worker already knows it.
+          if (input.birth) placed.push({ id: input.id, token: input.birth.token });
+          continue;
+        }
+        const n: SimNode = { id: input.id, x: input.x, y: input.y, frozen: input.frozen,
+          width: input.width, height: input.height, vx: 0, vy: 0, layoutAlpha: .12 };
+        const parent = input.birth?.parentId && realRect(input.birth.parentId);
+        if (parent) {
+          const rects = nodes.map(node => ({ id: node.id, x: node.fx ?? node.x ?? 0, y: node.fy ?? node.y ?? 0,
+            width: node.width ?? 624, height: node.height ?? 120 }));
+          const currentParent = rects.find(r => r.id === parent.id)!;
+          Object.assign(n, findNodePlacement(currentParent, rects, input, {
+            gap: cfg.collidePadding * 2, restGap: cfg.linkDistance, regions: input.birth?.regions,
+            edges: links.map(l => ({ source: typeof l.source === 'string' ? l.source : l.source.id,
+              target: typeof l.target === 'string' ? l.target : l.target.id })),
+          }));
+        }
+        if (n.frozen) { n.fx = n.x; n.fy = n.y; }
+        nodes.push(n);
+        if (input.birth) placed.push({ id: n.id, token: input.birth.token });
+      }
+      for (const input of m.links) {
+        if (links.some(l => l.arrowId === input.arrowId) || !realNode(input.source) || !realNode(input.target)) continue;
+        links.push({ ...input, entranceTicks: 12 });
+        ensureRopeChainFor(input.source, input.target, input.arrowId, input.anchors);
+      }
+      rebuildLinkedEdges();
+      rebuild(null);
+      // Publish final placement and routed arrows BEFORE the first force tick.
+      // The main thread reveals the card and starts camera framing together.
+      runTickSideEffects(placed);
+      break;
+    }
     case 'add-node':
       nodes.push({
         id: m.node.id,
         x: m.node.x, y: m.node.y, frozen: m.node.frozen,
         fx: m.node.frozen ? m.node.x : null, fy: m.node.frozen ? m.node.y : null,
+        layoutAlpha: .12,
       });
-      rebuild();
+      rebuildLinkedEdges();
+      rebuild(null);
       break;
     case 'add-link':
       links.push({
@@ -579,14 +629,18 @@ export function dispatchMessage(m: InMsg): void {
       });
       ensureRopeChainFor(m.link.source, m.link.target, m.link.arrowId, m.link.anchors);
       rebuildLinkedEdges();
-      rebuild();
+      rebuild(null);
+      if (m.link.kind === 'auto') wakeNodes([m.link.source, m.link.target], .12);
       break;
     case 'remove-links': {
       const drop = new Set(m.ids);
+      const affected = links.filter(l => drop.has(l.arrowId) && l.kind === 'auto')
+        .flatMap(l => [typeof l.source === 'string' ? l.source : l.source.id, typeof l.target === 'string' ? l.target : l.target.id]);
       links = links.filter((l) => !drop.has(l.arrowId));
       for (const id of drop) verletRope.removeChain(id);
       rebuildLinkedEdges();
-      rebuild();
+      rebuild(null);
+      if (affected.length) wakeNodes(affected, .12);
       break;
     }
     case 'remove-nodes': {
@@ -594,18 +648,21 @@ export function dispatchMessage(m: InMsg): void {
       for (const id of drop) draggingIds.delete(id);
       nodes = nodes.filter(n => !drop.has(n.id));
       const removedArrowIds = new Set<string>();
+      const affected = new Set<string>();
       links = links.filter(l => {
         const sId = typeof l.source === 'string' ? l.source : (l.source as SimNode).id;
         const tId = typeof l.target === 'string' ? l.target : (l.target as SimNode).id;
         if (drop.has(sId) || drop.has(tId)) {
           removedArrowIds.add(l.arrowId);
+          if (l.kind === 'auto') { affected.add(sId); affected.add(tId); }
           return false;
         }
         return true;
       });
       removedArrowIds.forEach(id => verletRope.removeChain(id));
       rebuildLinkedEdges();
-      rebuild();
+      rebuild(null);
+      if (affected.size) wakeNodes(affected, .12);
       break;
     }
     case 'set-frozen': {

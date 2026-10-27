@@ -15,6 +15,7 @@
  */
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { useGraphStore, createBlankProject } from '@/store/useGraphStore';
+import { useNodeBirthStore } from '@/store/useNodeBirthStore';
 import { useLivePositionsStore } from '@/store/useLivePositionsStore';
 import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import { nodeWidth, nodeRenderedH } from '@/lib/nodeSize';
@@ -86,6 +87,20 @@ afterEach(() => {
 });
 
 describe('aura lifecycle', () => {
+  test('creation starts its aura at the final position, together with the card', () => {
+    setProjectWith({ n0: makeNode('n0', 0) });
+    const scene = makeScene();
+    useGraphStore.getState().addNode(makeNode('child', 1));
+    expect(scene.state.auras.has('child')).toBe(false);
+    expect(scene.state.waves.has('child')).toBe(false);
+    useNodeBirthStore.getState().measure('child', 624, 780);
+    useLivePositionsStore.getState().setPosition('child', 686.5, -195);
+    useGraphStore.getState().updateNode('child', { renderedHeight: 780 });
+    useNodeBirthStore.getState().reveal('child', useNodeBirthStore.getState().byNode.child!.token);
+    expect(scene.state.auras.get('child')!.rect).toEqual({ x: 686.5, y: -195, w: 624, h: 780 });
+    expect(scene.state.waves.get('child')?.kind).toBe('spawn');
+  });
+
   test('initial sync creates an aura per node with node-sized rect', () => {
     const n0 = makeNode('n0', 0);
     setProjectWith({ n0 });

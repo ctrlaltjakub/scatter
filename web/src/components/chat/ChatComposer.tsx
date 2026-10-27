@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { ArrowUp, FileText, Image as ImageIcon, Paperclip, Square, X } from 'lucide-react';
 import { useGraphStore } from '@/store/useGraphStore';
+import { birthIsPending, useNodeBirthStore } from '@/store/useNodeBirthStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useModelCatalogStore } from '@/store/useModelCatalogStore';
 import { useChatRuntimeStore, chatDraftKey, EMPTY_CHAT_DRAFT, getChatDraft } from '@/store/useChatRuntimeStore';
@@ -26,6 +27,7 @@ export function ChatComposer({ nodeId }: { nodeId: string }) {
   const compacting = useChatRuntimeStore((state) => !!state.views[nodeId]?.compacting);
   const error = useChatRuntimeStore((state) => state.views[nodeId]?.error);
   const focusNonce = useChatRuntimeStore((state) => state.views[nodeId]?.composerFocusNonce);
+  const awaitingPlacement = useNodeBirthStore(state => birthIsPending(state.byNode[nodeId]));
   useSettingsStore((state) => state.activeModelRef);
   useSettingsStore((state) => state.providers);
   useModelCatalogStore((state) => state.catalog);
@@ -42,7 +44,9 @@ export function ChatComposer({ nodeId }: { nodeId: string }) {
     // it must not unexpectedly revive that older answer scope.
     if (current.reference) setDraft(projectId, nodeId, { ...current, reference: undefined });
   }, [selectedPassage, projectId, nodeId, setDraft]);
-  useEffect(() => { if (focusNonce) area.current?.focus({ preventScroll: true }); }, [focusNonce]);
+  useEffect(() => {
+    if (focusNonce && !awaitingPlacement) area.current?.focus({ preventScroll: true });
+  }, [focusNonce, awaitingPlacement]);
   useEffect(() => {
     const runtime = useChatRuntimeStore.getState();
     const alreadyHydrated = !!runtime.drafts[chatDraftKey(projectId, nodeId)];
