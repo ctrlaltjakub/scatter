@@ -61,12 +61,13 @@ describe('model diagnostics', () => {
     await expect(runDiagnosticJob(job, cfg, new AbortController().signal, '', invoke)).rejects.toThrow('perimeter: The explanation contains multiple sentences');
     expect(invoke).toHaveBeenCalledTimes(1);
   });
-  it('passes previews with missing or different emphasis without repair calls', async () => {
+  it('passes previews with abbreviated names and different emphasis without repair calls', async () => {
     const cfg = settings(), job = diagnosticPlan(cfg, 'secondary').find(job => job.test.id === 'previews')!;
     const invoke = vi.fn(async function* () {
       yield { delta: JSON.stringify({ previews: [
         { id: 0, parts: ['The perimeter is ', 'the total boundary length', ' of a shape.'] },
         { id: 1, parts: ['An equilateral triangle has three equal sides.'] },
+        { id: 2, parts: ['J. R. R. Tolkien was an author known for ', 'The Hobbit', ' and ', 'The Lord of the Rings', '.'] },
       ] }), done: true, finishReason: 'stop' as const };
     });
     expect((await runDiagnosticJob(job, cfg, new AbortController().signal, '', invoke)).status).toBe('passed');

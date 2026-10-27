@@ -26,7 +26,7 @@ async function scene(page: Page, zoom = .75) {
         width: 624, createdAt: 1, generatedBy: 'manual' }], currentVersionIndex: 0 });
     graph.getState().setProject({ ...graph.getState().project, id: 'creation-test',
       nodes: { parent: make('parent', 0, 0), obstacle: make('obstacle', 720, 500) },
-      arrows: {}, groups: {}, rootNodeId: 'parent', selection: ['parent'], viewport: { x: 400, y: 300, zoom } });
+      arrows: {}, groups: {}, rootNodeId: 'parent', selection: ['parent'], viewport: { x: 800, y: 300, zoom } });
     graph.getState().requestPanTo(null);
     graph.temporal.getState().clear();
   }, zoom);
@@ -56,6 +56,7 @@ async function recordCreation(page: Page, action: 'button' | 'rapid' | 'overview
   if (action === 'button') {
     const panel = page.locator('.node-side-panel-stack');
     await panel.getByRole('button', { name: 'Add node', exact: true }).click();
+    await expect(page.locator('#add-node-parent')).toHaveAttribute('data-animating', 'false');
     await panel.getByRole('button', { name: 'Encyclopedic node', exact: true }).click();
   } else {
     await page.evaluate(count => {
@@ -63,6 +64,7 @@ async function recordCreation(page: Page, action: 'button' | 'rapid' | 'overview
       for (let i = 0; i < count; i++) spawn('parent', 'encyclopedic');
     }, action === 'rapid' ? 2 : 1);
   }
+  await expect(page.locator('[data-node-id]')).toHaveCount(action === 'rapid' ? 4 : 3);
   await expect.poll(() => page.evaluate(() => Object.keys((window as any).testExport('useNodeBirthStore').getState().byNode).length)).toBe(0);
   await page.waitForTimeout(400);
   return page.evaluate(() => { (window as any).recordCreation = false; return (window as any).creationSamples as {
@@ -79,6 +81,9 @@ test('measures, places, then fades in a real child without the pinned-obstacle j
   expect(visible.length).toBeGreaterThan(2);
   expect(visible.some(s => s.opacity > .05 && s.opacity < .95)).toBe(true);
   expect(visible.every(s => s.width === 624 && s.height === 780)).toBe(true);
+  // Right is blocked: use the centred left slot, not a right-hand diagonal.
+  expect(visible[0]!.x).toBeCloseTo(-686.5, 2);
+  expect(visible[0]!.y).toBeCloseTo(-195, 2);
   for (let i = 1; i < visible.length; i++) {
     expect(Math.hypot(visible[i]!.x - visible[i - 1]!.x, visible[i]!.y - visible[i - 1]!.y)).toBeLessThan(20);
   }
@@ -135,6 +140,7 @@ test('all empty node types become usable and chat retains its typing focus', asy
     await expect(page.locator('[data-node-id]')).toHaveCount(1);
     await expect(panel.getByRole('button', { name: 'Add node', exact: true })).toHaveAttribute('aria-controls', 'add-node-parent');
     await panel.getByRole('button', { name: 'Add node', exact: true }).click();
+    await expect(page.locator('#add-node-parent')).toHaveAttribute('data-animating', 'false');
     await panel.getByRole('button', { name, exact: true }).click();
     const child = page.locator('[data-node-id]:not([data-node-id="parent"])');
     await expect(child).toBeVisible();

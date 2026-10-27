@@ -13,18 +13,35 @@ describe('measured rectangle placement', () => {
     expect(findNodePlacement(wide, [wide], child, options)).toEqual({ x: 1562.5, y: -195 });
   });
 
-  it('fits the actual tall card beside a pinned lower obstacle', () => {
+  it('uses directly left before a right-hand diagonal when the right slot is blocked', () => {
     const obstacles = [parent, { id: 'obstacle', x: 720, y: 500, width: 624, height: 390 }];
     const result = place(obstacles);
     for (const obstacle of obstacles) expect(placementOverlaps(result, obstacle, options.gap)).toBe(false);
-    expect(result.y + result.height).toBeLessThanOrEqual(450);
+    expect(result).toEqual({ x: -686.5, y: -195, ...child });
+  });
+
+  it('prefers directly right even when another direction would be closer', () => {
+    const size = { width: 1200, height: 100 };
+    expect(place([parent], size)).toEqual({ x: 686.5, y: 145, ...size });
+  });
+
+  it.each([false, true])('uses nearby space above or below without quadrant bias (mirror: %s)', mirror => {
+    const obstacles = [parent,
+      { id: 'right', x: 686.5, y: -195, width: 1400, height: 780 },
+      { id: 'left', x: -1462.5, y: -195, width: 1400, height: 780 },
+      { id: 'below', x: 0, y: 452.5, width: 624, height: 780 },
+    ].map(r => mirror ? { ...r, y: parent.height - r.y - r.height } : r);
+    const result = place(obstacles);
+    expect(result).toEqual({ x: 0, y: mirror ? 452.5 : -842.5, ...child });
+    for (const obstacle of obstacles) expect(placementOverlaps(result, obstacle, options.gap)).toBe(false);
   });
 
   it('uses an exact available gap that angular sampling could miss', () => {
     const size = { width: 624, height: 400 };
     const obstacles = [parent,
-      { id: 'above', x: 686.5, y: -1000, width: 1500, height: 1000 },
-      { id: 'below', x: 686.5, y: 500, width: 1500, height: 1000 },
+      { id: 'above', x: -2000, y: -1000, width: 4000, height: 1000 },
+      { id: 'below', x: -2000, y: 500, width: 4000, height: 1000 },
+      { id: 'left', x: -2000, y: 0, width: 2000, height: 500 },
     ];
     expect(place(obstacles, size)).toEqual({ x: 686.5, y: 50, ...size });
   });
@@ -35,11 +52,11 @@ describe('measured rectangle placement', () => {
     expect(placementOverlaps({ ...result, ...child }, parent, 300)).toBe(false);
   });
 
-  it('places image-region questions toward the nearest image edge', () => {
+  it('uses the same direct-slot preference for image-region questions', () => {
     const result = findNodePlacement(parent, [parent], child, {
       ...options, regions: [{ x: 0, y: .45, width: .1, height: .1 }],
     });
-    expect(result).toEqual({ x: -686.5, y: -195 });
+    expect(result).toEqual({ x: 686.5, y: -195 });
     expect(placementOverlaps({ ...result, ...child }, parent, options.gap)).toBe(false);
   });
 

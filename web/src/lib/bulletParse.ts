@@ -221,7 +221,7 @@ export function stripChips(s: string): string {
  */
 const SENTENCE_ABBREVS = new Set([
   'e.g', 'i.e', 'etc', 'vs', 'cf', 'al', 'dr', 'mr', 'mrs', 'ms',
-  'prof', 'st', 'jr', 'sr', 'no', 'vol', 'fig', 'approx',
+  'prof', 'st', 'jr', 'sr', 'no', 'vol', 'fig', 'approx', 'op', 'opp',
   'z.b', 'd.h', 'bzw', 'usw', 'nr', 'hr', 'fr', 'ggf', 'ca',
   'np', 'itd', 'itp', 'tzn', 'mgr', 'inż', 'ul', 'r',
   'mme', 'mlle', 'm', 'ex', 'p.ex', 'sr', 'sra', 'dra', 'p.ej',
@@ -244,7 +244,20 @@ function isAbbreviationDot(s: string, dotIdx: number): boolean {
   const token = s.slice(k + 1, dotIdx).replace(/^[*_"'“‘«「『（(\[]+/u, '');
   // Single capital initial: "J. R. R. Tolkien".
   if (token.length === 1 && /\p{Lu}/u.test(token)) return true;
-  return SENTENCE_ABBREVS.has(token.toLowerCase());
+  if (SENTENCE_ABBREVS.has(token.toLowerCase())) return true;
+  // Known compound abbreviations also allow spaces: "z. B.", "d. h.".
+  // Examine only the adjacent words, not the whole preceding paragraph at each
+  // dot; this scanner is also used while rendering long answers.
+  const forward = s.slice(k + 1).match(/^([\p{L}]+)\.\s+([\p{L}]+)\./u);
+  if (forward && SENTENCE_ABBREVS.has(`${forward[1]}.${forward[2]}`.toLowerCase())) return true;
+  let previousEnd = k;
+  while (previousEnd >= 0 && /\s/u.test(s[previousEnd]!)) previousEnd--;
+  if (s[previousEnd] === '.') {
+    let previousStart = previousEnd - 1;
+    while (previousStart >= 0 && /\p{L}/u.test(s[previousStart]!)) previousStart--;
+    if (SENTENCE_ABBREVS.has(`${s.slice(previousStart + 1, previousEnd)}.${token}`.toLowerCase())) return true;
+  }
+  return false;
 }
 
 /**

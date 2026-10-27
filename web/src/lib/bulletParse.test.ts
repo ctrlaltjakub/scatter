@@ -276,6 +276,15 @@ describe('splitSentences — one entry per sentence, marker- and abbreviation-aw
     ]);
   });
 
+  test('keeps opus numbers and spaced compound abbreviations in their sentence', () => {
+    expect(splitSentences('**Op. 9, No. 2** is a piano work. Another sentence.')).toEqual([
+      '**Op. 9, No. 2** is a piano work.', 'Another sentence.',
+    ]);
+    expect(splitSentences('Das gilt z. B. hier, d. h. in diesem Fall. Danach folgt ein Satz.')).toEqual([
+      'Das gilt z. B. hier, d. h. in diesem Fall.', 'Danach folgt ein Satz.',
+    ]);
+  });
+
   test('does not split inside a decimal number', () => {
     expect(splitSentences('Pi is 3.14 today. Yes indeed.')).toEqual([
       'Pi is 3.14 today.',

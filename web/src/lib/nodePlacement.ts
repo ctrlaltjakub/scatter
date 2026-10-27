@@ -37,6 +37,12 @@ export function findNodePlacement(
   const gap = Math.max(0, options.gap), rest = Math.max(gap, options.restGap);
   const rects = obstacles.filter(r => Number.isFinite(r.x + r.y + r.width + r.height) && r.width > 0 && r.height > 0);
   const center = { x: parent.x + parent.width / 2, y: parent.y + parent.height / 2 };
+  // Only these two exact, vertically centred slots have directional priority.
+  // If both are occupied, use the same distance score in every direction.
+  for (const x of [parent.x + parent.width + rest, parent.x - width - rest]) {
+    const y = center.y - height / 2;
+    if (!rects.some(r => placementOverlaps({ x, y, width, height }, r, gap))) return { x, y };
+  }
   let origin = center;
   const regions = options.regions?.filter(r => r.width > 0 && r.height > 0);
   if (regions?.length) {
@@ -44,17 +50,15 @@ export function findNodePlacement(
     const maxX = Math.max(...regions.map(r => r.x + r.width)), maxY = Math.max(...regions.map(r => r.y + r.height));
     origin = { x: parent.x + (minX + maxX) / 2 * parent.width, y: parent.y + (minY + maxY) / 2 * parent.height };
   }
-  // Right → left → down → up. Image questions instead prefer the nearest edge
-  // to the selected region. Tangential positions are solved exactly by merging
-  // occupied intervals, so narrow usable gaps aren't missed by angle sampling.
+  // Search from all four edges without quadrant preferences. Tangential positions
+  // are solved exactly by merging occupied intervals, so narrow usable gaps
+  // aren't missed by angle sampling. Image regions inform proximity, not priority.
   const sides = [
-    { horizontal: true, positive: true, start: parent.x + parent.width + rest, distance: parent.x + parent.width - origin.x },
-    { horizontal: true, positive: false, start: parent.x - width - rest, distance: origin.x - parent.x },
-    { horizontal: false, positive: true, start: parent.y + parent.height + rest, distance: parent.y + parent.height - origin.y },
-    { horizontal: false, positive: false, start: parent.y - height - rest, distance: origin.y - parent.y },
+    { horizontal: true, positive: true, start: parent.x + parent.width + rest },
+    { horizontal: true, positive: false, start: parent.x - width - rest },
+    { horizontal: false, positive: true, start: parent.y + parent.height + rest },
+    { horizontal: false, positive: false, start: parent.y - height - rest },
   ];
-  const priority = sides.map((_, i) => i);
-  if (regions?.length) priority.sort((a, b) => sides[a]!.distance - sides[b]!.distance);
   const candidates: { x: number; y: number; cost: number }[] = [];
   for (let side = 0; side < sides.length; side++) {
     const { horizontal, positive, start } = sides[side]!;
@@ -78,12 +82,11 @@ export function findNodePlacement(
       }
       for (const tangent of nearestFree(target, intervals)) {
         const x = horizontal ? line : tangent, y = horizontal ? tangent : line;
-        const dx = x + width / 2 - center.x, dy = y + height / 2 - center.y;
-        const actualSide = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 0 : 1) : (dy >= 0 ? 2 : 3);
+        const dx = x + width / 2 - origin.x, dy = y + height / 2 - origin.y;
         const gapX = Math.max(0, x - parent.x - parent.width, parent.x - x - width);
         const gapY = Math.max(0, y - parent.y - parent.height, parent.y - y - height);
         const cost = Math.abs(Math.hypot(gapX, gapY) - rest)
-          + priority.indexOf(actualSide) * 400 + Math.abs(tangent - target) * .25;
+          + Math.hypot(dx, dy) * .25;
         candidates.push({ x, y, cost });
       }
     }

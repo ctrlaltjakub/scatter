@@ -96,9 +96,11 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
     assertDiagnostic(body && markedTerms(body).length > 0, 'Term selection returned invalid JSON or no usable terms. Check the secondary model, then retry Redo terms on the affected answer.');
     assertDiagnostic(body && stripTermMarkers(body) === stripTermMarkers(DIAGNOSTIC_TEXT), 'Term marking changed the source text instead of only marking terms.');
   });
-  const previewTerms = ['perimeter', 'equilateral triangle'];
-  const preview = previewRequest({ header: 'Triangle perimeter', body: DIAGNOSTIC_TEXT, language: language.id, createdAt: 1, generatedBy: 'root', contentType: 'encyclopedic' }, previewTerms);
-  secondary('previews', 'Term previews', preview.system, preview.user, preview.maxOutputTokens, text => {
+  const previewTerms = ['perimeter', 'equilateral triangle', 'J. R. R. Tolkien'];
+  const preview = previewRequest({ header: 'Geometry and literature',
+    body: DIAGNOSTIC_TEXT + '\n\nJ. R. R. Tolkien was an author known for The Hobbit and The Lord of the Rings.',
+    language: language.id, createdAt: 1, generatedBy: 'root', contentType: 'encyclopedic' }, previewTerms);
+  secondary('previews', 'Term previews · including abbreviated names', preview.system, preview.user, preview.maxOutputTokens, text => {
     const { issues } = inspectTermPreviews(text, previewTerms);
     assertDiagnostic(!Object.keys(issues).length, Object.entries(issues).map(([term, issue]) => `${term}: ${issue.reason}`).join(' '));
   });

@@ -115,6 +115,21 @@ describe('term preview data', () => {
     const malformed = ['A cache ', 'stores data', '. It ', 'improves speed', '.'];
     expect(inspectTermPreviews(JSON.stringify({ previews: [{ id: 0, parts: malformed }] }), ['cache']).issues.cache?.reason).toContain('multiple sentences');
   });
+  it.each([
+    'Aphex Twin is the alias of Richard D. James, a musician known for experimental electronic music.',
+    'W. B. Yeats was an Irish poet associated with the literary revival.',
+    'St. Irvyne is a Gothic novel by Percy Bysshe Shelley.',
+    'Dr. Johann Adam Schmidt was a physician who treated Beethoven.',
+    'Chopin’s Nocturne Op. 9, No. 2 is a piano work in E-flat major.',
+    'The U.S. economy includes a range of industries.',
+    'Dr. Müller misst z. B. eine Länge von 3.14 Metern.',
+    'Prof. Kowalski podaje np. wartość 3.14 jako przybliżenie.',
+  ])('accepts a single sentence containing abbreviated names or titles: %s', sentence => {
+    const raw = JSON.stringify({ previews: [{ id: 0, parts: [sentence] }] });
+    expect(inspectTermPreviews(raw, ['term'])).toEqual({ entries: { term: sentence }, issues: {} });
+    const two = JSON.stringify({ previews: [{ id: 0, parts: [sentence + ' This is another sentence.'] }] });
+    expect(inspectTermPreviews(two, ['term']).issues.term?.reason).toContain('multiple sentences');
+  });
   it.each(LANGUAGES)('keeps valid $name preview prose unchanged through validation', ({ id, sample }) => {
     // Split at grapheme boundaries, including CJK/Devanagari and RTL text.
     const graphemes = [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(sample)].map(part => part.segment);
@@ -125,6 +140,8 @@ describe('term preview data', () => {
     expect(accepted.entries[id]!.replace(/\*\*/g, '')).toBe(sample);
     expect(inspectTermPreviews(JSON.stringify({ previews: [{ id: 0, parts: [sample] }] }), [id]))
       .toEqual({ entries: { [id]: sample }, issues: {} });
+    expect(inspectTermPreviews(JSON.stringify({ previews: [{ id: 0, parts: [`${sample} ${sample}`] }] }), [id]).entries)
+      .toEqual({});
   });
   it('retains distant term context on long nodes', () => {
     const body = 'Beginning. '.repeat(2000) + 'A [[mutex]] prevents simultaneous access.';
@@ -240,6 +257,33 @@ describe('background preview lifecycle', () => {
     expect(termPreviewFor(chatVersion(12), 'cache')).toBe(explanation);
     expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'latency' }]);
     expect(answerEnrichmentError(chatVersion(12))).toBeUndefined();
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
+  it.each(['encyclopedic', 'explain', 'answer', 'chat'] as const)('redo recovers abbreviated-name previews in %s without regenerating completed entries', async contentType => {
+    seed('A [[cache]] stores a recording by [[Aphex Twin]].');
+    if (contentType === 'chat') {
+      const project = seedChat();
+      useGraphStore.getState().updateNode('n', updateChatAnswer(project.nodes.n!, { turnId: 'second', versionCreatedAt: 12 },
+        { body: 'A [[cache]] stores a recording by [[Aphex Twin]].' }));
+    } else useGraphStore.getState().updateNode('n', { versions: [{ ...current(), contentType }] });
+    const node = useGraphStore.getState().project!.nodes.n!;
+    const timestamp = contentType === 'chat' ? 12 : 10;
+    useGraphStore.getState().updateNode('n', { versions: node.versions.map(v => v.createdAt === timestamp ? { ...v,
+      termPreviews: { fingerprint: termPreviewFingerprint(v), entries: { cache: explanation }, exhaustedTerms: ['aphex twin'] },
+    } : v) });
+    const abbreviated = ['Aphex Twin is the alias of ', 'Richard D. James', ', a musician known for ', 'experimental electronic music', '.'];
+    const expected = 'Aphex Twin is the alias of **Richard D. James**, a musician known for **experimental electronic music**.';
+    complete.mockResolvedValueOnce('{"terms":["cache","Aphex Twin"]}')
+      .mockResolvedValue(JSON.stringify({ previews: [{ id: 0, parts: abbreviated }] }));
+    if (contentType === 'chat') await redoChatTerms('n', { turnId: 'second', versionCreatedAt: 12 });
+    else await redoTermMarking('n');
+    const latest = () => contentType === 'chat' ? chatVersion(12) : useGraphStore.getState().project!.nodes.n!.versions.at(-1)!;
+    await vi.waitFor(() => expect(termPreviewFor(latest(), 'Aphex Twin')).toBe(expected));
+    expect(termPreviewFor(latest(), 'cache')).toBe(explanation);
+    expect(answerEnrichmentError(latest())).toBeUndefined();
+    expect(complete).toHaveBeenCalledTimes(2); // marking + one preview; no repairs
+    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'Aphex Twin' }]);
+    await generateTermPreviews('n', latest().createdAt);
     expect(complete).toHaveBeenCalledTimes(2);
   });
   it.each(['generating', 'failed'] as const)('redo previews for a completed answer are independent of another chat turn being %s', async (state) => {
