@@ -179,9 +179,13 @@ export function buildMessages(input: {
   maxLevel1?: number;
 }): ChatMessage[] {
   const custom = useSettingsStore.getState().customPrompts;
+  const proseSystem = (system: string) => {
+    const lines = effectivePrompt('proseLineBoundaries', custom);
+    return !lines || system.includes(lines) ? system : `${system}\n\n${lines}`;
+  };
   if (input.variant.kind === 'answer' || (input.variant.kind === 'modify-selection' && input.variant.mode === 'answer')) {
     return [
-      { role: 'system', content: substitute(effectivePrompt('answerBase', custom), { formatting: chatFormattingPrompt(!!input.variant.informationChunking, useSettingsStore.getState().normalChatInstructions ?? '', custom, true) }) },
+      { role: 'system', content: proseSystem(substitute(effectivePrompt('answerBase', custom), { formatting: chatFormattingPrompt(!!input.variant.informationChunking, useSettingsStore.getState().normalChatInstructions ?? '', custom, true) })) },
       { role: 'user', content: buildContextBlock(input.context, custom) + buildTaskBlock(input.variant, custom) },
     ];
   }
@@ -199,11 +203,11 @@ export function buildMessages(input: {
     return [
       {
         role: 'system',
-        content: input.variant.freeText
+        content: proseSystem(input.variant.freeText
           ? effectivePrompt('explainBase', custom)
           : substitute(effectivePrompt('base', custom), {
             maxLevel1: String(input.maxLevel1 ?? DEFAULT_MAX_L1_BULLETS),
-          }),
+          })),
       },
       { role: 'user', content: buildTaskBlock(input.variant, custom) },
     ];
@@ -218,16 +222,16 @@ export function buildMessages(input: {
     || (input.variant.kind === 'expand-part' && input.variant.mode === 'explain')
   ) {
     return [
-      { role: 'system', content: effectivePrompt('explainBase', custom) },
+      { role: 'system', content: proseSystem(effectivePrompt('explainBase', custom)) },
       { role: 'user', content: buildContextBlock(input.context, custom) + buildTaskBlock(input.variant, custom) },
     ];
   }
   return [
     {
       role: 'system',
-      content: substitute(effectivePrompt('base', custom), {
+      content: proseSystem(substitute(effectivePrompt('base', custom), {
         maxLevel1: String(input.maxLevel1 ?? DEFAULT_MAX_L1_BULLETS),
-      }),
+      })),
     },
     { role: 'user', content: buildContextBlock(input.context, custom) + buildTaskBlock(input.variant, custom) },
   ];

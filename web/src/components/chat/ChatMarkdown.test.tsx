@@ -8,6 +8,7 @@ import { activateReference } from '@/lib/referenceAction';
 import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import { applyTermSelection } from '@/lib/termMarking';
 import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
+import { LANGUAGES } from '@/lib/languages';
 
 vi.mock('@/lib/chat/actions', () => ({ activateChatAnswer: vi.fn() }));
 vi.mock('@/lib/referenceAction', () => ({ activateReference: vi.fn() }));
@@ -92,9 +93,47 @@ describe('chat Markdown presentation', () => {
     expect(container.innerHTML).toMatch(/sleep,<br\s*\/?>\s*Spoke/);
     expect(container.innerHTML).toMatch(/<em>Jung:<\/em><br\s*\/?>/);
   });
-  it('keeps soft Markdown wraps separated by a space', () => {
+  it('keeps authored soft wraps for normal CSS whitespace handling', () => {
     const { container } = render(<ChatMarkdown nodeId="c" version={answer('First line,\nsecond line.', false)} />);
-    expect(container.textContent).toBe('First line, second line.');
+    expect(container.textContent).toBe('First line,\nsecond line.');
+    expect(container).toHaveTextContent('First line, second line.');
+  });
+  it('leaves two sentences on one authored line, including old content, together', () => {
+    const { container } = render(<ChatMarkdown nodeId="c" version={answer('One sentence. Another sentence.')} />);
+    expect(container.querySelectorAll('.sc-ab-sentence')).toHaveLength(1);
+    expect(container.querySelector('.sc-ab-sentence')).toHaveTextContent('One sentence. Another sentence.');
+  });
+  it.each(LANGUAGES)('toggles authored line presentation without changing text or paragraphs in $name', language => {
+    const body = `**${language.sample}**\n${language.sample}\n\n${language.sample}`;
+    const { container, rerender } = render(<ChatMarkdown nodeId="c" version={{ ...answer(body), language: language.id }} />);
+    expect(container.querySelectorAll('p')).toHaveLength(2);
+    expect([...container.querySelectorAll('.sc-ab-sentence')].map(element => element.textContent?.trim()))
+      .toEqual([language.sample, language.sample, language.sample]);
+    expect(container.querySelectorAll('strong')).toHaveLength(1);
+    rerender(<ChatMarkdown nodeId="c" version={{ ...answer(body, false), language: language.id }} />);
+    expect(container.querySelector('.sc-ab-sentence')).toBeNull();
+    expect(container.querySelectorAll('p')).toHaveLength(2);
+    expect(container.querySelector('p')?.textContent).toBe(`${language.sample}\n${language.sample}`);
+  });
+  it.each([true, false])('keeps source-selection anchors aligned across authored lines (chunked=%s)', chunked => {
+    const body = 'First **line**.\nA **second word** follows.\nLast line.';
+    const version = answer(body, chunked);
+    const project = createBlankProject('Authored lines', 'c');
+    project.nodes.c = { id: 'c', type: 'manual-empty', frozen: false, position: { x: 0, y: 0 }, currentVersionIndex: 0, versions: [version] };
+    project.arrows = { relation: { id: 'relation', kind: 'auto', fromNodeId: 'c', toNodeId: 'child',
+      sourceAnswer: { turnId: 't', versionCreatedAt: 2 },
+      sourceSelection: { sourceVersionCreatedAt: 2, createdAt: 3, text: 'second word',
+        parts: [{ sourceField: 'chat:0', start: body.indexOf('second word'), end: body.indexOf('second word') + 11, text: 'second word' }] } } };
+    useGraphStore.setState({ project, activeProjectId: project.id });
+    const { container } = render(<ChatMarkdown nodeId="c" version={version} />);
+    expect(container.querySelector('.source-selection-mark')).toHaveTextContent('second word');
+    expect(container.querySelector('.source-selection-mark')?.closest('strong')).not.toBeNull();
+  });
+  it('keeps detached citations visible without creating a hanging sentence or fact-check target', () => {
+    const { container } = render(<ChatMarkdown nodeId="c" version={answer('A fact.\n⟦2⟧\nAnother fact.\n\n⟦2⟧')} />);
+    expect(container.querySelectorAll('.sc-ab-sentence')).toHaveLength(2);
+    expect(container.querySelectorAll('[data-chat-unit]')).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: 'Source 2' })).toHaveLength(2);
   });
   it.each([true, false])('renders a whole term containing italic text, preserving emphasis (chunked=%s)', (chunked) => {
     vi.mocked(activateReference).mockClear();
@@ -134,7 +173,7 @@ describe('chat Markdown presentation', () => {
     expect(screen.getByRole('link')).toHaveTextContent('a [[marked label]]');
   });
   it('renders real headings, noncollapsible lists, terms, and both citation kinds', () => {
-    const { container } = render(<ChatMarkdown nodeId="c" version={answer('# Heading\n\nA **[[learning term]]** matters. (1) Another fact follows. ⟦2⟧\n\n- A complete list item.')} />);
+    const { container } = render(<ChatMarkdown nodeId="c" version={answer('# Heading\n\nA **[[learning term]]** matters. (1)\nAnother fact follows. ⟦2⟧\n\n- A complete list item.')} />);
     expect(screen.getByRole('heading', { name: 'Heading' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'learning term' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Project source 1' })).toBeInTheDocument();
@@ -152,7 +191,7 @@ describe('chat Markdown presentation', () => {
   });
   it('keeps sentence-ending terms and their punctuation together when chunked', () => {
     const { container } = render(<ChatMarkdown nodeId="c" version={answer(
-      'This ends with a [[term]]. Another ends with **[[bold terms]]**. A third ends with **bold words**.',
+      'This ends with a [[term]].\nAnother ends with **[[bold terms]]**.\nA third ends with **bold words**.',
     )} />);
     const sentences = Array.from(container.querySelectorAll('.sc-ab-sentence'));
     expect(sentences.map(sentence => sentence.textContent?.trim())).toEqual([

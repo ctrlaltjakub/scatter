@@ -59,11 +59,11 @@ describe('term preview data', () => {
   it('skips media versions', () => {
     expect(previewTerms({ ...version(), contentType: 'media' })).toEqual([]);
   });
-  it('assembles emphasis and rejects malformed, duplicate, unknown and multiple-sentence entries', () => {
+  it('assembles emphasis and rejects malformed, duplicate, unknown and multiline entries', () => {
     expect(parseTermPreviews(result([0]), ['cache'])).toEqual({ cache: explanation });
     expect(parseTermPreviews(JSON.stringify({ previews: [
       { id: 0, parts: [] }, { id: 99, parts },
-      { id: 1, parts: ['First ', 'fact', '. Second ', 'fact', '.'] },
+      { id: 1, parts: ['First ', 'fact', '.\nSecond ', 'fact', '.'] },
       { id: 2, parts: ['Unsafe <img> ', 'tag', ' with ', 'text', '.'] },
     ] }), ['a', 'b', 'c'])).toEqual({});
   });
@@ -93,7 +93,7 @@ describe('term preview data', () => {
     expect(accepted).toEqual({ entries: { cache: expected }, issues: {} });
   });
   it('repairs invalid content with the rejected draft and exact error, without redoing accepted previews', async () => {
-    const rejected = ['Screenshots show ', 'an app’s interface', '. They demonstrate features.'];
+    const rejected = ['Screenshots show ', 'an app’s interface', '.\nThey demonstrate features.'];
     const fixed = ['Screenshots are ', 'images captured from an app’s screen', ' that ', 'demonstrate its features', ' before a reader tries the product.'];
     const call = vi.fn().mockResolvedValueOnce(JSON.stringify({ previews: [
       { id: 0, parts }, { id: 1, parts: rejected },
@@ -104,7 +104,7 @@ describe('term preview data', () => {
     const repair = call.mock.calls[1]![0];
     expect(repair.system).toContain('This is a repair request');
     expect(JSON.parse(repair.user).terms).toEqual([{ id: 0, term: 'screenshots', repair: {
-      reason: expect.stringContaining('multiple sentences'), previousParts: rejected,
+      reason: expect.stringContaining('one line of prose'), previousParts: rejected,
     } }]);
     expect(commit.mock.calls[0]![0]).toEqual({ cache: explanation });
     expect(commit.mock.calls[1]![0]).toEqual({ screenshots: 'Screenshots are **images captured from an app’s screen** that **demonstrate its features** before a reader tries the product.' });
@@ -112,8 +112,8 @@ describe('term preview data', () => {
   it('reports format, missing-entry and malformed-JSON failures separately', () => {
     expect(inspectTermPreviews('{', ['cache']).issues.cache?.reason).toContain('not valid JSON');
     expect(inspectTermPreviews('{"previews":[]}', ['cache']).issues.cache?.reason).toContain('No preview');
-    const malformed = ['A cache ', 'stores data', '. It ', 'improves speed', '.'];
-    expect(inspectTermPreviews(JSON.stringify({ previews: [{ id: 0, parts: malformed }] }), ['cache']).issues.cache?.reason).toContain('multiple sentences');
+    const malformed = ['A cache ', 'stores data', '.\nIt ', 'improves speed', '.'];
+    expect(inspectTermPreviews(JSON.stringify({ previews: [{ id: 0, parts: malformed }] }), ['cache']).issues.cache?.reason).toContain('one line of prose');
   });
   it.each([
     'Aphex Twin is the alias of Richard D. James, a musician known for experimental electronic music.',
@@ -124,11 +124,11 @@ describe('term preview data', () => {
     'The U.S. economy includes a range of industries.',
     'Dr. Müller misst z. B. eine Länge von 3.14 Metern.',
     'Prof. Kowalski podaje np. wartość 3.14 jako przybliżenie.',
+    'Capt. J. B. Vance confirms a consultation appt. with Dr. Stith Jr. at approx. 10:30 a.m.',
+    'Smith & Co. Ltd. audited the est. laboratory fees vs. the actual billing records.',
   ])('accepts a single sentence containing abbreviated names or titles: %s', sentence => {
     const raw = JSON.stringify({ previews: [{ id: 0, parts: [sentence] }] });
     expect(inspectTermPreviews(raw, ['term'])).toEqual({ entries: { term: sentence }, issues: {} });
-    const two = JSON.stringify({ previews: [{ id: 0, parts: [sentence + ' This is another sentence.'] }] });
-    expect(inspectTermPreviews(two, ['term']).issues.term?.reason).toContain('multiple sentences');
   });
   it.each(LANGUAGES)('keeps valid $name preview prose unchanged through validation', ({ id, sample }) => {
     // Split at grapheme boundaries, including CJK/Devanagari and RTL text.
@@ -141,7 +141,15 @@ describe('term preview data', () => {
     expect(inspectTermPreviews(JSON.stringify({ previews: [{ id: 0, parts: [sample] }] }), [id]))
       .toEqual({ entries: { [id]: sample }, issues: {} });
     expect(inspectTermPreviews(JSON.stringify({ previews: [{ id: 0, parts: [`${sample} ${sample}`] }] }), [id]).entries)
-      .toEqual({});
+      .toEqual({ [id]: `${sample} ${sample}` });
+  });
+  it('does not spend repair requests guessing grammatical sentence counts', async () => {
+    const text = 'A cache stores data. It makes repeated access faster.';
+    const call = vi.fn().mockResolvedValue(JSON.stringify({ previews: [{ id: 0, parts: [text] }] }));
+    const commit = vi.fn();
+    expect(await completeTermPreviews(version(), ['cache'], call, commit)).toEqual([]);
+    expect(call).toHaveBeenCalledOnce();
+    expect(commit).toHaveBeenCalledWith({ cache: text });
   });
   it('retains distant term context on long nodes', () => {
     const body = 'Beginning. '.repeat(2000) + 'A [[mutex]] prevents simultaneous access.';

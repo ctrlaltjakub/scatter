@@ -1,10 +1,6 @@
-import { unified } from 'unified';
-import remarkParse from 'remark-parse';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import { sentenceSplitPoints } from '@/lib/bulletParse';
+import { explicitLineSplitPoints } from '@/lib/proseLines';
 import type { FactCheckUnit } from '@/store/types';
-import { annotateChatSourceFields } from './markdownFields';
+import { annotateChatSourceFields, parseChatMarkdown } from './markdownFields';
 import { normalizeMarkdownBreaks } from './markdownBreaks';
 import { normalizeMarkdownTasks } from './markdownTasks';
 
@@ -13,8 +9,8 @@ interface MdNode {
   type: string; value?: string; url?: string; alt?: string; children?: MdNode[];
   data?: { hName?: string; hProperties?: Record<string, unknown> };
 }
-const parser = unified().use(remarkParse).use(remarkGfm).use(remarkMath);
-export const markdownText = (node: MdNode): string => node.type === 'break' ? '\n'
+export const markdownText = (node: MdNode): string => node.type === 'comment' ? ''
+  : node.type === 'break' ? '\n'
   : node.type === 'image' ? node.alt || '\uFFFC'
   : node.type === 'footnoteReference' ? '\uFFFC'
   : node.value ?? node.children?.map(markdownText).join('') ?? '';
@@ -25,6 +21,9 @@ function sliceInline(nodes: MdNode[], from: number, to: number): MdNode[] {
   for (const node of nodes) {
     const length = markdownText(node).length;
     const start = Math.max(0, from - offset), end = Math.min(length, to - offset);
+    // Comments have no visible width, but keep their hidden DOM alongside the
+    // containing text rather than shifting source-selection offsets after it.
+    if (!length && node.type === 'comment' && offset >= from && offset < to) result.push({ ...node });
     if (end > start) result.push(['break', 'image', 'inlineMath', 'footnoteReference'].includes(node.type) ? { ...node } : node.children
       ? { ...node, children: sliceInline(node.children, start, end) }
       : { ...node, value: (node.value ?? '').slice(start, end) });
@@ -62,7 +61,10 @@ function markInline(node: MdNode, internal: ReadonlySet<number>): void {
   if (!node.children || LITERAL_OR_LINK.has(node.type)) return;
   node.children = node.children.flatMap((child): MdNode[] => {
     if (child.type !== 'text') { markInline(child, internal); return [child]; }
-    const value = (child.value ?? '').replace(/\s+/g, ' ');
+    // Source newlines are authored chunk boundaries, not punctuation guesses.
+    // Keep them until paragraph slicing; flattening here loses them whenever
+    // terms/citations are marked, including an otherwise unmarked paragraph.
+    const value = (child.value ?? '').replace(/\r\n?/g, '\n').replace(/[^\S\n\u2028\u2029]+/g, ' ');
     const pattern = /\[\[([^\[\]]+)\]\]|⟦(\d+)⟧|\((\d+)\)/g;
     const result: MdNode[] = [];
     let end = 0;
@@ -85,6 +87,15 @@ function markInline(node: MdNode, internal: ReadonlySet<number>): void {
  * which deliberately omits non-text atoms from fact-check units. */
 export function markChatInline(root: unknown): void { markInline(root as MdNode, new Set()); }
 
+/** Only prose soft breaks divide chunks. Explicit <br>/Markdown hard breaks
+ * already control presentation, while line breaks inside links/code/math are
+ * part of that inline atom and must never duplicate or split it. The string
+ * keeps the same offsets as markdownText so inline slicing remains exact. */
+function proseBoundaryText(node: MdNode): string {
+  if (LITERAL_OR_LINK.has(node.type) || node.type === 'break') return markdownText(node).replace(/[\n\u2028\u2029]/g, ' ');
+  return node.value ?? node.children?.map(proseBoundaryText).join('') ?? markdownText(node);
+}
+
 /** The same AST walk supplies rendered highlights and fact-check targets.
  * Headings/code are context only; each table row includes its column names. */
 export function annotateChatMarkdown(root: unknown, options: {
@@ -102,13 +113,14 @@ export function annotateChatMarkdown(root: unknown, options: {
   const sentenceNodes = (node: MdNode, table = false) => {
     const children = node.children ?? [];
     const text = markdownText(node);
-    const points = sentenceSplitPoints(text).map((point) => {
-      // Provider evidence IDs are post-sentence tokens. Keep them with the
-      // preceding sentence instead of creating a separate citation-only unit.
+    const points = explicitLineSplitPoints(proseBoundaryText(node)).map((point) => {
+      // A provider may put evidence IDs on a continuation line. Keep them with
+      // the preceding prose instead of creating a separate citation-only unit.
       let next = point;
       for (;;) {
-        const token = text.slice(next).match(/^\s*(?:\(?SOURCE_\d+\)?|\[\d+\])\s*/);
+        const token = text.slice(next).match(/^\s*(?:\(?SOURCE_\d+\)?|\[\d+\]|\((\d+)\))\s*/);
         if (!token) break;
+        if (token[1] && !options.internalNumbers?.has(Number(token[1]))) break;
         next += token[0].length;
       }
       return next;
@@ -118,10 +130,15 @@ export function annotateChatMarkdown(root: unknown, options: {
       const end = boundaries[index + 1]!;
       const exact = text.slice(start, end);
       if (!exact.trim()) return [];
+      const unitText = cleanUnit(exact);
+      const citationOnly = !unitText.replace(/\(?SOURCE_\d+\)?/g, '').trim();
+      if (citationOnly) return sliceInline(children, start, end);
       const id = table ? undefined : `chat:${units.length}`;
       if (id) units.push({ id, order: units.length, stage: 'prose', kind: 'sentence',
-        text: cleanUnit(exact),
+        text: unitText,
         sectionTitle: heading || undefined, state: 'pending' });
+      // Keep soft newlines as actual source whitespace. In flow mode CSS
+      // collapses them naturally (without forcing unwanted spaces in CJK).
       return [{ type: 'scatterSentence', children: sliceInline(children, start, end),
         data: { hName: 'span', hProperties: {
           className: options.chunked ? 'sc-ab-sentence' : 'sc-ab-flow-sentence',
@@ -178,6 +195,7 @@ export function annotateChatRelations(root: unknown, marks: Map<string, Array<{ 
     if (fields?.length) {
       let offset = 0;
       const wrap = (child: MdNode): MdNode[] => {
+        if (child.type === 'comment') return [child];
         const length = markdownText(child).length;
         if (child.type === 'link') { offset += length; return [child]; }
         if (child.children) return [{ ...child, children: child.children.flatMap(wrap) }];
@@ -202,7 +220,7 @@ export function annotateChatRelations(root: unknown, marks: Map<string, Array<{ 
 }
 
 export function chatFactUnits(body: string, internalNumbers?: ReadonlySet<number>): FactCheckUnit[] {
-  return annotateChatMarkdown(parser.parse(body), { chunked: false, internalNumbers, source: body });
+  return annotateChatMarkdown(parseChatMarkdown(body), { chunked: false, internalNumbers, source: body });
 }
 
 /** All factual Markdown units must use a supplied opaque ID in Sources only.

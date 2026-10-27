@@ -25,7 +25,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { useDisplayBody, useHasAnyActive, useIsWholeActive } from '@/store/useRewriteStore';
 import { generateTextVersionFromHeader, modifyNode, saveManualEdit } from '@/lib/generate';
 import { colorToCss } from '@/lib/groupColor';
-import { bodyToDoc, docToBody, docToModel, modelToBody } from '@/lib/editorSerialize';
+import { bodyToDoc, docToBody, docToModel } from '@/lib/editorSerialize';
 import { currentContentType, isExplainContentType } from '@/lib/nodeContentType';
 import type { HeaderParts, NodeType } from '@/store/types';
 import { modelToMarkdown } from '@/lib/editorMarkdown';
@@ -218,14 +218,13 @@ function EditorWindow({ nodeId }: { nodeId: string }) {
   // Seed the editor from the committed version — on mount, on version switch,
   // and when a generation FINISHES (so the final, chip-marked result loads and
   // the editor unlocks). Skipped while streaming: the mirror effect owns the
-  // view then. (Reads the current chunk setting; the toggle re-seeds itself.)
+  // view then. Chunking only changes presentation, never the working document.
   useEffect(() => {
     if (!editor || !node || isStreaming) return;
     const cur = node.versions[verIdx];
     if (!cur) return;
     if (draftVersionRef.current === cur.createdAt) return;
     draftVersionRef.current = undefined;
-    if (editor.storage.introChunk) editor.storage.introChunk.enabled = chunkIntro;
     const nextParts = project ? resolveVersionHeaderParts(node, cur, project.arrows) : { subject: cur.header };
     setHeaderDraft(nextParts);
     setSourceText(cur.body);
@@ -239,13 +238,12 @@ function EditorWindow({ nodeId }: { nodeId: string }) {
   }, [editor, verIdx, currentVersion?.createdAt, isStreaming]);
 
   // While the node is generating, mirror its live working body into the editor
-  // (locked, sentence-splitter silenced). This renders the same delete → stream
+  // (locked). This renders the same delete → stream
   // the canvas shows — they're the one generation. The skeleton (in the JSX
   // below) covers the empty gap before the first token.
   useEffect(() => {
     if (!editor || !node || !isStreaming) return;
     editor.setEditable(false, false);
-    if (editor.storage.introChunk) editor.storage.introChunk.enabled = false;
     if (!showSkeleton) {
       const cur = node.versions[verIdx];
       const parts = cur && project ? resolveVersionHeaderParts(node, cur, project.arrows) : resolvedHeaderParts;
@@ -402,8 +400,7 @@ function EditorWindow({ nodeId }: { nodeId: string }) {
   const promote = () =>
     editor?.chain().focus().command(({ state, dispatch }) => promoteOutline(state, dispatch)).run();
 
-  // Flip this node's "information chunking" and re-flow the working copy in place.
-  // Lossless: routes through the stored body, which is invariant to chunking.
+  // Presentation only: keep authored breaks, the caret, and editor undo history.
   const toggleChunk = () => {
     if (!editor || !node) return;
     if (isAnswer) {
@@ -417,11 +414,8 @@ function EditorWindow({ nodeId }: { nodeId: string }) {
       return;
     }
     const next = !(node.chunkIntro ?? sentencePerLine);
-    const model = docToModel(editor.getJSON());
     useGraphStore.getState().updateNode(nodeId, { chunkIntro: next });
-    editor.storage.introChunk.enabled = next;
-    editor.commands.setContent(bodyToDoc(modelToBody(model), editorNodeType, model.title, next), false);
-    editor.commands.focus();
+    editor.view.focus();
   };
 
   const exportMd = () => {
@@ -523,9 +517,10 @@ function EditorWindow({ nodeId }: { nodeId: string }) {
               type="button"
               className="side-action side-action--tall"
               disabled={!editor || isStreaming}
+              onMouseDown={event => event.preventDefault()}
               onClick={toggleChunk}
               aria-pressed={chunkIntro}
-              data-tip="Break the introduction into one line per sentence (this node only)"
+              data-tip="Display authored prose lines separately with indented wrapping. Line breaks are preserved; punctuation does not add new ones."
             >
               <span className="side-action-icon"><WrapText size={15} /></span>
               Information chunking: {chunkIntro ? 'On' : 'Off'}

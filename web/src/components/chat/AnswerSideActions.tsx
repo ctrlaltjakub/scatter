@@ -1,10 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, FileText, ListRestart, SearchCheck, Square, Trash } from 'lucide-react';
 import type { ScatterNode } from '@/store/types';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { factCheckTaskKey, useFactCheckTaskStore } from '@/store/useFactCheckTaskStore';
 import { factCheckAvailability, startFactCheck, stopFactCheck } from '@/lib/factCheck';
+import { canResumeFactCheck } from '@/lib/factCheckCore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useModelCatalogStore } from '@/store/useModelCatalogStore';
 import { useNodeStatusStore } from '@/store/useNodeStatusStore';
@@ -37,6 +38,7 @@ export function AnswerSideActions({ node }: { node: ScatterNode }) {
   const runtimeTermError = useChatRuntimeStore((state) => state.views[node.id]?.termErrors?.[version.createdAt]);
   const termError = answerEnrichmentError(version) ?? runtimeTermError;
   const report = version.factCheck?.pending ?? version.factCheck?.complete;
+  const canResume = useMemo(() => canResumeFactCheck(version), [version]);
   const available = factCheckAvailability();
   const check = (mode: 'new' | 'continue' | 'again') => {
     setError('');
@@ -103,9 +105,9 @@ export function AnswerSideActions({ node }: { node: ScatterNode }) {
     </button>}
     <AnimatedCollapse open={!!showing && !!report}><div className="side-disclosure-content">
       <button type="button" className="side-action" disabled={!checking && !available.available}
-        onClick={() => checking ? stopFactCheck(node.id, version.createdAt) : check(version.factCheck?.pending ? 'continue' : 'again')}>
+        onClick={() => checking ? stopFactCheck(node.id, version.createdAt) : check(canResume ? 'continue' : 'again')}>
         <span className="side-action-icon">{checking ? <Square size={15} /> : <CheckCheck size={15} />}</span>
-        {checking ? 'Stop checking' : version.factCheck?.pending ? 'Continue check' : 'Check again'}
+        {checking ? 'Stop checking' : canResume ? 'Continue check' : 'Check again'}
       </button>
     </div></AnimatedCollapse>
     <AnswerImageActions node={node} />

@@ -24,6 +24,52 @@ beforeEach(() => {
 afterEach(() => { cleanup(); useEditorStore.getState().close(); vi.restoreAllMocks(); });
 const node = () => useGraphStore.getState().project!.nodes.n!;
 describe('text editor sessions', () => {
+  it('keeps authored Markdown lines, pending edits and source selection across chunking and mode changes', async () => {
+    const body = 'First sentence. Second stays on this line.\n**Next source line.**\n\nAnother paragraph.';
+    useGraphStore.getState().updateNode('n', { versions: [{ ...node().versions[0]!, body }] });
+    const { container } = render(<TextEditorOverlay />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Source' }));
+    let source = screen.getByRole('textbox', { name: 'Markdown source' }) as HTMLTextAreaElement;
+    fireEvent.change(source, { target: { value: body + ' Added.' } });
+    fireEvent.change(source, { target: { value: body + ' Latest edit.' } });
+    const target = source.value.indexOf('source');
+    source.setSelectionRange(target, target + 6);
+    fireEvent.select(source);
+    fireEvent.click(screen.getByRole('button', { name: 'Information chunking: Off' }));
+    expect(source).toHaveValue(body + ' Latest edit.');
+    expect(source.selectionStart).toBe(target);
+    expect(source.selectionEnd).toBe(target + 6);
+    expect(node().versions.at(-1)?.body).toBe(body + ' Latest edit.');
+    fireEvent.click(screen.getByRole('button', { name: 'Visual' }));
+    expect(container.querySelectorAll('.editor-soft-break')).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Information chunking: On' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Source' }));
+    source = screen.getByRole('textbox', { name: 'Markdown source' }) as HTMLTextAreaElement;
+    expect(source).toHaveValue(body + ' Latest edit.');
+    expect(source.selectionStart).toBe(target);
+    expect(source.selectionEnd).toBe(target + 6);
+    fireEvent.click(screen.getByRole('button', { name: 'Exit' }));
+    act(() => useEditorStore.getState().openEditor('n'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Source' }));
+    expect(screen.getByRole('textbox', { name: 'Markdown source' })).toHaveValue(body + ' Latest edit.');
+    expect(node().versions).toHaveLength(2);
+  });
+
+  it('keeps structured editor content and text selection untouched when chunking is toggled', async () => {
+    const body = 'First sentence. Same line.\nNext line.\n\nNew paragraph.';
+    useGraphStore.getState().updateNode('n', { versions: [{ ...node().versions[0]!, contentType: 'explain', body }] });
+    const { container } = render(<TextEditorOverlay />);
+    await screen.findByRole('button', { name: 'Information chunking: Off' });
+    const prose = container.querySelector('.ProseMirror')!;
+    const before = prose.innerHTML;
+    fireEvent.click(screen.getByRole('button', { name: 'Information chunking: Off' }));
+    expect(prose.innerHTML).toBe(before);
+    fireEvent.click(screen.getByRole('button', { name: 'Information chunking: On' }));
+    expect(prose.innerHTML).toBe(before);
+    expect(node().versions).toHaveLength(1);
+    expect(node().versions[0]!.body).toBe(body);
+  });
+
   it('transfers focus and the text selection when switching Source and Visual without saving a version', async () => {
     const body = 'One **bold word** in this paragraph.';
     useGraphStore.getState().updateNode('n', { versions: [{ ...node().versions[0]!, body }] });

@@ -11,6 +11,7 @@ import type { Arrow, ScatterNode } from '@/store/types';
 import { useRewriteStore } from '@/store/useRewriteStore';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { applyTermSelection } from '@/lib/termMarking';
+import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 
 beforeAll(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -150,7 +151,7 @@ describe('AdaptiveBullets', () => {
     current.factCheck = {
       pending: {
         schemaVersion: 1,
-        bodyFingerprint: 'hash',
+        bodyFingerprint: factCheckBodyFingerprint(current),
         versionCreatedAt: current.createdAt,
         providerId: 'p1',
         model: 'm',
@@ -343,8 +344,8 @@ describe('AdaptiveBullets', () => {
     expect(container.textContent).toContain('An italic phrase with bold inside and file_name; 2 * 3.');
   });
 
-  it('preserves italic formatting when chunking a multi-sentence span', () => {
-    const { container } = render(<AdaptiveBullets body="Before *First sentence. Second sentence.* After." parentNodeId="p1" onReferenceClick={vi.fn()} />);
+  it('preserves italic formatting across authored source lines', () => {
+    const { container } = render(<AdaptiveBullets body={'Before *First sentence.\nSecond sentence.*\nAfter.'} parentNodeId="p1" onReferenceClick={vi.fn()} />);
     const sentences = container.querySelectorAll('.sc-ab-root > .sc-ab-freetext .sc-ab-sentence');
     expect(sentences).toHaveLength(3);
     expect(sentences[0]!.querySelector('em')).toHaveTextContent('First sentence.');
@@ -353,7 +354,7 @@ describe('AdaptiveBullets', () => {
   });
 
   it('keeps selection highlights aligned across Japanese sentence boundaries without spaces', () => {
-    const body = '**最初の文。**[[次]]の文。**最後の文。**\n\n- 読書\n  - 本: 情報\n  - 文: 説明';
+    const body = '**最初の文。**\n[[次]]の文。\n**最後の文。**\n\n- 読書\n  - 本: 情報\n  - 文: 説明';
     const start = body.indexOf('最後');
     seedSourceRelations(body, [selectedArrow('japanese-selection', body, '最後の文。', start, start + '最後の文。'.length, 200)]);
     const { container } = render(<AdaptiveBullets body={body} parentNodeId="p1" onReferenceClick={vi.fn()} />);
@@ -433,8 +434,10 @@ describe('AdaptiveBullets', () => {
     expect(lastCallArg).toBe(40);
   });
 
-  it('renders each opening-paragraph sentence as its own .sc-ab-sentence block', () => {
-    const body = `First sentence about [[glucose]]. Second sentence explains more. Third sentence wraps it up.
+  it('renders each authored opening-paragraph line as its own block in visible and measured content', () => {
+    const body = `First sentence about [[glucose]].
+Second sentence explains more.
+Third sentence wraps it up.
 
 - Process
   - Substrate: glucose
@@ -457,6 +460,44 @@ describe('AdaptiveBullets', () => {
     expect(
       container.querySelector('.sc-ab-root > .sc-ab-freetext .sc-ab-sentence .ref-chip'),
     ).not.toBeNull();
+  });
+
+  it('does not split old or manually entered prose at punctuation, even with chunking enabled', () => {
+    const body = 'Dear **Dr. Richard D. Stith Jr.**, call **Capt. J. B. Vance** at 10:30 a.m. Another sentence stays here.';
+    const { container } = render(<AdaptiveBullets body={body} parentNodeId="p1" onReferenceClick={vi.fn()} />);
+    const visible = container.querySelector('.sc-ab-root > .sc-ab-freetext')!;
+    expect(visible.querySelectorAll('.sc-ab-sentence')).toHaveLength(1);
+    expect(visible).toHaveTextContent('at 10:30 a.m. Another sentence stays here.');
+    expect(visible.querySelector('strong')).toHaveTextContent('Dr. Richard D. Stith Jr.');
+  });
+
+  it.each([true, false])('keeps legacy multiline terms clickable with chunking %s', chunked => {
+    useSettingsStore.setState({ sentencePerLine: chunked });
+    const body = 'A [[Working\nmemory]] matters.\nAnother authored line.';
+    const onClick = vi.fn();
+    const { container } = render(<AdaptiveBullets body={body} parentNodeId="p1" onReferenceClick={onClick} />);
+    const visible = container.querySelector('.sc-ab-root > .sc-ab-freetext')!;
+    const chip = visible.querySelector<HTMLElement>('.ref-chip')!;
+    expect(chip).toHaveTextContent('Working memory');
+    expect(visible.textContent).not.toMatch(/\[\[|\]\]/);
+    fireEvent.click(chip);
+    expect(onClick).toHaveBeenCalledWith('Working memory', expect.anything());
+  });
+
+  it('flows authored lines when disabled and restores them without changing stored text', () => {
+    const body = 'First line. Two sentences remain together.\nSecond line.\n\nAnother paragraph.';
+    seedSourceRelations(body, []);
+    const { container } = render(<AdaptiveBullets body={body} parentNodeId="p1" onReferenceClick={vi.fn()} />);
+    const visible = container.querySelector('.sc-ab-root > .sc-ab-freetext')!;
+    expect(visible.querySelectorAll('.sc-ab-sentence')).toHaveLength(3);
+    expect(visible.querySelectorAll('.sc-ab-new-paragraph')).toHaveLength(1);
+    act(() => useSettingsStore.setState({ sentencePerLine: false }));
+    expect(visible.querySelectorAll('.sc-ab-sentence')).toHaveLength(0);
+    expect(visible.querySelectorAll('br')).toHaveLength(2);
+    expect(visible.textContent).toContain('together.\nSecond');
+    act(() => useSettingsStore.setState({ sentencePerLine: true }));
+    expect(visible.querySelectorAll('.sc-ab-sentence')).toHaveLength(3);
+    expect(useGraphStore.getState().project!.nodes.p1!.versions[0]!.body).toBe(body);
   });
 
   it('renders the opening paragraph as a single block when sentencePerLine is off', () => {

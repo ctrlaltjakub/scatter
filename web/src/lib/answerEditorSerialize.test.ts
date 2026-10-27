@@ -32,6 +32,20 @@ An [external link](https://example.com) and \`a *literal* code\`.
 `;
 
 describe('rich answer editor round trips', () => {
+  it('keeps soft source lines separate from hard breaks and paragraphs across edits', () => {
+    const source = 'One sentence. Another on the same line.\n**Second source line.**\\\nExplicit hard break.\n\nA new paragraph.';
+    const editor = new Editor({ extensions: buildAnswerExtensions(), content: answerBodyToDoc(source) });
+    expect(editor.view.dom.querySelectorAll('.editor-soft-break')).toHaveLength(1);
+    expect(editor.view.dom.querySelectorAll('p')).toHaveLength(2);
+    expect(answerDocToBody(editor.getJSON())).toBe(source);
+    expect(answerDocToBody(answerBodyToDoc(source))).toBe(source);
+    editor.destroy();
+  });
+
+  it('keeps emphasis continuous across source newlines', () => {
+    const source = '**One bold line.\nAnother bold line.**';
+    expect(answerDocToBody(answerBodyToDoc(source))).toBe(source);
+  });
   it('exports continuous bold text across term boundaries without literal Markdown markers', () => {
     const source = '- **[[Passionate info-dumping]]:** Deep enthusiasm.\n\nLinked to **higher [[subjective well-being]]**, and **[[quality of life]]**.';
     const doc = answerBodyToDoc(source);

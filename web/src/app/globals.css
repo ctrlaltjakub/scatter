@@ -4123,6 +4123,7 @@ select.input {
   transition: background-color 120ms ease, box-shadow 120ms ease;
 }
 .sc-ab-flow-sentence { display: inline; }
+.sc-ab-sentence.sc-ab-new-paragraph { margin-block-start: .65em; }
 .fact-check-unit.fact-supported {
   background: color-mix(in oklab, var(--green) 22%, transparent);
 }
@@ -7284,8 +7285,8 @@ select.input {
   text-transform: uppercase;
   color: var(--overlay1);
 }
-/* Opening paragraphs: one per sentence when chunking is on, else one flowing
-   paragraph. The hanging-indent + "L" tree-connector marking (copied from
+/* Authored paragraphs are stable across chunking changes. Internal source
+   newlines become visible in chunked mode. Hanging-indent + guide marking
    .sc-ab-sentence) shows ONLY in chunked mode — gated by .is-chunked on the
    article root (mirrors the canvas). Chunking off = clean flush paragraph. */
 .text-editor-article .editor-para {
@@ -7300,12 +7301,14 @@ select.input {
   --sc-tick: 0.5em;
   --sc-conn: color-mix(in oklab, var(--text) 30%, transparent);
   position: relative;
+  isolation: isolate;
   padding-inline-start: var(--sc-ind);
-  text-indent: calc(-1 * var(--sc-ind));
+  text-indent: calc(-1 * var(--sc-ind)) each-line;
 }
 .text-editor-article.is-chunked .editor-para::before {
   content: '';
   position: absolute;
+  z-index: -2;
   inset-inline-start: 0;
   top: var(--sc-ln);
   bottom: 0;
@@ -8488,11 +8491,26 @@ select.input {
 .editor-markdown-frame > .answer-editor-article { display: flex; flex-direction: column; flex: 1; }
 .editor-markdown-frame .ProseMirror,
 .editor-markdown-frame > .markdown-source-editor { flex: 1; min-height: 200px; }
-.answer-editor-article .editor-answer-chunked { padding-left: 1em; text-indent: -1em; }
-/* Each sentence starts flush left; only its wrapped lines use the hanging
-   indent. A zero-width offset after the display-only break resets that indent
-   without fragmenting marked terms, links, or emphasis into block elements. */
-.editor-answer-sentence-break::after { content: ''; display: inline-block; width: 0; margin-left: -1em; }
+.answer-editor-article .editor-answer-chunked { --sc-ind: 1em; padding-inline-start: var(--sc-ind); text-indent: calc(-1 * var(--sc-ind)) each-line; }
+/* Source newlines are stored in the editor document in both presentations.
+   Normal prose treats them as whitespace; chunking reveals them without
+   changing content, the caret, or undo history. Hard Markdown breaks stay br. */
+.editor-soft-break { white-space: normal; }
+.text-editor-article.is-chunked .editor-soft-break,
+.answer-editor-article .editor-answer-chunked .editor-soft-break { white-space: pre-line; }
+/* The guide belongs to wrapped continuations, not to the first line after an
+   authored break. Mask only that gutter row; later wrapped rows remain guided. */
+.text-editor-article.is-chunked .editor-soft-break::after {
+  content: '';
+  display: inline-block;
+  position: relative;
+  z-index: -1;
+  width: var(--sc-ind);
+  height: var(--sc-ln);
+  margin-inline-end: calc(-1 * var(--sc-ind));
+  vertical-align: top;
+  background: var(--card-bg);
+}
 .markdown-source-editor { display: block; width: 100%; min-height: 55vh; resize: vertical; outline: none; border: 0; background: transparent; color: var(--text); font: 13px/1.7 var(--font-mono); padding: 10px 0 30px; tab-size: 2; }
 .markdown-editor-tools { position: sticky; top: -1px; z-index: 3; background: var(--card-bg); border: 1px solid var(--ui-line); border-radius: var(--r-sm); margin: 16px 0; padding: 6px; font: 12px/1.4 var(--font-sans); }
 .markdown-editor-toolbar, .markdown-table-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }

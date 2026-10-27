@@ -8,5 +8,6 @@ export function chatFormattingPrompt(chunked: boolean, instructions: string, cus
   const text = instructions.trim();
   return [substitute(template, { normalInstructions: text }).trim(),
     template.includes('{normalInstructions}') ? '' : text,
+    effectivePrompt('proseLineBoundaries', custom),
   ].filter(Boolean).join('\n\n');
 }

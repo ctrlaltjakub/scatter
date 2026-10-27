@@ -28,7 +28,7 @@ interface SanitizedLine {
 function sanitizeLine(raw: string, rawStart: number): SanitizedLine {
   const match = raw.match(/^(\s*)#{1,6}[ \t]+/) ?? raw.match(/^(\s*)>[ \t]?/);
   if (!match) {
-    return { text: raw, rawOffsets: [...raw].map((_, i) => rawStart + i) };
+    return { text: raw, rawOffsets: Array.from({ length: raw.length }, (_, i) => rawStart + i) };
   }
   const indent = match[1]?.length ?? 0;
   const text = raw.slice(0, indent) + raw.slice(match[0].length);
@@ -71,14 +71,30 @@ function buildSourceFields(body: string, chat = false): SourceFields {
 
   const lines = rawLines.map((line, i) => sanitizeLine(line, starts[i] ?? 0));
   const firstBullet = lines.findIndex(({ text }) => ANY_BULLET_RE.test(text));
+  // A bold/italic span may cross an authored prose newline. Parse its markers
+  // in the whole opening region, then retain their exact UTF-16 source offsets
+  // in each line's projection (the DOM and stored selection ranges use UTF-16).
+  const openingEnd = firstBullet < 0 ? body.length : starts[firstBullet]!;
+  const openingMarkers = new Set<number>();
+  for (const [start, span] of inlineEmphasis(body.slice(0, openingEnd))) {
+    for (let i = start; i < span.contentStart; i++) openingMarkers.add(i);
+    for (let i = span.contentEnd; i < span.end; i++) openingMarkers.add(i);
+  }
+  const openingSegment = (line: SanitizedLine) => {
+    const segment = segmentFromLine(line);
+    segment.rawOffsets?.forEach((raw, index) => {
+      if (openingMarkers.has(raw)) segment.emphasisMarkers!.add(index);
+    });
+    return segment;
+  };
   if (firstBullet < 0) {
-    const freeText = lines.map((line) => segmentFromLine(line)).filter((segment) => segment.text);
+    const freeText = lines.map(openingSegment).filter((segment) => segment.text);
     if (freeText.length) fields.set('ft', freeText);
     return fields;
   }
 
   const freeText = lines.slice(0, firstBullet)
-    .map((line) => segmentFromLine(line))
+    .map(openingSegment)
     .filter((segment) => segment.text);
   if (freeText.length) fields.set('ft', freeText);
 

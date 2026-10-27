@@ -13,6 +13,7 @@ import * as generation from '@/lib/generate';
 import * as imageDiscovery from '@/lib/wikimediaDiscovery';
 import { useWikimediaTaskStore, wikimediaTaskKey } from '@/store/useWikimediaTaskStore';
 import { createChatNode } from '@/lib/chat/model';
+import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 
 const rootNode: ScatterNode = {
   id: 'root',
@@ -305,6 +306,20 @@ describe('NodeSidePanel disclosures and groups', () => {
     fireEvent.click(hide);
     expect(useCitationPanelStore.getState().mode).toBeNull();
     expect(screen.getByRole('button', { name: 'Show fact-check results' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it.each([true, false])('does not promise to resume a check from a different layout (current=%s)', current => {
+    seed();
+    const selected = useGraphStore.getState().project!.nodes.selected!;
+    const version = selected.versions[0]!;
+    version.factCheck = { pending: { schemaVersion: 1,
+      bodyFingerprint: current ? factCheckBodyFingerprint(version) : 'old-punctuation-boundaries',
+      versionCreatedAt: version.createdAt, providerId: 'test', model: 'test', startedAt: 1,
+      complete: false, failedUnitIds: [], units: [{ id: 'opening:0', order: 0, stage: 'opening', kind: 'sentence', text: 'Opening.', state: 'pending' }] } };
+    render(<NodeSidePanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show fact-check results' }));
+    expect(screen.getByRole('button', { name: current ? 'Continue check' : 'Check again' })).toHaveAttribute('data-tip',
+      current ? 'Retry only unfinished passages' : 'Run a fresh evidence check while retaining these results');
   });
 
   it('closes the open disclosure when selection moves to another node', () => {

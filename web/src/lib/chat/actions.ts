@@ -461,7 +461,7 @@ export async function submitChat(nodeId: string, options: {
         status('Checking source citations');
         let repaired = '';
         for await (const chunk of getAdapter(provider.preset).streamChat(provider.apiKey, {
-          model, messages: [{ role: 'system', content: configuredPrompt('chatSourceRepair') },
+          model, messages: [{ role: 'system', content: `${configuredPrompt('chatSourceRepair')}\n\n${configuredPrompt('proseLineBoundaries')}` },
             { role: 'user', content: `${raw}\n\n${formatSourceEvidenceBlock('only', passages)}` }],
           maxOutputTokens: config.output, webSearch: false, reasoningEffort: config.reasoning, signal: controller.signal,
           modelInfo: useModelCatalogStore.getState().getModel(provider.id, model),

@@ -1,7 +1,7 @@
 /**
  * Export an EditorModel to a .docx Blob, laid out like a Scatter node: a bold
- * title, the opening paragraph with one sentence per line (each sentence a
- * plain flush paragraph — no indent), then the bullet outline using docx's
+ * title, the opening prose with its authored paragraphs and line breaks,
+ * then the bullet outline using docx's
  * built-in bullet list (level 0 / level 1). The `docx` lib is dynamically
  * imported so it stays out of the editor's initial chunk. Terms export as plain text.
  */
@@ -26,7 +26,8 @@ export async function modelToDocxBlob(m: EditorModel, language: GenerationLangua
   const paragraph = { bidirectional: rtl, ...(rtl ? { alignment: 'right' as const } : {}) };
 
   const toRuns = (rs: Inline[]) =>
-    rs.filter((r) => r.text).map((r) => new TextRun({ text: r.text, bold: !!r.bold }));
+    rs.filter((r) => r.text).flatMap((r) => r.text.split('\n').map((text, index) =>
+      new TextRun({ text, bold: !!r.bold, ...(index ? { break: 1 } : {}) })));
 
   const children: InstanceType<typeof Paragraph>[] = [];
 
@@ -40,7 +41,7 @@ export async function modelToDocxBlob(m: EditorModel, language: GenerationLangua
     );
   }
 
-  // Opening paragraph — one docx paragraph per sentence, flush (no indent).
+  // The document's paragraph and line boundaries are authored, never inferred.
   for (const p of m.freeText) {
     const runs = toRuns(p);
     if (runs.length) {

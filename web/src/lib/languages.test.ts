@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { LANGUAGES, languageDirection, languageInfo, normalizeLanguage, versionLanguage } from './languages';
 import { generationLanguagePrompt } from './generationLanguage';
-import { splitSentences } from './bulletParse';
+import { splitExplicitLines } from './proseLines';
 import { buildClusters, trimToWord } from './readingClusters';
 import { previewRequest, termPreviewFingerprint, reusableTermPreviews } from './termPreviewCore';
 import { stringHash } from './stringHash';
@@ -24,10 +24,10 @@ describe('generation languages', () => {
     expect(languageInfo('pt').locale).toBe('pt-BR');
     expect(languageInfo('zh').locale).toBe('zh-CN');
   });
-  it.each(LANGUAGES)('splits sentences and produces a nonempty reading sequence in $name', language => {
+  it.each(LANGUAGES)('respects authored lines and produces a nonempty reading sequence in $name', language => {
     const text = language.sample + ' ' + language.sample;
-    expect(splitSentences(text)).toEqual([language.sample, language.sample]);
-    expect(splitSentences(`**${language.sample}** ⟦1⟧ ${language.sample}`)).toEqual([
+    expect(splitExplicitLines(text)).toEqual([text]);
+    expect(splitExplicitLines(`**${language.sample}** ⟦1⟧\n${language.sample}`)).toEqual([
       `**${language.sample}** ⟦1⟧`, language.sample,
     ]);
     const clusters = buildClusters(text, [{ start: 0, end: text.length, kind: 'text' }], language.id);
@@ -40,10 +40,11 @@ describe('generation languages', () => {
     expect(check.requests).toBe(1);
     expect(check.messages[0]?.content).toContain(language.name);
   });
-  it('handles sentence endings without spaces and Arabic/Hindi punctuation', () => {
-    expect(splitSentences('最初の文。次の文！')).toEqual(['最初の文。', '次の文！']);
-    expect(splitSentences('هل هذا واضح؟ نعم، هذا واضح.')).toHaveLength(2);
-    expect(splitSentences('यह स्पष्ट है। अगला वाक्य।')).toHaveLength(2);
+  it('does not infer breaks from Japanese, Arabic or Hindi punctuation', () => {
+    for (const text of ['最初の文。次の文！', 'هل هذا واضح؟ نعم، هذا واضح.', 'यह स्पष्ट है। अगला वाक्य।']) {
+      expect(splitExplicitLines(text)).toEqual([text]);
+      expect(splitExplicitLines(`${text}\n${text}`)).toEqual([text, text]);
+    }
   });
   it('does not apply English articles to Polish or split combining marks and surrogate pairs', () => {
     const text = 'a kot';

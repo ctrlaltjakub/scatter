@@ -12,7 +12,7 @@ import {
   FileSymlink,
   ArrowRightLeft,
 } from 'lucide-react';
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { useGraphStore } from '@/store/useGraphStore';
 import { useNodeBirthStore } from '@/store/useNodeBirthStore';
 import { useNodeEntranceStyle } from '@/lib/nodeEntrance';
@@ -52,6 +52,7 @@ import {
   stopFactCheck,
 } from '@/lib/factCheck';
 import { factCheckTaskKey, useFactCheckTaskStore } from '@/store/useFactCheckTaskStore';
+import { canResumeFactCheck } from '@/lib/factCheckCore';
 import { wikimediaTaskKey, useWikimediaTaskStore } from '@/store/useWikimediaTaskStore';
 import { startWikimediaDiscovery, versionSupportsAutomaticFreeImages, wikimediaSearchAvailability } from '@/lib/wikimediaDiscovery';
 import { getFreeImageRecommendationSet } from '@/lib/freeImageRecommendations';
@@ -155,6 +156,8 @@ export function NodeSidePanel() {
   const birth = useNodeBirthStore(s => s.byNode[selectedId]);
   const entranceStyle = useNodeEntranceStyle(birth);
   const selectedNode = selectedId ? project?.nodes[selectedId] : undefined;
+  const selectedVersion = selectedNode?.versions[selectedNode.currentVersionIndex];
+  const canResume = useMemo(() => canResumeFactCheck(selectedVersion), [selectedVersion]);
   const selectedVersionCreatedAt = selectedNode
     ?.versions[selectedNode.currentVersionIndex]
     ?.createdAt;
@@ -835,11 +838,11 @@ export function NodeSidePanel() {
                   className="side-action"
                   onClick={() => {
                     if (factTaskRunning) stopFactCheck(node.id, v.createdAt);
-                    else beginFactCheck(factIncomplete ? 'continue' : 'again');
+                    else beginFactCheck(canResume ? 'continue' : 'again');
                   }}
                   data-tip={factTaskRunning
                     ? 'Stop new requests and keep every completed result'
-                    : factIncomplete
+                    : canResume
                       ? 'Retry only unfinished passages'
                       : 'Run a fresh evidence check while retaining these results'}
                 >
@@ -848,7 +851,7 @@ export function NodeSidePanel() {
                   </span>
                   {factTaskRunning
                     ? 'Stop checking'
-                    : factIncomplete
+                    : canResume
                       ? 'Continue check'
                       : 'Check again'}
                 </button>

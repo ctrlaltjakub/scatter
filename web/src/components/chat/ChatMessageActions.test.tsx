@@ -6,6 +6,7 @@ import { activateChatAnswer, askAboutChatAnswer, deleteLastChatTurn, editLastCha
 import { startFactCheck } from '@/lib/factCheck';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { useFactCheckTaskStore } from '@/store/useFactCheckTaskStore';
+import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 
 vi.mock('@/lib/chat/actions', () => ({ activateChatAnswer: vi.fn(), askAboutChatAnswer: vi.fn(),
   deleteLastChatTurn: vi.fn(), editLastChatQuestion: vi.fn(), forkChat: vi.fn(() => 'forked-chat'), spawnChatAnswer: vi.fn(), submitChat: vi.fn() }));
@@ -75,6 +76,17 @@ describe('chat message actions', () => {
     render(<ChatUserActions nodeId="chat" question="Question" latest busy />);
     expect(screen.getByRole('button', { name: 'Copy text' })).toBeEnabled();
     for (const name of ['Edit', 'Regenerate', 'Delete turn']) expect(screen.getByRole('button', { name })).toBeDisabled();
+  });
+  it.each([true, false])('only offers resume when pending units match authored boundaries (current=%s)', current => {
+    const answer = checkedVersion();
+    answer.factCheck = { pending: { ...answer.factCheck!.complete!, complete: false,
+      bodyFingerprint: current ? factCheckBodyFingerprint(answer) : 'old-punctuation-boundaries' } };
+    render(<ChatAssistantActions nodeId="chat" version={answer} latest busy={false} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show fact-check' }));
+    expect(startFactCheck).not.toHaveBeenCalled();
+    const button = screen.getByRole('button', { name: current ? 'Continue check' : 'Check again' });
+    fireEvent.click(button);
+    expect(startFactCheck).toHaveBeenCalledWith('chat', current ? 'continue' : 'again');
   });
   it('reports clipboard failure without an unhandled rejection', async () => {
     vi.mocked(navigator.clipboard.writeText).mockRejectedValueOnce(new Error('Denied'));

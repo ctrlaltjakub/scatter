@@ -26,6 +26,7 @@ import {
 import { ResilientFreeImage } from '@/components/wikimedia/ResilientFreeImage';
 import { ChatOutlinePanel } from '@/components/chat/ChatOutlinePanel';
 import { useChatTableStore } from '@/store/useChatTableStore';
+import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 
 export const WIDE_RIGHT_PANEL_W = 372;
 
@@ -289,6 +290,8 @@ export function NodeFactCheckPanel(props: InlineReviewProps = {}) {
   const report = panelVersion?.createdAt === versionCreatedAt
     ? visibleReport(panelVersion.factCheck?.complete, panelVersion.factCheck?.pending)
     : undefined;
+  const outdatedLayout = useMemo(() => !!report && !!panelVersion
+    && report.bodyFingerprint !== factCheckBodyFingerprint(panelVersion), [report, panelVersion]);
   const groupColor = useGraphStore((s) => {
     if (!panelNodeId || !s.project) return null;
     const node = s.project.nodes[panelNodeId];
@@ -363,6 +366,7 @@ export function NodeFactCheckPanel(props: InlineReviewProps = {}) {
     const unit = units[nextIndex];
     if (!unit) return;
     setFactUnit(panelNodeId, unit.id);
+    if (outdatedLayout) return;
     if (unit.bulletIndex != null) {
       if (panelNode?.bulletsCollapsed) {
         useGraphStore.getState().updateNode(panelNodeId, { bulletsCollapsed: false });
@@ -399,7 +403,7 @@ export function NodeFactCheckPanel(props: InlineReviewProps = {}) {
       <div className="citations-panel-head">
         <span className="fact-review-heading">
           <span>Evidence review</span>
-          <small>(click sentences)</small>
+          {!outdatedLayout && <small>(click passages)</small>}
         </span>
         <button
           className="citations-close-btn"
@@ -412,6 +416,7 @@ export function NodeFactCheckPanel(props: InlineReviewProps = {}) {
       </div>
       <div className="fact-review-scroll">
         {panelVersion?.chat && <div className="chat-review-title">{panelVersion.chat.title}</div>}
+        {outdatedLayout && <p className="fact-review-explanation" role="status">This saved check no longer matches the current text layout. Run a new check to highlight passages.</p>}
         {!active && <p className="chat-review-empty">Not fact-checked</p>}
         {active && <>
         <div className="fact-review-progress">{progress} / {units.length} checked</div>

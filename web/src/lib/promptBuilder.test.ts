@@ -141,7 +141,7 @@ describe('buildMessages', () => {
       },
       context: { parent: null, grandparent: null },
     });
-    expect(msgs[0]?.content).toBe('EXPLAIN SYSTEM');
+    expect(msgs[0]?.content).toBe(`EXPLAIN SYSTEM\n\n${DEFAULT_PROMPTS.proseLineBoundaries}`);
     expect(msgs[1]?.content).toContain('EXPAND PROSE Before <<<EXPAND>>>short prose<<<END>>> after');
     useSettingsStore.setState({ customPrompts: undefined });
   });
@@ -163,7 +163,7 @@ describe('buildMessages', () => {
       variant: { kind: 'fact-rewrite', ...common, freeText: true },
       context: { parent: { header: 'Parent', body: 'Must not leak' }, grandparent: null },
     });
-    expect(prose[0]?.content).toBe('EXPLAIN SYSTEM');
+    expect(prose[0]?.content).toBe(`EXPLAIN SYSTEM\n\n${DEFAULT_PROMPTS.proseLineBoundaries}`);
     expect(prose[1]?.content).toContain('⟪E1⟫');
     expect(prose[1]?.content).toContain('Never invent or alter an evidence token');
     expect(prose[1]?.content).not.toContain('Must not leak');
@@ -251,7 +251,7 @@ describe('buildMessages with custom prompts', () => {
   it('uses custom base when set', () => {
     useSettingsStore.setState({ customPrompts: { base: 'CUSTOM BASE' } });
     const msgs = buildMessages({ variant: { kind: 'root', topic: 'test' }, context: { parent: null, grandparent: null } });
-    expect(msgs[0]!.content).toBe('CUSTOM BASE');
+    expect(msgs[0]!.content).toBe(`CUSTOM BASE\n\n${DEFAULT_PROMPTS.proseLineBoundaries}`);
     useSettingsStore.setState({ customPrompts: undefined });
   });
   it('substitutes placeholders in custom task templates', () => {

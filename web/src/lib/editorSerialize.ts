@@ -17,12 +17,12 @@
  * L2 descriptions keep word-level `[[term]]` only. Italic is intentionally not a
  * concept here (see the editor plan).
  *
- * Reuses the canvas parser (`parseBody`, `splitSentences`) and the term
+ * Reuses the canvas parser (`parseBody`) and the term
  * helper (`wholeTerm`) so the editor and the canvas always agree on structure.
  */
 import type { JSONContent } from '@tiptap/core';
 import type { NodeType } from '@/store/types';
-import { parseBody, separatorColonIndex, splitSentences } from './bulletParse';
+import { parseBody, separatorColonIndex } from './bulletParse';
 import { wholeTerm } from './bulletTerms';
 
 // ── Neutral model ──────────────────────────────────────────────────────────
@@ -88,7 +88,13 @@ function tokenize(s: string, marks: { bold?: boolean; term?: boolean } = {}): In
 
 /** Serialize runs back to markdown markers (used for free text + descriptions). */
 function runsToMarkdown(runs: Inline[]): string {
-  return runs
+  const merged: Inline[] = [];
+  for (const run of runs) {
+    const previous = merged.at(-1);
+    if (previous && !!previous.bold === !!run.bold && !!previous.term === !!run.term) previous.text += run.text;
+    else merged.push({ ...run });
+  }
+  return merged
     .map((r) => {
       if (!r.text) return '';
       if (r.term && r.bold) return `[[**${r.text}**]]`;
@@ -105,17 +111,15 @@ export function modelFromBody(
   body: string,
   header: string,
   withBullets: boolean,
-  chunkIntro = true,
+  _chunkIntro = true,
 ): EditorModel {
   const normalized = body.replace(/\r\n?/g, '\n');
   const parsed = parseBody(normalized) ?? { freeText: '', bullets: [] };
 
-  // Free text → ONE paragraph per sentence when chunking is on (matches the
-  // node's sentence-per-line), else ONE flowing paragraph. Lossless either way:
-  // the stored body always re-joins with spaces (see modelToBody).
-  const freeText: Inline[][] = chunkIntro
-    ? splitSentences(parsed.freeText).map((s) => tokenize(s.trim()))
-    : [tokenize(parsed.freeText.replace(/\s+/g, ' ').trim())];
+  // Source lines are authored boundaries, not guesses based on punctuation.
+  // Blank lines delimit paragraphs; a single newline stays inside its paragraph
+  // as a softBreak. Chunking is presentation only and never changes this model.
+  const freeText: Inline[][] = parsed.freeText.split('\n\n').map((s) => tokenize(s));
   if (freeText.length === 0) freeText.push([]);
 
   const bullets = withBullets
@@ -136,11 +140,14 @@ const textNode = (s: string): JSONContent => ({ type: 'text', text: s });
 const runsToNodes = (runs: Inline[]): JSONContent[] =>
   runs
     .filter((r) => r.text)
-    .map((r) => {
+    .flatMap((r) => {
       const m: JSONContent['marks'] = [];
       if (r.bold) m.push({ type: 'bold' });
       if (r.term) m.push({ type: 'term' });
-      return m.length ? { type: 'text', text: r.text, marks: m } : { type: 'text', text: r.text! };
+      return r.text.split('\n').flatMap((text, index): JSONContent[] => [
+        ...(index ? [{ type: 'softBreak', ...(m.length ? { marks: m } : {}) }] : []),
+        ...(text ? [{ type: 'text', text, ...(m.length ? { marks: m } : {}) }] : []),
+      ]);
     });
 
 /** A textblock node — content omitted when empty (ProseMirror dislikes []-text). */
@@ -203,16 +210,16 @@ const find = (doc: JSONContent, type: string): JSONContent | undefined =>
 
 const plainText = (node: JSONContent | undefined): string =>
   (node?.content ?? [])
-    .filter((n) => n.type === 'text')
-    .map((n) => n.text ?? '')
+    .filter((n) => n.type === 'text' || n.type === 'softBreak')
+    .map((n) => n.type === 'softBreak' ? ' ' : n.text ?? '')
     .join('');
 
 const readRuns = (node: JSONContent | undefined): Inline[] =>
   (node?.content ?? [])
-    .filter((n) => n.type === 'text')
+    .filter((n) => n.type === 'text' || n.type === 'softBreak')
     .map((n) => {
       const marks = (n.marks ?? []).map((m) => m.type);
-      return { text: n.text ?? '', ...(marks.includes('bold') ? { bold: true } : {}), ...(marks.includes('term') ? { term: true } : {}) };
+      return { text: n.type === 'softBreak' ? '\n' : n.text ?? '', ...(marks.includes('bold') ? { bold: true } : {}), ...(marks.includes('term') ? { term: true } : {}) };
     });
 
 export function docToModel(doc: JSONContent): EditorModel {
@@ -237,7 +244,9 @@ export function docToModel(doc: JSONContent): EditorModel {
           .map((li) => {
             // Reconstruct the line "name: desc" (with [[ ]] for terms), split at the
             // first colon outside a term — exactly like the node's parser.
-            const md = runsToMarkdown(readRuns(li));
+            // Outline rows are single-line fields. Rich-pasting an intro line
+            // break must not join words or escape the list and lose its tail.
+            const md = runsToMarkdown(readRuns(li)).replace(/\n+/g, ' ');
             const ci = separatorColonIndex(md);
             if (ci >= 0) {
               return { name: wholeTerm(md.slice(0, ci)), desc: tokenize(md.slice(ci + 1).trim()) };
@@ -253,9 +262,9 @@ export function docToModel(doc: JSONContent): EditorModel {
 export function modelToBody(model: EditorModel): string {
   const blocks: string[] = [];
 
-  // Re-join the sentence paragraphs into one free-text block (the node + parser
-  // re-split into sentences on render).
-  const ft = model.freeText.map((p) => runsToMarkdown(p).trim()).filter(Boolean).join(' ');
+  // Preserve both authored line breaks and paragraph boundaries. Reopening or
+  // toggling chunking must never rewrite the user's decision about line breaks.
+  const ft = model.freeText.map((p) => runsToMarkdown(p)).join('\n\n').trim();
   if (ft) blocks.push(ft);
 
   for (const b of model.bullets) {

@@ -255,12 +255,12 @@ export function placeCitationMarkersFromLinks(body: string, sources: NodeSource[
 
   out = out
     // Empty parens left by a stripped unknown link: `text ()` → `text`.
-    .replace(/\s*\(\s*\)/g, '')
+    .replace(/[ \t]*\([ \t]*\)/g, '')
     // A parenthesized group of only markers + separators → the markers, glued
     // (leading space dropped): ` (⟦1⟧, ⟦2⟧)` → `⟦1⟧⟦2⟧`.
-    .replace(/\s*\(\s*((?:⟦\d+⟧[\s,;]*)+)\)/g, (_m, g: string) => g.replace(/[\s,;]+/g, ''))
+    .replace(/[ \t]*\([ \t]*((?:⟦\d+⟧[ \t,;]*)+)\)/g, (_m, g: string) => g.replace(/[ \t,;]+/g, ''))
     // Separators between adjacent bare (unparenthesized) markers: `⟦1⟧, ⟦2⟧` → `⟦1⟧⟦2⟧`.
-    .replace(/(⟦\d+⟧)[\s,;]+(?=⟦\d+⟧)/g, '$1')
+    .replace(/(⟦\d+⟧)[ \t,;]+(?=⟦\d+⟧)/g, '$1')
     // Glue a bare marker run to the preceding word: `Fact ⟦1⟧` → `Fact⟦1⟧`.
     .replace(/[ \t]+(⟦\d+⟧)/g, '$1')
     // Tidy any space left before sentence punctuation by the strips above.
@@ -369,7 +369,7 @@ function stripProviderCitationWrappers(body: string, sources?: NodeSource[]): st
     if (literals.some(([from, to]) => start < to && start + whole.length > from)
       || !/^(?:⟦\d+⟧|\[\d+(?:\s*[,;]\s*\d+)*\]|[\s,;])*$/.test(inside)) return whole;
     return (inside + after).replace(/\[(\d+(?:\s*[,;]\s*\d+)*)\]/g, (label, list: string) => numbers
-      ? list.split(/\s*[,;]\s*/).map(Number).filter(n => numbers.has(n)).map(marker).join('') : label).trim();
+      ? list.split(/\s*[,;]\s*/).map(Number).filter(n => numbers.has(n)).map(marker).join('') : label).replace(/^[ \t]+|[ \t]+$/g, '');
   });
   return out === body ? body : tidyCitationSpacing(out);
 }
@@ -377,16 +377,16 @@ function stripProviderCitationWrappers(body: string, sources?: NodeSource[]): st
 function tidyCitationSpacing(body: string): string {
   return body
     // Bare URLs are sometimes wrapped in angle brackets or parentheses.
-    .replace(/<\s*(⟦\d+⟧)\s*>/g, '$1')
-    .replace(/\s*\(\s*((?:⟦\d+⟧[\s,;]*)+)\)/g, (_match, keys: string) => (
-      keys.replace(/[\s,;]+/g, '')
+    .replace(/<[ \t]*(⟦\d+⟧)[ \t]*>/g, '$1')
+    .replace(/[ \t]*\([ \t]*((?:⟦\d+⟧[ \t,;]*)+)\)/g, (_match, keys: string) => (
+      keys.replace(/[ \t,;]+/g, '')
     ))
-    .replace(/(⟦\d+⟧)[\s,;]+(?=⟦\d+⟧)/g, '$1')
+    .replace(/(⟦\d+⟧)[ \t,;]+(?=⟦\d+⟧)/g, '$1')
     // Provider labels are commonly preceded by a normal prose space. Scatter's
     // keys deliberately attach to the supported word/sentence instead.
     .replace(/[ \t]+(⟦\d+⟧)/g, '$1')
     // Gemini sometimes emits `[source].Next sentence` without whitespace.
-    // Restoring it here also lets the sentence parser split the prose correctly.
+    // Restore readable spacing without inventing a sentence source boundary.
     .replace(/(⟦\d+⟧[.!?])(?=[A-ZÀ-Þ])/g, '$1 ');
 }
 

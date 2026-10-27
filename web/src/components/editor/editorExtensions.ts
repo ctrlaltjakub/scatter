@@ -27,7 +27,7 @@ import { TermMark } from './TermMark';
 import { TermResize } from './TermResize';
 import { L2NameDeco } from './L2NameDeco';
 import { OutlineKeymap } from './OutlineKeymap';
-import { IntroChunk } from './IntroChunk';
+import { SoftBreak } from './SoftBreak';
 
 /** Article title — plain single line, persists to `version.header`. */
 const Title = Node.create({
@@ -56,6 +56,10 @@ const Paragraph = Node.create({
   marks: 'bold term',
   parseHTML: () => [{ tag: 'p' }],
   renderHTML: () => ['p', { class: 'editor-para' }, 0],
+  addKeyboardShortcuts() { return {
+    'Shift-Enter': () => this.editor.isActive('paragraph')
+      && this.editor.commands.insertContent({ type: 'softBreak' }),
+  }; },
 });
 
 /** The bullet outline container (regular nodes only). */
@@ -124,6 +128,7 @@ export function buildExtensions(nodeType: NodeType) {
     Title,
     FreeTextSection,
     Paragraph,
+    SoftBreak,
     BulletSection,
     OutlineItem,
     L1Title,
@@ -132,9 +137,6 @@ export function buildExtensions(nodeType: NodeType) {
     L2NameDeco,
     TermResize,
     OutlineKeymap,
-    // Live sentence-per-line; gated at runtime by editor.storage.introChunk.enabled
-    // (flipped by the chunking toggle) so toggling never rebuilds the editor.
-    IntroChunk,
     History,
     Gapcursor,
     Dropcursor,

@@ -6,6 +6,7 @@ import { diagnosticPlan } from './modelDiagnostics';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { DEFAULT_SETTINGS } from '@/store/types';
 import { LANGUAGES } from './languages';
+import { DEFAULT_PROMPTS } from './promptDefaults';
 
 afterEach(() => useSettingsStore.setState({ ...DEFAULT_SETTINGS }));
 
@@ -28,11 +29,13 @@ describe('chat instructions in both formatting modes', () => {
     const plan = diagnosticPlan(useSettingsStore.getState(), 'main');
     for (const informationChunking of [false, true]) {
       expect(chatSystemPrompt(informationChunking, instructions, false).split(instructions)).toHaveLength(2);
+      expect(chatSystemPrompt(informationChunking, instructions, false)).toContain(DEFAULT_PROMPTS.proseLineBoundaries);
       for (const variant of [
         { kind: 'answer' as const, instruction: 'Rewrite', previousBody: 'Text', informationChunking },
         { kind: 'modify-selection' as const, mode: 'answer' as const, instruction: 'Rewrite', markedBody: 'Text', selectedText: 'Text', informationChunking },
       ]) expect(buildMessages({ variant, context: { parent: null, grandparent: null } })[0]!.content.split(instructions)).toHaveLength(2);
       expect(plan.find(job => job.test.id === `chat-${informationChunking}`)?.test.messages[0]?.content).toContain(instructions);
+      expect(plan.find(job => job.test.id === `chat-${informationChunking}`)?.test.messages[0]?.content).toContain(DEFAULT_PROMPTS.proseLineBoundaries);
     }
   });
 });

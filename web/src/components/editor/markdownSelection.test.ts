@@ -12,6 +12,8 @@ const setup = (body: string) => editor = new Editor({ extensions: buildAnswerExt
 describe('Markdown mode selection mapping', () => {
   it.each([
     ['A **target** in prose.', 'target'],
+    ['First line. Another sentence.\nA **target** on the next source line.\n\nLast paragraph.', 'target'],
+    ['**Bold first line\nwith target on the next.**', 'target'],
     ['# Heading\n\nA [[target]] and _emphasis_.', 'target'],
     ['- Parent\n  - target child', 'target'],
     ['| Name | Value |\n|---|---|\n| Item | target |', 'target'],

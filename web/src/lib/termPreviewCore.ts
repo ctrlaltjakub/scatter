@@ -3,7 +3,7 @@ import { versionLanguage } from './languages';
 import { configuredPrompt } from '@/lib/configuredPrompt';
 import { GenerationOutputLimitError } from './generationLimits';
 import type { NodeVersion } from '@/store/types';
-import { parseBody, sentenceSplitPoints, stripChips } from './bulletParse';
+import { parseBody, stripChips } from './bulletParse';
 import { wholeTerm } from './bulletTerms';
 import { markedTerms, stripTermMarkers } from './termMarking';
 import { stringHash as hashPrompt } from './stringHash';
@@ -141,12 +141,10 @@ export function inspectTermPreviews(raw: string, terms: string[]) {
       if (plain.length > 650 || !/[\p{L}\p{N}]/u.test(plain)) { reject('Use a nonempty explanation of at most 650 characters.'); continue; }
       if (/[\n\r<>`\[\]*]|https?:\/\//.test(plain)) { reject('Use one line of prose without HTML, code, links, brackets or term markers.'); continue; }
       if (!/[.!?。！？؟۔।॥]["”’»」』)]?$/.test(plain)) { reject('Finish the sentence with punctuation appropriate to its language.'); continue; }
-      // Use the same abbreviation-aware boundaries as node text and the editor.
-      // Intl's default sentence segmenter splits valid names (Richard D. James,
-      // St. Irvyne) and opus numbers, causing every repair to be rejected again.
-      if (sentenceSplitPoints(plain).length) {
-        reject('The explanation contains multiple sentences. Rewrite it as exactly one complete sentence.'); continue;
-      }
+      // One grammatical sentence is a writing instruction, not a reliable
+      // cross-language validation rule. Punctuation cannot distinguish names,
+      // abbreviations and true sentence endings; do not trigger paid repair
+      // calls for that ambiguity. A single source line is not proof either.
       result[key] = text;
       delete issues[key];
     }

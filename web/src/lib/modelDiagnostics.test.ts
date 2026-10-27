@@ -5,6 +5,9 @@ import { diagnosticError, GenerationResponseError, parseResponseJson, validateEn
 import { GenerationOutputLimitError } from './generationLimits';
 import { ProviderError } from '@/providers/errors';
 import type { ChatChunk, StreamChatOpts } from '@/providers/types';
+import { LANGUAGES } from './languages';
+import { useSettingsStore } from '@/store/useSettingsStore';
+import { DEFAULT_PROMPTS } from './promptDefaults';
 const settings = (): Settings => ({ ...DEFAULT_SETTINGS, providers: [{ id: 'local', preset: 'custom', apiKey: 'private-test-key', baseUrl: 'http://localhost:1234/v1', enabledModels: ['a', 'b'] }],
   activeModelRef: { providerId: 'local', model: 'a' }, secondaryUseSameModel: true, secondaryModelRef: undefined, interactiveModelRef: undefined, imageModelRef: null });
 afterEach(() => vi.useRealTimers());
@@ -52,13 +55,33 @@ describe('model diagnostics', () => {
     expect(new Set(plan.map(j => j.key)).size).toBe(plan.length);
     for (const label of ['encyclopedic', 'explain', 'vision', 'search', 'tools', 'terms', 'previews', 'fact-check-format', 'interactive-create', 'interactive-edit', 'interactive-repair']) expect(plan.some(j => j.test.id === label)).toBe(true);
   });
+  it.each(LANGUAGES)('checks explicit sentence source lines once in $name without punctuation inference', async ({ id, sample }) => {
+    const cfg = { ...settings(), generationLanguage: id };
+    const job = diagnosticPlan(cfg, 'main').find(job => job.test.id === 'sentence-lines')!;
+    const invoke = vi.fn(async function* () {
+      yield { delta: `${sample}\n${sample}`, done: true, finishReason: 'stop' as const };
+    });
+    expect(job.test.messages[0]!.content).toContain(DEFAULT_PROMPTS.proseLineBoundaries);
+    expect((await runDiagnosticJob(job, cfg, new AbortController().signal, '', invoke)).status).toBe('passed');
+    expect(invoke).toHaveBeenCalledOnce();
+    expect(() => job.test.validate?.(`${sample} ${sample}`)).toThrow('two requested sentence source lines');
+    expect(() => job.test.validate?.(`${sample}\n\n${sample}`)).toThrow('two requested sentence source lines');
+  });
+  it('keeps explicit line instructions in every prose generation/edit capability path', () => {
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS });
+    const jobs = diagnosticPlan(settings(), 'main');
+    for (const id of ['encyclopedic', 'term-node', 'follow-up', 'selected-follow-up', 'explain', 'modify', 'modify-explain',
+      'elaborate', 'expand-section', 'expand-explain', 'pop-bullet', 'structure-repair', 'selection-edit', 'answer', 'answer-chunking', 'fact-rewrite', 'chat-true', 'chat-false']) {
+      expect(jobs.find(job => job.test.id === id)?.test.messages[0]?.content, id).toContain(DEFAULT_PROMPTS.proseLineBoundaries);
+    }
+  });
   it('reports invalid preview content in a single paid capability check', async () => {
     const cfg = settings(), job = diagnosticPlan(cfg, 'secondary').find(job => job.test.id === 'previews')!;
     const invoke = vi.fn(async function* () {
-      yield { delta: JSON.stringify({ previews: [{ id: 0, parts: ['The perimeter is a boundary length. This is a second sentence.'] }] }),
+      yield { delta: JSON.stringify({ previews: [{ id: 0, parts: ['The perimeter is a boundary length.\nThis is a second line.'] }] }),
         done: true, finishReason: 'stop' as const };
     });
-    await expect(runDiagnosticJob(job, cfg, new AbortController().signal, '', invoke)).rejects.toThrow('perimeter: The explanation contains multiple sentences');
+    await expect(runDiagnosticJob(job, cfg, new AbortController().signal, '', invoke)).rejects.toThrow('perimeter: Use one line of prose');
     expect(invoke).toHaveBeenCalledTimes(1);
   });
   it('passes previews with abbreviated names and different emphasis without repair calls', async () => {

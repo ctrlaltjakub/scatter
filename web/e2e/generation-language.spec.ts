@@ -252,14 +252,14 @@ test('chunked sentences keep formatting, citations and native punctuation across
   test.setTimeout(120_000);
   await fixture(page);
   const samples = [
-    { language: 'ja', header: '日本語 · Sentence boundaries', body: '**脳神経診察は、頭蓋底を出入りする12対の脳神経の機能を系統的に評価し、脳幹や頭蓋内病変の解剖学的局在診断を導く神経学的診察の基本的な手法です。**⟦1⟧この検査では、[[脳幹]]の反射や感覚・運動経路を直接評価し、他の検査で得られた情報と組み合わせて病変の位置を調べます。**「眼球運動も観察します。」** ⟦2⟧（検査結果を統合します。）' },
-    { language: 'zh', header: '简体中文 · Sentence boundaries', body: '**清晰的解释有助于理解复杂概念。**⟦1⟧[[阅读]]时可以查看术语预览。**「每句话从新的一行开始。」** ⟦2⟧（文字和标点保持完整。）' },
-    { language: 'ko', header: '한국어 · Sentence boundaries', body: '**명확한 설명은 이해를 돕습니다.** ⟦1⟧ [[읽기]]는 정보를 전달합니다. **“다음 문장은 새 줄에서 시작합니다.”** ⟦2⟧ (문장 부호를 유지합니다.)' },
-    { language: 'ar', header: 'العربية · Sentence boundaries', body: '**هل هذا الشرح واضح؟** ⟦1⟧ تساعد [[القراءة]] على فهم الأفكار. **«تبدأ الجملة التالية في سطر جديد.»** ⟦2⟧ (يبقى النص متصلاً وواضحاً.)' },
-    { language: 'hi', header: 'हिन्दी · Sentence boundaries', body: '**स्पष्ट व्याख्या समझने में मदद करती है।** ⟦1⟧ [[पढ़ना]] उपयोगी है।**“अगला वाक्य नई पंक्ति में है।”** ⟦2⟧ (पाठ और विराम चिह्न सुरक्षित रहते हैं॥)' },
-    { language: 'es', header: 'Español · Sentence boundaries', body: '**Una explicación clara ayuda a comprender.** ⟦1⟧ ¿Cómo funciona la [[lectura]]? **¡La siguiente frase empieza en otra línea!** ⟦2⟧ (La puntuación se conserva.)' },
-    { language: 'ru', header: 'Русский · Sentence boundaries', body: '**Ясные объяснения помогают понять сложные идеи.** ⟦1⟧ [[Чтение]] передаёт информацию. **«Следующее предложение начинается с новой строки.»** ⟦2⟧ (Знаки препинания сохраняются.)' },
-    { language: 'vi', header: 'Tiếng Việt · Sentence boundaries', body: '**Giải thích rõ ràng giúp hiểu ý tưởng phức tạp.** ⟦1⟧ [[Đọc]] giúp tiếp nhận thông tin. **“Câu tiếp theo bắt đầu trên dòng mới.”** ⟦2⟧ (Dấu câu và dấu thanh được giữ nguyên.)' },
+    { language: 'ja', header: '日本語 · Sentence boundaries', body: '**脳神経診察は、頭蓋底を出入りする12対の脳神経の機能を系統的に評価し、脳幹や頭蓋内病変の解剖学的局在診断を導く神経学的診察の基本的な手法です。**⟦1⟧\nこの検査では、[[脳幹]]の反射や感覚・運動経路を直接評価し、他の検査で得られた情報と組み合わせて病変の位置を調べます。\n**「眼球運動も観察します。」** ⟦2⟧\n（検査結果を統合します。）' },
+    { language: 'zh', header: '简体中文 · Sentence boundaries', body: '**清晰的解释有助于理解复杂概念。**⟦1⟧\n[[阅读]]时可以查看术语预览。\n**「每句话从新的一行开始。」** ⟦2⟧\n（文字和标点保持完整。）' },
+    { language: 'ko', header: '한국어 · Sentence boundaries', body: '**명확한 설명은 이해를 돕습니다.** ⟦1⟧\n[[읽기]]는 정보를 전달합니다.\n**“다음 문장은 새 줄에서 시작합니다.”** ⟦2⟧\n(문장 부호를 유지합니다.)' },
+    { language: 'ar', header: 'العربية · Sentence boundaries', body: '**هل هذا الشرح واضح؟** ⟦1⟧\nتساعد [[القراءة]] على فهم الأفكار.\n**«تبدأ الجملة التالية في سطر جديد.»** ⟦2⟧\n(يبقى النص متصلاً وواضحاً.)' },
+    { language: 'hi', header: 'हिन्दी · Sentence boundaries', body: '**स्पष्ट व्याख्या समझने में मदद करती है।** ⟦1⟧\n[[पढ़ना]] उपयोगी है।\n**“अगला वाक्य नई पंक्ति में है।”** ⟦2⟧\n(पाठ और विराम चिह्न सुरक्षित रहते हैं॥)' },
+    { language: 'es', header: 'Español · Sentence boundaries', body: '**Una explicación clara ayuda a comprender.** ⟦1⟧\n¿Cómo funciona la [[lectura]]?\n**¡La siguiente frase empieza en otra línea!** ⟦2⟧\n(La puntuación se conserva.)' },
+    { language: 'ru', header: 'Русский · Sentence boundaries', body: '**Ясные объяснения помогают понять сложные идеи.** ⟦1⟧\n[[Чтение]] передаёт информацию.\n**«Следующее предложение начинается с новой строки.»** ⟦2⟧\n(Знаки препинания сохраняются.)' },
+    { language: 'vi', header: 'Tiếng Việt · Sentence boundaries', body: '**Giải thích rõ ràng giúp hiểu ý tưởng phức tạp.** ⟦1⟧\n[[Đọc]] giúp tiếp nhận thông tin.\n**“Câu tiếp theo bắt đầu trên dòng mới.”** ⟦2⟧\n(Dấu câu và dấu thanh được giữ nguyên.)' },
   ];
   await page.evaluate(samples => {
     const find = (window as any).testExport;

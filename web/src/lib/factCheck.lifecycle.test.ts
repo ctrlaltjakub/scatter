@@ -139,7 +139,7 @@ describe('streaming fact-check lifecycle', () => {
     expect(fake.systems[0]).not.toContain('Japanese (ja-JP)');
   });
   it('opens pending review immediately, caps global work at ten, and runs bullets after opening prose', async () => {
-    const opening = Array.from({ length: 13 }, (_, i) => `Claim ${i + 1} is factual.`).join(' ');
+    const opening = Array.from({ length: 13 }, (_, i) => `Claim ${i + 1} is factual.`).join('\n');
     setNode(`${opening}\n\n- Section\n  - Child: A described claim.`);
     const pending = startFactCheck('n1');
 

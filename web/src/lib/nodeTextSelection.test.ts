@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { resolveNodeTextSelection } from './nodeTextSelection';
+import { resolveNodeTextSelection, sourceFieldProjection } from './nodeTextSelection';
 
 function textNode(el: Element): Text {
   const node = el.firstChild;
@@ -25,6 +25,14 @@ function select(
 afterEach(() => { document.body.innerHTML = ''; });
 
 describe('resolveNodeTextSelection', () => {
+  it('retains source offsets through multiline emphasis, blank lines and supplementary CJK characters', () => {
+    const body = '**𠮷野の文。\n次の文。**\n\n[[最後]]の文。';
+    const projection = sourceFieldProjection(body, 'ft')!;
+    expect(projection.text).toBe('𠮷野の文。 次の文。 最後の文。');
+    const at = projection.text.indexOf('最後');
+    expect(projection.raw[at]).toBe(body.indexOf('最後'));
+    expect(projection.raw[projection.text.indexOf('次')]).toBe(body.indexOf('次'));
+  });
   it('keeps chat selections aligned after entities and includes complete escaped characters', () => {
     const body = 'A &amp; B \\*literal\\* and C.';
     document.body.innerHTML = '<div class="chat-markdown"><p data-sc-source-field="chat:0">A &amp; B *literal* and C.</p></div>';

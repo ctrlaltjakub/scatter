@@ -15,73 +15,67 @@ function chunked(enabled: boolean) {
 }
 
 describe('rich-editor information chunking', () => {
-  it.each(LANGUAGES)('preserves formatting and editor content while chunking $name', language => {
-    setup(`**${language.sample}** ⟦1⟧ ${language.sample}`);
+  it.each(LANGUAGES)('uses authored lines, retaining $name content and formatting across toggles', language => {
+    const source = `**${language.sample}** ⟦1⟧ ${language.sample}\n${language.sample}`;
+    setup(source);
     const before = editor.getJSON();
+    const body = answerDocToBody(before);
     chunked(true);
-    expect(editor.view.dom.querySelectorAll('.editor-answer-sentence-break')).toHaveLength(1);
+    expect(editor.view.dom.querySelectorAll('.editor-soft-break')).toHaveLength(1);
+    expect(editor.view.dom.querySelector('p')).toHaveClass('editor-answer-chunked');
     expect(editor.view.dom.querySelector('strong')).toHaveTextContent(language.sample);
     expect(editor.getJSON()).toEqual(before);
     chunked(false);
-    expect(editor.view.dom.querySelector('.editor-answer-sentence-break')).toBeNull();
+    expect(editor.view.dom.querySelector('.editor-answer-chunked')).toBeNull();
+    expect(editor.view.dom.querySelectorAll('.editor-soft-break')).toHaveLength(1);
     expect(editor.getJSON()).toEqual(before);
-  });
-
-  it('keeps sentence-ending terms, bold marks and punctuation inline', () => {
-    setup('This ends with a [[term]]. This ends with **[[bold terms]]**. This ends with **bold words**.');
-    const before = editor.getJSON();
-    chunked(true);
-    const paragraph = editor.view.dom.querySelector('p')!;
-    expect(paragraph).toHaveClass('editor-answer-chunked');
-    expect(paragraph.querySelectorAll('.editor-answer-sentence-break')).toHaveLength(2);
-    expect(paragraph.querySelector('[data-term]')?.nextSibling?.textContent).toBe('. ');
-    expect(paragraph.querySelector('strong')?.nextSibling?.textContent).toBe('. ');
-    expect(paragraph.querySelectorAll('[data-term] .editor-answer-sentence-break, strong .editor-answer-sentence-break')).toHaveLength(0);
-    expect(paragraph.querySelector('.editor-answer-sentence')).toBeNull();
-    expect(editor.getJSON()).toEqual(before);
-  });
-
-  it('does not add breaks to saved Markdown or editor undo history when toggling chunking', () => {
-    setup('A [[term]]. Another **sentence**.');
-    const body = answerDocToBody(editor.getJSON());
-    chunked(true);
-    expect(answerDocToBody(editor.getJSON())).toBe(body);
-    expect(editor.can().undo()).toBe(false);
-    chunked(false);
-    expect(editor.view.dom.querySelector('.editor-answer-sentence-break, .editor-answer-chunked')).toBeNull();
     expect(answerDocToBody(editor.getJSON())).toBe(body);
     expect(editor.can().undo()).toBe(false);
   });
 
-  it('updates sentence breaks during typing and undo without separating terminal punctuation', () => {
+  it('does not invent sentence breaks around abbreviations, terms or emphasis', () => {
+    const source = 'Dear **Dr. Richard D. Stith Jr.**, contact **Capt. J. B. Vance**. This ends with a [[term]]. Another **sentence**.';
+    setup(source);
+    chunked(true);
+    expect(editor.view.dom.querySelectorAll('.editor-soft-break, .editor-answer-sentence-break')).toHaveLength(0);
+    expect(editor.view.dom.querySelector('[data-term]')?.nextSibling?.textContent).toBe('. Another ');
+    expect(answerDocToBody(editor.getJSON())).toBe(source);
+  });
+
+  it('typing punctuation never changes line boundaries, and explicit breaks support undo', () => {
     setup('A [[term]].');
     chunked(true);
     editor.commands.setTextSelection(editor.state.doc.content.size - 1);
     editor.commands.insertContent(' Another sentence.');
-    expect(editor.view.dom.querySelectorAll('.editor-answer-sentence-break')).toHaveLength(1);
-    expect(editor.view.dom.querySelector('[data-term]')?.nextSibling?.textContent).toBe('. ');
+    expect(editor.view.dom.querySelector('.editor-soft-break, .editor-answer-sentence-break')).toBeNull();
     editor.commands.undo();
-    expect(editor.view.dom.querySelector('.editor-answer-sentence-break')).toBeNull();
     expect(answerDocToBody(editor.getJSON())).toBe('A [[term]].');
+    editor.commands.insertContent({ type: 'hardBreak' });
+    editor.commands.insertContent('A line chosen by the author.');
+    expect(answerDocToBody(editor.getJSON())).toBe('A [[term]].\\\nA line chosen by the author.');
+    chunked(false);
+    expect(editor.view.dom.querySelector('p br')).not.toBeNull();
   });
 
-  it('preserves inline-image offsets and places the next sentence after the image punctuation', () => {
-    setup('See ![plot](https://example.com/plot.png). Another [[term]].');
-    chunked(true);
-    const paragraph = editor.view.dom.querySelector('p')!;
-    const separator = paragraph.querySelector('.editor-answer-sentence-break')!;
-    expect(paragraph.querySelector('img')?.nextSibling?.textContent).toBe('. ');
-    expect(separator.nextSibling?.textContent).toBe('Another ');
-    expect(paragraph.querySelectorAll('.editor-answer-sentence-break')).toHaveLength(1);
-  });
-
-  it('chunks paragraphs in lists and tables without altering code blocks', () => {
-    setup('- A [[term]]. Another sentence.\n\n| Header |\n|---|\n| A **[[term]]**. Another sentence. |\n\n```text\nA term. Another sentence.\n```');
+  it('retains soft and hard breaks in lists, tables, quotes, code and math', () => {
+    const source = '- A [[term]]. Another sentence.\n  A new source line.\n\n| Header |\n|---|\n| A **[[term]]**. Another sentence.<br>A new line. |\n\n> A quoted sentence. Another.\n> Second line.\n\n```text\nA term. Another sentence.\nNext code line.\n```\n\n$$\nx = 1\ny = 2\n$$';
+    setup(source);
     const before = editor.getJSON();
     chunked(true);
-    expect(editor.view.dom.querySelectorAll('li .editor-answer-sentence-break')).toHaveLength(1);
-    expect(editor.view.dom.querySelectorAll('td .editor-answer-sentence-break')).toHaveLength(1);
-    expect(editor.view.dom.querySelector('pre .editor-answer-sentence-break')).toBeNull();
+    expect(editor.view.dom.querySelectorAll('li .editor-soft-break')).toHaveLength(1);
+    expect(editor.view.dom.querySelectorAll('blockquote .editor-soft-break')).toHaveLength(1);
+    expect(editor.view.dom.querySelectorAll('td .editor-soft-break')).toHaveLength(0);
+    expect(editor.view.dom.querySelector('td br')).not.toBeNull();
+    expect(editor.view.dom.querySelector('pre .editor-soft-break')).toBeNull();
     expect(editor.getJSON()).toEqual(before);
+  });
+
+  it('does not include the following source line when automatically linking a URL', () => {
+    setup('');
+    editor.commands.insertContent([{ type: 'text', text: 'Visit www.example.com' }, { type: 'softBreak' },
+      { type: 'text', text: 'A separate line.' }]);
+    expect(editor.view.dom.querySelector('a')?.getAttribute('href')).toBe('https://www.example.com');
+    expect(editor.view.dom.querySelector('a .editor-soft-break')).toBeNull();
+    expect(answerDocToBody(editor.getJSON())).toContain('\nA separate line.');
   });
 });

@@ -24,4 +24,9 @@ describe('modelToMarkdown', () => {
     expect(out).toContain('**Krebs cycle**');
     expect(out).not.toContain('****');
   });
+
+  it('exports source line breaks without turning them into new paragraphs', () => {
+    expect(md('First sentence. Same line.\nSecond line.\n\nAnother paragraph.', 'explain'))
+      .toBe('# Title\n\nFirst sentence. Same line.\nSecond line.\n\nAnother paragraph.\n');
+  });
 });

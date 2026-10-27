@@ -26,6 +26,7 @@ import { nodeRelations, relatedSelectedNodeId, type NodeRelations } from '@/lib/
 import type { ChatAnswerRef } from '@/store/chatTypes';
 import { languageInfo, languageDirection } from '@/lib/languages';
 import { useReadingTypography } from '@/hooks/useReadingTypography';
+import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 
 type FactAttributes = HTMLAttributes<HTMLElement> & { 'data-chat-unit'?: string; 'data-fact-unit'?: string; 'data-tip'?: string };
 interface MarkdownPresentation {
@@ -149,8 +150,13 @@ export const ChatMarkdown = memo(function ChatMarkdown({ nodeId, version, tableO
   const activeUnit = useCitationPanelStore((state) => !localEvidence && state.mode === 'fact-check'
     && state.nodeId === nodeId && state.factVersionCreatedAt === version.createdAt
     ? state.activeFactUnitId : null);
-  const report = localEvidence || reviewingFacts
+  const availableReport = localEvidence || reviewingFacts
     ? version.factCheck?.pending ?? version.factCheck?.complete : undefined;
+  const bodyFingerprint = useMemo(() => availableReport ? factCheckBodyFingerprint(version) : undefined,
+    // Incoming fact-check results do not change the prose being checked.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [!!availableReport, version.body, version.header, version.chat?.question, !!version.chat]);
+  const report = availableReport?.bodyFingerprint === bodyFingerprint ? availableReport : undefined;
   const units = useMemo(() => new Map(report?.units.map((unit) => [unit.id, unit])), [report]);
   const plugin = useMemo(() => () => (tree: unknown) => {
     annotateMarkdownExtras(tree as ChatMdNode, version.body, node => mappedSegment(node, version.body, false));

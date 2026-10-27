@@ -86,7 +86,7 @@ interface SettingsState extends Settings {
   /** How hard the generation model reasons (Off/Low/Medium/High). */
   setReasoningEffort: (v: ReasoningEffort) => void;
   setInteractiveReasoningEffort: (v: ReasoningEffort) => void;
-  /** Render each sentence of a node's opening paragraph on its own line. */
+  /** Show authored prose line breaks in encyclopedic/explain nodes. */
   setSentencePerLine: (v: boolean) => void;
   setNodeFontId: (id: string) => void;
   addCustomNodeFont: (font: CustomNodeFont) => void;

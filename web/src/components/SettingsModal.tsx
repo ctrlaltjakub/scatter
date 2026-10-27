@@ -506,7 +506,7 @@ function ReadingSettings() {
         </div>
         <SettingsToggle
           title="One sentence per line"
-          description={<>Start each sentence on a <strong>new line</strong>. Wrapped lines are <strong>indented with guide marks</strong> to make sentence boundaries clear.</>}
+          description={<>For <strong>encyclopedic node introductions and explain nodes</strong>. Show the text’s <strong>existing line breaks</strong>; new AI-generated prose puts each sentence on its own line. Wrapped lines are <strong>indented with guide marks</strong>. In the editor, you control where lines break.</>}
           checked={sentencePerLine}
           onChange={setSentencePerLine}
         />

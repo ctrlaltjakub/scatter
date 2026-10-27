@@ -16,7 +16,7 @@ import { normalizeEditorUrl } from '@/lib/chat/markdownExtras';
 import katex from 'katex';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
-import { sentenceSplitPoints } from '@/lib/bulletParse';
+import { SoftBreak } from './SoftBreak';
 
 const safeUrl = (value: unknown, image = false) => typeof value === 'string'
   && (/^(?:https?:|\/|#)/i.test(value) || (image ? /^data:image\/(?:png|jpeg|webp|gif|avif);base64,/i.test(value) : /^mailto:/i.test(value))) ? value : '';
@@ -30,7 +30,7 @@ export function buildAnswerExtensions() {
   });
   const mark = (name: string, tag: string) => Mark.create({ name,
     parseHTML: () => [{ tag }], renderHTML: () => [tag, {}, 0] });
-  return [Document, Text, Paragraph, Bold, TermMark, TermResize, History, Gapcursor, Dropcursor,
+  return [Document, Text, Paragraph, SoftBreak, Bold, TermMark, TermResize, History, Gapcursor, Dropcursor,
     Extension.create({ name: 'answerEditing',
       addStorage: () => ({ chunked: false }),
       addInputRules() { return [new InputRule({
@@ -60,7 +60,8 @@ export function buildAnswerExtensions() {
           const tr = state.tr;
           state.doc.descendants((node, pos) => {
             if (!node.isTextblock || node.type.spec.code) return;
-            const text = node.textBetween(0, node.content.size, '', '\uFFFC');
+            const text = node.textBetween(0, node.content.size, '', leaf =>
+              leaf.type.name === 'softBreak' || leaf.type.name === 'hardBreak' ? '\n' : '\uFFFC');
             for (const match of text.matchAll(/(?:https?:\/\/|www\.)[^\s<>]+/gi)) {
               const url = match[0].replace(/[.,;!?)]+$/, '');
               const href = normalizeEditorUrl(url);
@@ -83,21 +84,7 @@ export function buildAnswerExtensions() {
           const decorations: Decoration[] = [];
           state.doc.descendants((node, pos) => {
             if (node.type.name !== 'paragraph') return;
-            const text = node.textBetween(0, node.content.size, '', '\uFFFC');
             decorations.push(Decoration.node(pos, pos + node.nodeSize, { class: 'editor-answer-chunked' }));
-            for (const at of sentenceSplitPoints(text)) {
-              // Inline decorations are fragmented at mark boundaries. Making
-              // those fragments block-level puts terms, bold text and final
-              // punctuation on separate lines. Use display-only breaks instead;
-              // the Markdown paragraph and its marks remain untouched.
-              decorations.push(Decoration.widget(pos + 1 + at, () => {
-                const separator = document.createElement('span');
-                separator.className = 'editor-answer-sentence-break';
-                separator.setAttribute('aria-hidden', 'true');
-                separator.appendChild(document.createElement('br'));
-                return separator;
-              }, { key: `answer-sentence-${pos + 1 + at}`, side: -1, marks: [] }));
-            }
             return false;
           });
           return DecorationSet.create(state.doc, decorations);

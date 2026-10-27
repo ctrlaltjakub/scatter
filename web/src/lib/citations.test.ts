@@ -7,6 +7,7 @@ import {
   placeCitationMarkersReliable, renumberCitations, marker, stripUnbackedCitationLabels,
 } from './citations';
 import type { NodeSource } from '@/store/types';
+import { LANGUAGES } from './languages';
 
 const src = (n: number, url: string): NodeSource => ({ n, url });
 
@@ -34,6 +35,18 @@ describe('buildSources', () => {
 });
 
 describe('inline citation recovery and incomplete-tail protection', () => {
+  test.each(LANGUAGES)('preserves authored source lines while normalizing citations in $name', ({ sample }) => {
+    const sources = [src(1, 'https://a.example'), src(2, 'https://b.example')];
+    const body = `${sample} [source](https://a.example)\n([source](https://b.example))\n\n${sample} [source](https://b.example)`;
+    const expected = `${sample}⟦1⟧\n⟦2⟧\n\n${sample}⟦2⟧`;
+    expect(placeCitationMarkersFromLinks(body, sources)).toBe(expected);
+    expect(placeCitationMarkersReliable(body, [], sources, 'sources-only')).toBe(expected);
+    expect(placeVisibleCitationMarkers(body, sources.map(({ url }) => ({ url })))).toBe(expected);
+  });
+  test('does not remove newline boundaries inside citation wrappers', () => {
+    expect(placeCitationMarkersReliable('First claim.\n<cite>\n[1]\n</cite>\nSecond claim.', [], [src(1, 'https://a.example')], 'sources-only'))
+      .toBe('First claim.\n\n⟦1⟧\n\nSecond claim.');
+  });
   test.each(['<cite>[3]</cite>[4][5]', '\\<cite>[3]\\</cite>[4][5]', '&lt;cite&gt;[3]&lt;/cite&gt;[4][5]'])(
     'normalizes citation wrappers without exposing HTML: %s', (markup) => {
       const sources = [3, 4, 5].map(n => src(n, `https://source.example/${n}`));

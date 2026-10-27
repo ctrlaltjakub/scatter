@@ -73,7 +73,7 @@ export function EditorSelectionToolbar({ editor }: { editor: Editor | null }) {
 
   const copy = () => {
     const { from, to } = editor.state.selection;
-    void navigator.clipboard?.writeText(editor.state.doc.textBetween(from, to, ' '));
+    void navigator.clipboard?.writeText(editor.state.doc.textBetween(from, to, '\n\n', '\n'));
     setCopied(true);
     window.setTimeout(() => setCopied(false), 600);
   };
@@ -111,7 +111,7 @@ export function EditorSelectionToolbar({ editor }: { editor: Editor | null }) {
         {copied ? 'Copied' : 'Copy'}
       </button>
       <span className="sc-sel-div" aria-hidden="true" />
-      <SelectionWebSearchLink text={editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ')} />
+      <SelectionWebSearchLink text={editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ', ' ')} />
     </div>
   );
 }

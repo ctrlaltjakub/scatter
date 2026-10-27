@@ -1,5 +1,5 @@
 'use client';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, CheckCheck, ChevronDown, ChevronRight, Copy, GitFork, MessageSquareQuote,
   ListRestart, Pencil, RotateCcw, SearchCheck, SpellCheck, Square, SquareArrowOutUpRight, Trash } from 'lucide-react';
 import type { NodeVersion } from '@/store/types';
@@ -8,6 +8,7 @@ import { useModelCatalogStore } from '@/store/useModelCatalogStore';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { factCheckTaskKey, useFactCheckTaskStore } from '@/store/useFactCheckTaskStore';
 import { factCheckAvailability, startFactCheck, stopFactCheck } from '@/lib/factCheck';
+import { canResumeFactCheck } from '@/lib/factCheckCore';
 import { activateChatAnswer, askAboutChatAnswer, deleteLastChatTurn, editLastChatQuestion,
   forkChat, spawnChatAnswer, submitChat } from '@/lib/chat/actions';
 import { stripChips } from '@/lib/bulletParse';
@@ -69,6 +70,7 @@ export const ChatAssistantActions = memo(function ChatAssistantActions({ nodeId,
   const generating = meta.state === 'generating';
   const report = version.factCheck?.pending ?? version.factCheck?.complete;
   const complete = version.factCheck?.complete;
+  const canResume = useMemo(() => canResumeFactCheck(version), [version]);
   const available = factCheckAvailability();
   const canCheck = !generating && !!version.body.trim() && available.available;
   const check = (mode: 'new' | 'again' | 'continue') => {
@@ -103,8 +105,8 @@ export const ChatAssistantActions = memo(function ChatAssistantActions({ nodeId,
     </div>
     {report && showingFacts && <div className="chat-message-actions chat-fact-actions" role="group" aria-label="Fact-check actions">
       <button type="button" disabled={!factRunning && !canCheck} onClick={() => factRunning ? stopFactCheck(nodeId, version.createdAt)
-        : check(version.factCheck?.pending ? 'continue' : 'again')}>
-        {factRunning ? <Square size={14} /> : <CheckCheck size={14} />}{factRunning ? 'Stop checking' : version.factCheck?.pending ? 'Continue check' : 'Check again'}
+        : check(canResume ? 'continue' : 'again')}>
+        {factRunning ? <Square size={14} /> : <CheckCheck size={14} />}{factRunning ? 'Stop checking' : canResume ? 'Continue check' : 'Check again'}
       </button>
       <button type="button" disabled={busy || factRunning || !!version.factCheck?.pending || !complete}
         onClick={() => {

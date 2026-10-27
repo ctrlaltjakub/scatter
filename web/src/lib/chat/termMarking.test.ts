@@ -3,6 +3,7 @@ import { plain } from '@/lib/chipReveal';
 import { applyTermSelection, stripTermMarkers } from '@/lib/termMarking';
 import { termSelectionPrompt } from '@/lib/termSelectionPrompt';
 import { chatTermBatches, markChatTerms } from './termMarking';
+import { LANGUAGES } from '@/lib/languages';
 
 const json = (...terms: string[]) => JSON.stringify({ terms });
 const select = (body: string, ...terms: string[]) => applyTermSelection(body, json(...terms));
@@ -44,9 +45,19 @@ describe('shared, bounded term selection', () => {
     ['**Working** *memory*', '[[**Working** *memory*]]'],
     ['***Working memory***', '***[[Working memory]]***'],
     ['~~Working memory~~', '~~[[Working memory]]~~'],
-    ['Working \n memory', '[[Working \n memory]]'],
-  ])('handles emphasis and soft wrapping: %s', (body, expected) => {
+  ])('handles emphasis: %s', (body, expected) => {
     expect(select(body, 'Working memory')).toBe(expected);
+  });
+  it.each(['Working\nmemory', '**Working\nmemory**', 'Working\r\nmemory', 'Working \n memory'])('does not mark a term across an authored line: %s', body => {
+    expect(select(body, 'Working memory')).toBe(body);
+  });
+  it.each(LANGUAGES)('preserves sentence lines, blank paragraphs and mixed-script markup in $name', async ({ sample }) => {
+    const body = `${sample}\nCapt. **J. B. Vance** confirms an appt. at 10:30 a.m. ⟦1⟧\n\n${sample}\n\n| A | B |\n|---|---|\n| J. B. Vance | ${sample}<br>${sample} |\n\n\`\`\`text\n${sample}\nJ. B. Vance\n\`\`\``;
+    const result = await markChatTerms(body, new AbortController().signal, async () => json('J. B. Vance'));
+    expect(result.failed).toBe(0);
+    expect(stripTermMarkers(result.body)).toBe(body);
+    expect(result.body).toContain('**[[J. B. Vance]]** confirms');
+    expect(result.body).toContain(`\`\`\`text\n${sample}\nJ. B. Vance\n\`\`\``);
   });
   it('preserves raw escapes, entities, punctuation and multilingual terms', () => {
     const body = 'R&amp;D, C++, C#, God-\\*image, pamięć robocza, 作業記憶は重要。';

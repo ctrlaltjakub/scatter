@@ -8,7 +8,7 @@ import { addRowAfter, addRowBefore, addColumnAfter, addColumnBefore, deleteRow, 
 import type { Command } from '@tiptap/pm/state';
 import { normalizeEditorUrl } from '@/lib/chat/markdownExtras';
 import { answerBodyToDoc } from '@/lib/answerEditorSerialize';
-import { clearMarkdownFormatting, editMarkdownSource, type MarkdownAction, type SourceEdit, type SourceSelection } from './markdownCommands';
+import { clearMarkdownFormatting, editorPlainText, editMarkdownSource, type MarkdownAction, type SourceEdit, type SourceSelection } from './markdownCommands';
 
 type Panel = 'link' | 'image' | 'table' | 'math' | 'mathBlock' | 'footnote';
 interface Props {
@@ -64,7 +64,7 @@ export function MarkdownEditorToolbar({ editor, disabled, sourceMode = false, on
     if (source) {
       const selection = source.get();
       const doc = action === 'clear' ? editor.schema.nodeFromJSON(answerBodyToDoc(selection.text.slice(selection.from, selection.to))) : null;
-      source.set(editMarkdownSource(selection, action, doc?.textBetween(0, doc.content.size, '\n\n', node => node.attrs.alt ?? node.attrs.value ?? '')));
+      source.set(editMarkdownSource(selection, action, doc ? editorPlainText(doc) : undefined));
       return;
     }
     // Focus synchronously so a quick next keystroke keeps the stored marks.
@@ -106,7 +106,7 @@ export function MarkdownEditorToolbar({ editor, disabled, sourceMode = false, on
     if (next === 'link' && editor.isActive('link')) editor.commands.extendMarkRange('link');
     const attrs = editor.getAttributes(next === 'link' ? 'link' : next === 'image' ? 'answerImage' : 'inlineMath');
     setUrl(next === 'link' ? attrs.href ?? '' : next === 'image' ? attrs.src ?? '' : '');
-    setLabel(next === 'image' ? attrs.alt ?? '' : next === 'math' ? attrs.value ?? '' : editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' '));
+    setLabel(next === 'image' ? attrs.alt ?? '' : next === 'math' ? attrs.value ?? '' : editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ', ' '));
   };
   openRef.current = open;
   const runTable = (command: Command) => { focus(); editor.commands.command(({ state, dispatch }) => command(state, dispatch)); };
@@ -215,7 +215,7 @@ export function MarkdownEditorToolbar({ editor, disabled, sourceMode = false, on
         if (!value) { setError('Enter a valid http://, https://, or www. address' + (panel === 'link' ? ', mailto: link, or local path.' : ', or choose an image file.')); return; }
         if (panel === 'image') insertImage(value, label);
         else if (source) insertSource(`[${label || value}](${value})`);
-        else if (editor.state.selection.empty || label !== editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ')) editor.commands.insertContent({ type: 'text', text: label || value, marks: [{ type: 'link', attrs: { href: value } }] });
+        else if (editor.state.selection.empty || label !== editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' ', ' ')) editor.commands.insertContent({ type: 'text', text: label || value, marks: [{ type: 'link', attrs: { href: value } }] });
         else editor.chain().extendMarkRange('link').setMark('link', { href: value }).run();
       }
       setPanel(null); setError(''); focus();

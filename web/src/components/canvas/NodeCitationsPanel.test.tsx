@@ -9,6 +9,7 @@ import { CitationMarker } from '@/components/node/CitationMarker';
 import { useWikimediaTaskStore } from '@/store/useWikimediaTaskStore';
 import { useWikimediaGalleryStore } from '@/store/useWikimediaGalleryStore';
 import * as imageDiscovery from '@/lib/wikimediaDiscovery';
+import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 
 const report: FactCheckReport = {
   schemaVersion: 1,
@@ -53,6 +54,7 @@ describe('NodeCitationsPanel evidence review', () => {
       }],
       currentVersionIndex: 0,
     };
+    node.versions[0]!.factCheck!.pending = { ...report, bodyFingerprint: factCheckBodyFingerprint(node.versions[0]!) };
     const project = createBlankProject('evidence', node.id);
     useGraphStore.getState().setProject({
       ...project,
@@ -79,7 +81,7 @@ describe('NodeCitationsPanel evidence review', () => {
     );
     const panel = screen.getByLabelText('Evidence review');
     expect(panel).toBeTruthy();
-    expect(screen.getByText('(click sentences)')).toBeTruthy();
+    expect(screen.getByText('(click passages)')).toBeTruthy();
     expect(useGraphStore.getState().panTo).toMatchObject({
       kind: 'node',
       id: 'n1',
@@ -117,6 +119,16 @@ describe('NodeCitationsPanel evidence review', () => {
 
     expect(screen.getByText('Supported')).toBeTruthy();
     expect(screen.getByText('A source supports it.')).toBeTruthy();
+  });
+
+  it('keeps historical results readable but explains why old passages are not highlighted', () => {
+    const project = useGraphStore.getState().project!;
+    const node = project.nodes.n1!;
+    useGraphStore.getState().updateNode(node.id, { versions: [{ ...node.versions[0]!, factCheck: { pending: report } }] });
+    render(<NodeCitationsPanel />);
+    expect(screen.getByRole('status')).toHaveTextContent('This saved check no longer matches the current text layout. Run a new check to highlight passages.');
+    expect(screen.getByText('“The checked passage.”')).toBeVisible();
+    expect(screen.queryByText('(click passages)')).not.toBeInTheDocument();
   });
 
   it('uses a double-width selectable panel with Scatter cursors', () => {

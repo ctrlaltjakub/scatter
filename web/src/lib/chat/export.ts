@@ -42,8 +42,8 @@ export async function chatMarkdownToDocx(markdown: string | Array<{ markdown: st
     if (node.type === 'link' && node.url && /^https?:\/\//i.test(node.url)) {
       return [new ExternalHyperlink({ link: node.url, children: [new TextRun({ ...runLanguage, text: markdownText(node) || node.url, style: 'Hyperlink' })] })];
     }
-    if (node.value != null) return [new TextRun({ ...runLanguage, text: node.value, ...style,
-      ...(node.type === 'inlineCode' ? { font: 'Consolas', rightToLeft: false } : {}) })];
+    if (node.value != null) return node.value.split('\n').map((text, index) => new TextRun({ ...runLanguage, text, ...style,
+      ...(index ? { break: 1 } : {}), ...(node.type === 'inlineCode' ? { font: 'Consolas', rightToLeft: false } : {}) }));
     return node.children?.flatMap((child) => inline(child, { ...style,
       ...(node.type === 'strong' ? { bold: true } : {}), ...(node.type === 'emphasis' ? { italics: true } : {}) })) ?? [];
   };

@@ -1,4 +1,5 @@
-import { splitSentences, parseBody, stripChips } from './bulletParse';
+import { parseBody, stripChips } from './bulletParse';
+import { splitExplicitLines } from './proseLines';
 import { chatFactUnits } from './chat/markdown';
 import { normalizeUrl, sourceDomain } from './citations';
 import type { Citation } from '@/providers/types';
@@ -33,7 +34,15 @@ export function factCheckBodyFingerprint(version: NodeVersion): string {
     hash ^= input.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  return (hash >>> 0).toString(36);
+  // Sentence IDs used to be inferred from punctuation. Old reports must not
+  // resume or paint a different passage now that authored lines own the IDs.
+  return `lines-v1:${(hash >>> 0).toString(36)}`;
+}
+
+export function canResumeFactCheck(version: NodeVersion | undefined): boolean {
+  const pending = version?.factCheck?.pending;
+  return !!version && !!pending && !pending.complete
+    && pending.bodyFingerprint === factCheckBodyFingerprint(version);
 }
 
 export function extractFactCheckUnits(version: NodeVersion): FactCheckUnit[] {
@@ -47,7 +56,7 @@ export function extractFactCheckUnits(version: NodeVersion): FactCheckUnit[] {
   let order = 0;
 
   const opening = parsed?.freeText ?? version.body;
-  splitSentences(opening).forEach((sentence, sentenceIndex) => {
+  splitExplicitLines(opening).forEach((sentence, sentenceIndex) => {
     const text = cleanFactText(sentence);
     if (!text) return;
     units.push({

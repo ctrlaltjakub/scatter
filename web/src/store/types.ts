@@ -535,8 +535,8 @@ export interface ScatterNode {
   bulletsCollapsed?: boolean;
   /** Per-node override of the global "information chunking" setting
    *  (Settings.sentencePerLine) for THIS node's introduction. When set,
-   *  it decides whether the opening paragraph is broken into one line per
-   *  sentence (on canvas and in the editor). `undefined` = inherit the
+   *  it decides whether authored prose lines render separately with hanging
+   *  guides (on canvas and in the editor). No punctuation inference. `undefined` = inherit the
    *  global default. Persisted; lossless (purely presentational). */
   chunkIntro?: boolean;
   /** Reading position: index of the L1 bullet forced active (expanded),
@@ -852,10 +852,9 @@ export interface Settings {
    * deliberately migrate to fast-start so existing users receive the improved
    * responsiveness as soon as this app version loads. */
   openRouterRouting: OpenRouterRoutingPreference;
-  /** Render each sentence of a node's opening paragraph on its own line
-   *  (readability via information chunking). Default true; turn off to show the
-   *  paragraph as a single justified block (the previous style). Pure
-   *  render-level preference — does not affect generation. */
+  /** Render authored prose lines separately in encyclopedic/explain nodes.
+   *  Default true; off flows source lines within their paragraphs. Pure
+   *  presentation: never inserts/deletes source breaks or guesses punctuation. */
   sentencePerLine: boolean;
   /** Typeface for node titles and readable node content only; app controls
    * keep Atkinson. A render-level preference, not project data. */

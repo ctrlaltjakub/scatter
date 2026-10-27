@@ -13,6 +13,21 @@ const key = (name: string, shiftKey = false) => {
   return event.defaultPrevented;
 };
 describe('Markdown editing commands', () => {
+  it('retains authored lines when converting prose to a code block and back', () => {
+    setup('One line.\nAnother line.');
+    editor.commands.selectAll();
+    editor.commands.toggleNode('codeBlock', 'paragraph');
+    expect(answerDocToBody(editor.getJSON())).toBe('```\nOne line.\nAnother line.\n```');
+    editor.commands.toggleNode('codeBlock', 'paragraph');
+    expect(answerDocToBody(editor.getJSON())).toBe('One line.\nAnother line.');
+  });
+  it('keeps source lines and paragraphs when clearing their formatting', () => {
+    setup('**One line.\nAnother line.**\n\n_Last paragraph._');
+    editor.commands.selectAll(); clearMarkdownFormatting(editor);
+    expect(answerDocToBody(editor.getJSON())).toBe('One line.\nAnother line.\n\nLast paragraph.');
+    editor.commands.undo();
+    expect(answerDocToBody(editor.getJSON())).toBe('**One line.\nAnother line.**\n\n_Last paragraph._');
+  });
   it('clears headings, nested lists, links and inline marks in one operation, with undo', () => {
     setup('> ## **Heading**\n>\n> - **One**\n>   - _Two_ [link](https://example.com)\n\n| Col |\n|---|\n| ~~Value~~ |');
     const original = answerDocToBody(editor.getJSON());

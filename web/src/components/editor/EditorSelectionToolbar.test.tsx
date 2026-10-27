@@ -28,11 +28,16 @@ describe('editor selection web search', () => {
     window.getSelection()!.addRange(range);
     act(() => callbacks.get('selectionUpdate')!());
     const link = screen.getByRole('link', { name: 'Web search' });
-    expect(textBetween).toHaveBeenCalledWith(2, 14, ' ');
+    expect(textBetween).toHaveBeenCalledWith(2, 14, ' ', ' ');
     expect(link).toHaveAttribute('href', 'https://duckduckgo.com/?q=alpha%20%26%20beta');
     expect(link).toHaveAttribute('target', '_blank');
     fireEvent.mouseDown(link);
     expect(chain).not.toHaveBeenCalled();
+    const writeText = vi.fn();
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
+    expect(textBetween).toHaveBeenCalledWith(2, 14, '\n\n', '\n');
+    expect(writeText).toHaveBeenCalledWith('alpha & beta');
     view.unmount();
     expect(callbacks.size).toBe(0);
   });

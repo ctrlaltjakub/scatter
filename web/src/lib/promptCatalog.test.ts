@@ -50,13 +50,13 @@ describe('prompt catalog and request wiring', () => {
   });
 
   it('honors chat base, normal, chunking, search and detached-answer overrides independently', () => {
-    const custom = { chatBase: 'CHAT', chatNormal: 'NORMAL {normalInstructions}', chatChunking: 'CHUNKED', chatWebSearch: 'SEARCH',
+    const custom = { chatBase: 'CHAT', chatNormal: 'NORMAL {normalInstructions}', chatChunking: 'CHUNKED', chatWebSearch: 'SEARCH', proseLineBoundaries: 'SOURCE LINES',
       answerBase: 'ANSWER {formatting}', answerNormal: 'PLAIN {normalInstructions}', taskAnswer: '{previousAnswer}TASK {instruction}', taskAnswerPrevious: 'OLD {previousBody}; ' };
     useSettingsStore.setState({ customPrompts: custom, normalChatInstructions: 'PREFERENCE' });
-    expect(chatSystemPrompt(false, 'PREFERENCE', true)).toBe('CHAT\n\nNORMAL PREFERENCE\n\nSEARCH');
-    expect(chatSystemPrompt(true, 'PREFERENCE', false)).toBe('CHAT\n\nCHUNKED\n\nPREFERENCE');
+    expect(chatSystemPrompt(false, 'PREFERENCE', true)).toBe('CHAT\n\nNORMAL PREFERENCE\n\nSOURCE LINES\n\nSEARCH');
+    expect(chatSystemPrompt(true, 'PREFERENCE', false)).toBe('CHAT\n\nCHUNKED\n\nPREFERENCE\n\nSOURCE LINES');
     expect(buildMessages({ context, variant: { kind: 'answer', previousBody: 'text', instruction: 'change', informationChunking: false } }))
-      .toEqual([{ role: 'system', content: 'ANSWER PLAIN PREFERENCE' }, { role: 'user', content: 'OLD text; TASK change' }]);
+      .toEqual([{ role: 'system', content: 'ANSWER PLAIN PREFERENCE\n\nSOURCE LINES' }, { role: 'user', content: 'OLD text; TASK change' }]);
   });
 
   it('uses the preview and shared term-marking contracts for actual request building', () => {
@@ -68,6 +68,14 @@ describe('prompt catalog and request wiring', () => {
     expect(request.system).toContain('English (en-US)');
     expect(JSON.parse(request.user)).toMatchObject({ responseReminder: 'PREVIEW FORMAT', terms: [{ id: 0, term: 'term' }] });
     expect(termSelectionPrompt('Unchanged **text**.', custom)).toEqual({ system: 'TERMS\n\nRULES \n\nJSON CONTRACT', user: 'Unchanged **text**.' });
+  });
+  it('keeps the shared line contract editable without overwriting custom base prompts', () => {
+    useSettingsStore.setState({ customPrompts: { base: 'CUSTOM BASE', answerBase: 'CUSTOM ANSWER', proseLineBoundaries: 'CUSTOM LINES' } });
+    expect(buildMessages({ context, variant: { kind: 'root', topic: 'water' } })[0]?.content).toBe('CUSTOM BASE\n\nCUSTOM LINES');
+    expect(buildMessages({ context, variant: { kind: 'answer', instruction: 'water', informationChunking: false } })[0]?.content).toBe('CUSTOM ANSWER\n\nCUSTOM LINES');
+    expect(useSettingsStore.getState().customPrompts?.base).toBe('CUSTOM BASE');
+    useSettingsStore.getState().setCustomPromptField('proseLineBoundaries', '');
+    expect(buildMessages({ context, variant: { kind: 'root', topic: 'water' } })[0]?.content).toBe('CUSTOM BASE');
   });
 
   it('applies editable source policies and interactive/selection contracts', () => {

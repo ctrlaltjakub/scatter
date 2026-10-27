@@ -8,6 +8,7 @@ import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
 import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { activateReference } from '@/lib/referenceAction';
+import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 import type { Arrow, NodeVersion } from '@/store/types';
 
 vi.mock('@/lib/chat/markdown', async importOriginal => {
@@ -119,7 +120,7 @@ describe('chat focus rendering isolation', () => {
   it('updates fact-review presentation without parsing again or resetting tables', () => {
     const { old } = fixture();
     const version: NodeVersion = { ...old, factCheck: { complete: {
-      schemaVersion: 1, bodyFingerprint: 'test', versionCreatedAt: 2, providerId: 'test', model: 'test',
+      schemaVersion: 1, bodyFingerprint: factCheckBodyFingerprint(old), versionCreatedAt: 2, providerId: 'test', model: 'test',
       startedAt: 1, complete: true, failedUnitIds: [],
       units: [{ id: 'chat:0', order: 0, stage: 'prose', kind: 'sentence', text: 'Support connection', state: 'pending' }],
     } } };
@@ -152,5 +153,17 @@ describe('chat focus rendering isolation', () => {
     act(() => useCitationPanelStore.getState().close());
     expect(container.querySelector('.fact-check-unit')).toBeNull();
     expect(annotateChatMarkdown).not.toHaveBeenCalled();
+  });
+
+  it('does not paint old punctuation-based findings onto new authored-line units', () => {
+    const { old } = fixture();
+    const version: NodeVersion = { ...old, factCheck: { complete: {
+      schemaVersion: 1, bodyFingerprint: 'old-punctuation-fingerprint', versionCreatedAt: 2,
+      providerId: 'test', model: 'test', startedAt: 1, complete: true, failedUnitIds: [],
+      units: [{ id: 'chat:0', order: 0, stage: 'prose', kind: 'sentence', text: 'A former sentence.', state: 'pending' }],
+    } } };
+    const { container } = render(<ChatMarkdown nodeId="chat" version={version} localEvidence={{ activeId: 'chat:0', onUnit: vi.fn() }} />);
+    expect(container.querySelector('.fact-check-unit')).toBeNull();
+    expect(version.factCheck?.complete?.units[0]?.text).toBe('A former sentence.');
   });
 });

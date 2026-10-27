@@ -38,6 +38,21 @@ export const PROMPT_CATALOG = {
     help: 'Keep the subject water: the check looks for its everyday name in the selected language. One request; no automatic retries.',
     text: 'Write exactly one short sentence defining water. Use its everyday name in the requested language. No translation list, headings, code, or quotation.',
   },
+  proseLineBoundaries: {
+    group: 'Foundation',
+    label: 'Prose: sentence source lines',
+    description: 'Supplies explicit **sentence boundaries** for generated node text and chat answers in every language.',
+    help: 'No placeholders. Used in both display modes; the app preserves these lines instead of guessing boundaries from punctuation. Quoted text, code, math and Markdown structure are preserved.',
+    text: `For newly written prose, put exactly one complete sentence on each source line, in every language. Use a single newline between sentences within the same paragraph and a blank line between paragraphs. Do not wrap one sentence across source lines; the app handles visual wrapping and indentation. Keep abbreviations, initials, decimal numbers, inline emphasis, links and all citations belonging to a sentence on that sentence's line. Close inline formatting before the newline. These source boundaries are required even when Information chunking is OFF; the display mode controls whether they appear as separate lines or flowing paragraphs.
+Keep the requested Markdown structure: headings and short labels remain single lines; preserve list markers and nesting, indent any continuation sentence to remain within its existing list item, and do not turn continuation sentences into new bullets. Keep each Markdown table row on one source line; if a prose cell needs multiple sentences, separate them with <br> inside that cell. Do not insert sentence breaks inside code, formulas, URLs, verbatim quotations, or other literal content. For edits, preserve unchanged text and its authored line breaks; apply sentence source lines to newly written prose only. A selected fragment may remain a fragment: do not turn a word, phrase, title or partial sentence into a complete sentence just to satisfy this rule.`,
+  },
+  diagnosticSentenceLines: {
+    group: 'Advanced format contracts',
+    label: 'Sentence source lines check',
+    description: 'Checks **explicit sentence lines** without language-specific punctuation guessing.',
+    help: 'Keep the requirement for exactly two nonempty lines in one paragraph. One request; no automatic retries.',
+    text: 'Write exactly two short factual prose sentences about water in the requested language. Put each sentence on its own source line within one paragraph: exactly two nonempty lines, no blank line, headings, list markers, code, or table. Keep any abbreviations within their sentence.',
+  },
   imageGenerationLanguage: {
     label: 'Image text language', group: 'Images',
     description: '**Language of new labels** in generated images; existing text and explicit user requests are preserved.',
@@ -87,7 +102,7 @@ The user is asking from the **parent node** below. For the new node or answer, t
     label: "Chat: information chunking",
     description: "Defines **sentence structure and bold emphasis** when Information chunking is on. Applies alongside your **Chat instructions**, including detached chat answers.",
     help: "No placeholders. Applies to future requests.",
-    text: `Information chunking is ON. Keep each sentence focused on one clear information unit. In EVERY sentence, bold its 2-3 most important parts (**like this**) so each sentence has a few clear visual anchors. Keep each bold short and focused — a word or short phrase, never a whole clause or half the sentence. Do not limit emphasis to just one term per sentence. Keep writing compact and filler-free; never leave a prose sentence without a bold. Example: **Working memory** temporarily holds **small amounts of information** for **current tasks**. Organize related information into short paragraphs. Apply these same information-unit and bold-emphasis rules inside list items and table cells; if a cell compares multiple facts, split them into short sentences, each with 2-3 bold anchors, rather than overloading one sentence. A short label or fragment does not need to be inflated into a sentence merely to add emphasis. Headings, ordinary non-collapsible lists, and tables remain allowed; do not impose an encyclopedic two-level bullet template. Scatter displays sentence boundaries and indentation itself, so return well-formed Markdown rather than manual visual spacing. Do not add [[term markers]]; Scatter's enrichment pass handles them.`,
+    text: `Information chunking is ON. Keep each sentence focused on one clear information unit. In EVERY sentence, bold its 2-3 most important parts (**like this**) so each sentence has a few clear visual anchors. Keep each bold short and focused — a word or short phrase, never a whole clause or half the sentence. Do not limit emphasis to just one term per sentence. Keep writing compact and filler-free; never leave a prose sentence without a bold. Example: **Working memory** temporarily holds **small amounts of information** for **current tasks**. Organize related information into short paragraphs. Apply these same information-unit and bold-emphasis rules inside list items and table cells; if a cell compares multiple facts, split them into short sentences, each with 2-3 bold anchors, rather than overloading one sentence. A short label or fragment does not need to be inflated into a sentence merely to add emphasis. Headings, ordinary non-collapsible lists, and tables remain allowed; do not impose an encyclopedic two-level bullet template. Supply the sentence source lines required by the prose-line contract; the app adds visual wrapping and indentation, so do not simulate them with spaces. Do not add [[term markers]]; the app's enrichment pass handles them.`,
   },
   chatNormal: {
     group: "Chat",

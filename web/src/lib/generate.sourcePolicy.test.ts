@@ -47,6 +47,12 @@ Another factual sentence cites the manual (SOURCE_2).
       passages,
     )).toBe(false);
   });
+  it('uses explicit source lines without splitting abbreviations or requiring space-separated words', () => {
+    const body = 'Capt. J. B. Vance has a consultation appt. at 10:30 a.m. (SOURCE_1)\n水由氢和氧组成。(SOURCE_2)\n\nNo. 42 is the recorded case. (SOURCE_1)';
+    expect(strictSourceUnits(body)).toEqual(body.split('\n').filter(Boolean));
+    expect(hasStrictSourceCoverage(body, passages)).toBe(true);
+    expect(hasStrictSourceCoverage(body + '\nهذا ادعاء بلا مصدر.', passages)).toBe(false);
+  });
 
   it('keeps strict and permissive evidence instructions distinct', () => {
     const strict = formatSourceEvidenceBlock('only', passages);

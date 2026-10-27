@@ -19,7 +19,7 @@ export function answerBodyToDoc(body: string): JSONContent {
       attrs: { raw: body.slice(node.position?.start.offset ?? 0, node.position?.end.offset ?? 0) } }];
     if (node.type === 'inlineCode') return node.value ? [{ type: 'text', text: node.value, marks: [...marks, { type: 'code' }] }] : [];
     if (node.type === 'text') return (node.value ?? '').split('\n').flatMap((text, i) => [
-      ...(i ? [{ type: 'hardBreak' }] : []), ...(text ? [{ type: 'text', text, marks }] : []),
+      ...(i ? [{ type: 'softBreak', marks }] : []), ...(text ? [{ type: 'text', text, marks }] : []),
     ]);
     const type = { strong: 'bold', emphasis: 'italic', delete: 'strike', highlight: 'highlight', comment: 'comment' }[node.type];
     let next = type ? [...marks, { type }] : marks;
@@ -93,6 +93,7 @@ export function answerDocToBody(doc: JSONContent, { stripTerms = false }: { stri
         ? node.text?.match(/^\s+/)?.[0] ?? '' : '';
       out += leading + opening.map((m) => token(m, false)).join('');
       out += node.type === 'hardBreak' ? '\\\n'
+        : node.type === 'softBreak' ? '\n'
         : node.type === 'inlineMath' ? `$${node.attrs?.value ?? ''}$`
         : node.type === 'footnoteReference' ? `[^${node.attrs?.identifier ?? '1'}]`
         : node.type === 'rawInline' ? node.attrs?.raw ?? ''
@@ -125,7 +126,7 @@ export function answerDocToBody(doc: JSONContent, { stripTerms = false }: { stri
     }).join('\n');
     if (node.type === 'table') {
       const rows = node.content ?? [];
-      const rendered = rows.map((row) => `| ${(row.content ?? []).map((cell) => (cell.content ?? []).map((p) => inline(p.content)).join('<br>').replace(/\|/g, '\\|').replace(/\\\n/g, '<br>')).join(' | ')} |`);
+      const rendered = rows.map((row) => `| ${(row.content ?? []).map((cell) => (cell.content ?? []).map((p) => inline(p.content)).join('<br>').replace(/\|/g, '\\|').replace(/\\?\n/g, '<br>')).join(' | ')} |`);
       rendered.splice(1, 0, `| ${(rows[0]?.content ?? []).map((cell) => cell.attrs?.align === 'center' ? ':---:' : cell.attrs?.align === 'right' ? '---:' : cell.attrs?.align === 'left' ? ':---' : '---').join(' | ')} |`);
       return rendered.join('\n');
     }

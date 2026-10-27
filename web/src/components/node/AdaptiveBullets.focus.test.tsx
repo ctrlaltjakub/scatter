@@ -5,6 +5,7 @@ import { AdaptiveBullets } from './AdaptiveBullets';
 import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
 import { useActiveIdxStore } from '@/store/useActiveIdxStore';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
+import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 import type { ScatterNode } from '@/store/types';
 
 const noop = () => {};
@@ -54,7 +55,7 @@ it('does not redraw unrelated bodies when chat history, sources or another nodeâ
 it('keeps fact-review highlights live and scoped to the displayed node version', () => {
   const first = node('first');
   first.versions[0]!.factCheck = { complete: {
-    schemaVersion: 1, bodyFingerprint: 'test', versionCreatedAt: 100, providerId: 'test', model: 'test',
+    schemaVersion: 1, bodyFingerprint: factCheckBodyFingerprint(first.versions[0]!), versionCreatedAt: 100, providerId: 'test', model: 'test',
     startedAt: 1, complete: true, failedUnitIds: [],
     units: [{ id: 'opening:0', order: 0, stage: 'opening', kind: 'sentence',
       text: 'An opening paragraph.', sentenceIndex: 0, state: 'pending' }],

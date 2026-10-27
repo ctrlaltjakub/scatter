@@ -1,13 +1,22 @@
 import type { Editor } from '@tiptap/core';
-import { Fragment, Slice } from '@tiptap/pm/model';
+import { Fragment, Slice, type Node } from '@tiptap/pm/model';
+
+/** Plain-text extraction must not silently join text around inline breaks. */
+export function editorPlainText(doc: Node, from = 0, to = doc.content.size): string {
+  return doc.textBetween(from, to, '\n\n', node =>
+    node.type.name === 'softBreak' || node.type.name === 'hardBreak' ? '\n' : node.attrs.alt ?? node.attrs.value ?? '');
+}
 
 /** Replace the selected document fragment with unmarked paragraphs in one undo step. */
 export function clearMarkdownFormatting(editor: Editor): boolean {
   const { state } = editor;
   const { from, to, empty } = state.selection;
   if (empty) return editor.chain().unsetAllMarks().clearNodes().run();
-  const paragraphs = state.doc.textBetween(from, to, '\n\n', node => node.attrs.alt ?? node.attrs.value ?? '')
-    .split(/\n+/).map(text => state.schema.nodes.paragraph!.create(null, text ? state.schema.text(text) : null));
+  const paragraphs = editorPlainText(state.doc, from, to).split(/\n{2,}/).map(text =>
+    state.schema.nodes.paragraph!.create(null, text.split('\n').flatMap((line, index) => [
+      ...(index ? [state.schema.nodes.softBreak!.create()] : []),
+      ...(line ? [state.schema.text(line)] : []),
+    ])));
   editor.view.dispatch(state.tr.replaceSelection(new Slice(Fragment.fromArray(paragraphs), 0, 0)).setStoredMarks([]));
   // A partial selection inside a nested list can retain its enclosing wrappers.
   // Unwrap all levels, not just the nearest list in a single clearNodes call.

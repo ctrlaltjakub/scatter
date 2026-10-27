@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Citation } from '@/providers/types';
 import type { NodeVersion } from '@/store/types';
+import { LANGUAGES } from './languages';
 import {
   extractFactCheckUnits,
   factCheckBodyFingerprint,
@@ -18,7 +19,7 @@ const version = (body: string, contentType: NodeVersion['contentType'] = 'encycl
 describe('extractFactCheckUnits', () => {
   it('checks opening sentences before described children and keeps L1 as context', () => {
     const units = extractFactCheckUnits(version(
-      '**One** fact. A second fact.⟦1⟧\n\n'
+      '**One** fact.\nA second fact.⟦1⟧\n\n'
       + '- [[Section]]\n'
       + '  - **First**: Description one.\n'
       + '  - Second: Description two.',
@@ -34,7 +35,7 @@ describe('extractFactCheckUnits', () => {
   it('checks only prose sentences for explain and interactive versions', () => {
     for (const contentType of ['explain', 'interactive'] as const) {
       const units = extractFactCheckUnits(version(
-        'First sentence. Second sentence!\n\n- An accidental bullet\n  - child: ignored',
+        'First sentence.\nSecond sentence!\n\n- An accidental bullet\n  - child: ignored',
         contentType,
       ));
       expect(units.map((unit) => unit.id)).toEqual(['opening:0', 'opening:1']);
@@ -46,6 +47,15 @@ describe('extractFactCheckUnits', () => {
     const a = version('Body');
     expect(factCheckBodyFingerprint(a)).toBe(factCheckBodyFingerprint({ ...a }));
     expect(factCheckBodyFingerprint(a)).not.toBe(factCheckBodyFingerprint({ ...a, body: 'Other' }));
+    expect(factCheckBodyFingerprint(a)).toMatch(/^lines-v1:/);
+  });
+
+  it.each(LANGUAGES)('respects authored lines without punctuation inference in $name', language => {
+    const text = `${language.sample} ${language.sample}`;
+    expect(extractFactCheckUnits({ ...version(text, 'explain'), language: language.id }).map(unit => unit.text))
+      .toEqual([text]);
+    expect(extractFactCheckUnits({ ...version(`${text}\n${language.sample}`, 'explain'), language: language.id }).map(unit => unit.text))
+      .toEqual([text, language.sample]);
   });
 });
 

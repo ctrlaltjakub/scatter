@@ -230,15 +230,10 @@ function stripKnownInternalMarkers(messages: ChatMessage[], nodeId: string): Cha
 export function strictSourceUnits(body: string): string[] {
   const lines = body.replace(/\r/g, '').split('\n');
   const firstBullet = lines.findIndex((line) => /^-\s+/.test(line));
-  const prose = lines.slice(0, firstBullet < 0 ? lines.length : firstBullet)
-    .filter((line) => !/^\s*#/.test(line)).join(' ');
-  // Keep citation tokens with the sentence immediately before them. A normal
-  // whitespace split treats `Claim. (SOURCE_1) Next claim.` as one unit because
-  // `(` is not an uppercase sentence start, allowing one marker to appear to
-  // cover two claims.
-  const sentences = [...prose.matchAll(/[^.!?]+[.!?](?:\s*\(?SOURCE_\d+\)?)*|[^.!?]+$/g)]
-    .map((match) => match[0].trim())
-    .filter((value) => value.split(/\s+/).length >= 4);
+  // Generation supplies sentence source lines. Do not reinterpret punctuation:
+  // abbreviated names, decimal values and CJK text are valid factual units.
+  const sentences = lines.slice(0, firstBullet < 0 ? lines.length : firstBullet)
+    .filter((line) => !/^\s*#/.test(line)).map(line => line.trim()).filter(Boolean);
   const subBullets = lines.filter((line) => /^\s{2,}-\s+/.test(line)).map((line) => line.trim());
   return [...sentences, ...subBullets];
 }
@@ -269,7 +264,7 @@ async function repairStrictSourceCitations(options: {
   const messages: ChatMessage[] = [
     {
       role: 'system',
-      content: configuredPrompt('sourceCitationRepair'),
+      content: `${configuredPrompt('sourceCitationRepair')}\n\n${configuredPrompt('proseLineBoundaries')}`,
     },
     {
       role: 'user',

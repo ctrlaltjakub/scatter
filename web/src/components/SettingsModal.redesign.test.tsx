@@ -380,6 +380,8 @@ describe('redesigned settings', () => {
     expect(within(reading).getAllByRole('heading', { level: 4 }).slice(0, 2).map(heading => heading.textContent))
       .toEqual(['Font', 'Paragraph layout']);
     expect(within(paragraphs).getByRole('switch', { name: /One sentence per line/ })).toBeInTheDocument();
+    expect(paragraphs).toHaveTextContent('For encyclopedic node introductions and explain nodes. Show the text’s existing line breaks');
+    expect(paragraphs).toHaveTextContent('In the editor, you control where lines break.');
     expect(within(paragraphs).getByRole('switch', { name: /Justify the opening paragraph/ })).toBeInTheDocument();
     expect(reading).not.toHaveTextContent('Paragraph layout applies to');
     expect(reading).not.toHaveTextContent('Menus, buttons, and interactive content');

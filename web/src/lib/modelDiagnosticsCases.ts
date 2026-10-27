@@ -22,7 +22,7 @@ export interface ModelDiagnosticCase {
   modify?: boolean;
   repair?: boolean;
 }
-export const DIAGNOSTIC_TEXT = '**Triangle perimeter** is the **distance around** a triangle.\n\n- Calculation\n  - Addition: Add all three side lengths.\n  - Units: Use the same unit for every side.\n- Examples\n  - Equilateral triangle: Three equal sides give three times one side.\n  - Scalene triangle: Sides of 3, 4 and 5 cm give a perimeter of 12 cm.';
+export const DIAGNOSTIC_TEXT = '**Triangle perimeter** is the **distance around** a triangle.\n**Prof. A. B. Rao** calculates it by **adding all three side lengths**.\n\n- Calculation\n  - Addition: Add all three side lengths.\n  - Units: Use the same unit for every side.\n- Examples\n  - Equilateral triangle: Three equal sides give three times one side.\n  - Scalene triangle: Sides of 3, 4 and 5 cm give a perimeter of 12 cm.';
 const context = { parent: { header: 'Triangle perimeter', body: DIAGNOSTIC_TEXT }, grandparent: null };
 export function assertDiagnostic(condition: unknown, message: string): asserts condition {
   if (!condition) throw new GenerationResponseError('wrong_result', message, 'Retry once; if it repeats, check the system prompt or choose a stronger model.');
@@ -44,6 +44,19 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
   cases.push({ id: 'generation-language', label: `Generation language · ${language.name}`, role: 'main', kind: 'text', requests: 1, tokens: 1200,
     messages: pair(languagePrompt, prompt('diagnosticGenerationLanguage')),
     validate: text => assertDiagnostic(waterNames[language.id].test(text), `The sample did not use the expected ${language.name} vocabulary. Check the selected language and Generation language system prompt.`) });
+  // Leave modest room for reasoning as well as the two-line visible answer;
+  // a tiny output cap can end a valid reasoning-model check before it writes.
+  cases.push({ id: 'sentence-lines', label: `Sentence source lines · ${language.name}`, role: 'main', kind: 'text', requests: 1, tokens: 4096,
+    messages: pair(prompt('chatBase') + '\n\n' + chatFormattingPrompt(true, settings.normalChatInstructions ?? '', settings.customPrompts) + '\n\n' + languagePrompt,
+      prompt('diagnosticSentenceLines')),
+    validate: text => {
+      const lines = text.trim().split(/\r?\n/);
+      assertDiagnostic(lines.length === 2 && lines.every(line => line.trim()), 'The model did not return the two requested sentence source lines. Check the Prose: sentence source lines system prompt or choose a model that follows the format.');
+      prose(text);
+      assertDiagnostic(!text.includes('<br'), 'Use actual source newlines for prose, not HTML line-break tags.');
+      // This checks the requested transport shape, not grammatical sentence
+      // count: there is deliberately no language-specific punctuation guess.
+    } });
   const variants: [string, string, TaskVariant, 'outline' | 'prose' | 'table' | 'fragment'][] = [
     ['encyclopedic', 'Encyclopedic generation / regeneration', { kind: 'root', topic: 'Triangle perimeter' }, 'outline'],
     ['term-node', 'Node from a term', { kind: 'term-click', term: 'equilateral triangle' }, 'outline'],
@@ -82,7 +95,7 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
     messages: pair(prompt('chatBase') + '\n' + prompt('sourceEvidence', { policy: prompt(policy), passages }), 'What is the perimeter of the example triangle? One sentence.'),
     validate: text => assertDiagnostic(text.includes('12') && text.includes('SOURCE_1'), 'The answer lost the source fact or citation marker.') });
   cases.push({ id: 'source-repair', label: 'Repair source citations', role: 'main', kind: 'text', requests: 1,
-    messages: pair(prompt('sourceCitationRepair'), prompt('sourceCitationRepairTask', { body: 'The triangle has perimeter 12 cm.', evidence: passages })),
+    messages: pair(prompt('sourceCitationRepair') + '\n\n' + prompt('proseLineBoundaries'), prompt('sourceCitationRepairTask', { body: 'The triangle has perimeter 12 cm.', evidence: passages })),
     validate: text => assertDiagnostic(text.includes('SOURCE_1'), 'The repaired answer omitted its source citation.') });
 
   const secondary = (id: string, label: string, system: string, user: string, tokens: number, validate?: (text: string) => void) =>

@@ -89,7 +89,7 @@ interface Run { text: string; starts: number[]; ends: number[]; formats: Array<{
 
 /** Index the WHOLE document once. Never parse truncated batches as Markdown:
  * splitting a long table/link/code block must not change what is markable. */
-function indexSource(body: string): { runs: Run[]; protectedRanges: Range[] } {
+function indexSource(body: string): { runs: Run[]; protectedRanges: Range[]; body: string } {
   const root = parseChatMarkdown(body), runs: Run[] = [];
   const protectedRanges = literalRanges(root);
   for (const match of body.matchAll(/\[\[[\s\S]*?\]\]|⟦[^⟧]*⟧|⟪[^⟫]*⟫|\(\d+(?:\s*,\s*\d+)*\)|<<<SCATTER_PART_BREAK_[^>]*>>>/g)) {
@@ -122,7 +122,7 @@ function indexSource(body: string): { runs: Run[]; protectedRanges: Range[] } {
     node.children?.forEach(visit);
   };
   visit(root);
-  return { runs, protectedRanges };
+  return { runs, protectedRanges, body };
 }
 
 function parseSelection(output: string): string[] | null {
@@ -147,6 +147,10 @@ function selectionRanges(index: ReturnType<typeof indexSource>, terms: string[],
         if ((word.test(term[0]!) && word.test(run.text[from - 1] ?? ''))
           || (word.test(term.at(-1)!) && word.test(run.text[to] ?? ''))) continue;
         const range: Range = [run.starts[from]!, run.ends[to - 1]!];
+        // Source lines are authored boundaries. A multi-word match may bridge
+        // Markdown's soft-break whitespace, but one clickable term must not
+        // absorb two separate lines or turn them into one unbreakable label.
+        if (/[\r\n]/.test(index.body.slice(range[0], range[1]))) continue;
         let safe = true;
         for (const format of run.formats) {
           const [a, b] = format.text;

@@ -7,6 +7,7 @@ import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { useChatRuntimeStore } from '@/store/useChatRuntimeStore';
 import { useEditorStore } from '@/store/useEditorStore';
 import type { ScatterNode } from '@/store/types';
+import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 
 vi.mock('@/lib/factCheck', () => ({ factCheckAvailability: () => ({ available: false, reason: 'Choose a supported model' }),
   startFactCheck: vi.fn(), stopFactCheck: vi.fn() }));
@@ -27,6 +28,17 @@ function setup() {
 beforeEach(() => useCitationPanelStore.getState().close());
 
 describe('answer-specific controls', () => {
+  it.each([true, false])('labels pending checks for resume only when boundaries match (current=%s)', current => {
+    const node = setup();
+    const version = node.versions[0]!;
+    version.factCheck = { pending: { schemaVersion: 1,
+      bodyFingerprint: current ? factCheckBodyFingerprint(version) : 'old-punctuation-boundaries',
+      versionCreatedAt: version.createdAt, providerId: 'test', model: 'test', startedAt: 1,
+      complete: false, failedUnitIds: [], units: [] } };
+    render(<AnswerSideActions node={node} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show fact-check results' }));
+    expect(screen.getByRole('button', { name: current ? 'Continue check' : 'Check again' })).toBeInTheDocument();
+  });
   it('offers versions, rich editing and images without conversation-only actions or a panel copy button', () => {
     const node = setup();
     const { container } = render(<AnswerSideActions node={node} />);

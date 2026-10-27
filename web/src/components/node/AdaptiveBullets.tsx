@@ -7,7 +7,9 @@ import {
   type ReferenceResolution,
 } from '@/components/node/ReferenceChip';
 import { CitationMarker } from '@/components/node/CitationMarker';
-import { parseBody, stabilizeParsed, bulletsToPlainText, sentenceSegments, type Bullet, type ParsedBody } from '@/lib/bulletParse';
+import { parseBody, stabilizeParsed, bulletsToPlainText, type Bullet, type ParsedBody } from '@/lib/bulletParse';
+import { explicitLineSegments, hasParagraphBreak } from '@/lib/proseLines';
+import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 import { computeModes, heightOf, maxMode, type Heights, type Mode } from '@/lib/bulletLayout';
 import { stripChipMarkers, wholeTerm, findBulletIdxContainingTerm } from '@/lib/bulletTerms';
 import { createLazyCascadeStates, type CascadeStatesLookup } from '@/lib/cascadePrecompute';
@@ -490,9 +492,9 @@ function richText(
 
 /**
  * Render the opening free-text paragraph. When `perLine` is true (the default),
- * each sentence becomes its own block so it starts on a new line (readability
- * via information chunking); when false, the paragraph renders as a single
- * inline block (the previous justified style). Either way `richText` handles
+ * each authored source line becomes its own block, without guessing sentence
+ * boundaries from punctuation. When false, source lines flow within their
+ * paragraph. Blank lines still separate paragraphs. Either way `richText` handles
  * **bold** and [[chips]]. The behavior is user-controlled via the
  * `sentencePerLine` setting (Settings → Canvas).
  *
@@ -511,16 +513,18 @@ function renderFreeText(
 ): ReactNode {
   const normalized = text.replace(/\s+/g, ' ').trim();
   const context = richTextContext(normalized, marks, resolution);
-  if (!perLine && !factReview) return richText(normalized, parentNodeId, onClick, resolution, context);
   let displayOffset = 0;
-  const sentences = sentenceSegments(normalized);
-  return sentences.map(({ text: sentence, end }, i) => {
+  const lines = explicitLineSegments(text);
+  return lines.map(({ text: line, start }, i) => {
+    const sentence = line.replace(/\s+/g, ' ');
+    const separator = i > 0 ? text.slice(lines[i - 1]!.end, start) : '';
+    const paragraphStart = hasParagraphBreak(separator);
     const unitId = `opening:${i}`;
     const unit = factReview?.units.get(unitId);
     const node = (
       <span
         key={i}
-        className={(perLine ? 'sc-ab-sentence' : 'sc-ab-flow-sentence') + factUnitClass(
+        className={(perLine ? 'sc-ab-sentence' : 'sc-ab-flow-sentence') + (perLine && paragraphStart ? ' sc-ab-new-paragraph' : '') + factUnitClass(
           unit,
           factReview?.activeUnitId === unitId,
         )}
@@ -535,9 +539,10 @@ function renderFreeText(
         {richText(sentence, parentNodeId, onClick, resolution, { ...context, displayOffset })}
       </span>
     );
-    displayOffset += projectRichText(sentence).text.length + (sentences[i + 1]?.start ?? end) - end;
-    const separator = i > 0 ? normalized.slice(sentences[i - 1]!.end, sentences[i]!.start) : '';
-    return <Fragment key={i}>{!perLine ? separator : null}{node}</Fragment>;
+    // Source-selection projections collapse whitespace between authored lines
+    // to one character regardless of CRLF or blank paragraphs.
+    displayOffset += projectRichText(sentence).text.length + 1;
+    return <Fragment key={i}>{!perLine && i > 0 ? (paragraphStart ? <><br /><br /></> : '\n') : null}{node}</Fragment>;
   });
 }
 
@@ -813,13 +818,18 @@ export function AdaptiveBullets({
   const activeFactUnitId = useCitationPanelStore((s) => s.mode === 'fact-check'
     && s.nodeId === parentNodeId && s.factVersionCreatedAt === currentVersionCreatedAt
     ? s.activeFactUnitId : null);
-  const factReport = useGraphStore((s) => {
+  const factVersion = useGraphStore((s) => {
     if (!reviewingFacts) return undefined;
     const node = s.project?.nodes[parentNodeId];
     if (!node || node.versions[node.currentVersionIndex]?.createdAt !== currentVersionCreatedAt) return undefined;
-    const version = node.versions[node.currentVersionIndex];
-    return version?.factCheck?.pending ?? version?.factCheck?.complete;
+    return node.versions[node.currentVersionIndex];
   });
+  const factBodyFingerprint = useMemo(() => factVersion?.factCheck ? factCheckBodyFingerprint(factVersion) : undefined,
+    // Fact-unit streaming and unrelated graph movement must not rehash prose.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [factVersion?.body, factVersion?.header, factVersion?.chat?.question, !!factVersion?.chat, !!factVersion?.factCheck]);
+  const savedFactReport = factVersion?.factCheck?.pending ?? factVersion?.factCheck?.complete;
+  const factReport = savedFactReport?.bodyFingerprint === factBodyFingerprint ? savedFactReport : undefined;
   const internalCitationSignature = useGraphStore((s) => {
     const node = s.project?.nodes[parentNodeId];
     return node?.versions[node.currentVersionIndex]?.internalSources?.map((source) => source.n).join(',') ?? '';
