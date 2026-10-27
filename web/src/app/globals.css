@@ -6347,7 +6347,7 @@ select.input {
   inset: 0;
   margin: auto;
   /* Scale with the video surface as the node resizes; the icon follows below. */
-  width: 20%;
+  width: 16%;
   height: auto;
   aspect-ratio: 1;
   padding: 0;

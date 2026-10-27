@@ -103,7 +103,7 @@ for (const provider of ['youtube', 'vimeo'] as const) {
           width, bodyMaxHeight: Math.round(width * 320 / 500),
         });
       }, width);
-      await expect.poll(() => play.evaluate(el => parseFloat(getComputedStyle(el).width))).toBeCloseTo(width * .2, 0);
+      await expect.poll(() => play.evaluate(el => parseFloat(getComputedStyle(el).width))).toBeCloseTo(width * .16, 0);
       const sizes = await play.evaluate(el => {
         const circle = el.getBoundingClientRect(), icon = el.querySelector('svg')!.getBoundingClientRect();
         const surface = el.parentElement!.getBoundingClientRect();
