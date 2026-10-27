@@ -100,7 +100,7 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
   const preview = previewRequest({ header: 'Geometry and literature',
     body: DIAGNOSTIC_TEXT + '\n\nJ. R. R. Tolkien was an author known for The Hobbit and The Lord of the Rings.',
     language: language.id, createdAt: 1, generatedBy: 'root', contentType: 'encyclopedic' }, previewTerms);
-  secondary('previews', 'Term previews · including abbreviated names', preview.system, preview.user, preview.maxOutputTokens, text => {
+  secondary('previews', 'Term previews', preview.system, preview.user, preview.maxOutputTokens, text => {
     const { issues } = inspectTermPreviews(text, previewTerms);
     assertDiagnostic(!Object.keys(issues).length, Object.entries(issues).map(([term, issue]) => `${term}: ${issue.reason}`).join(' '));
   });
