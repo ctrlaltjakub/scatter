@@ -5,12 +5,15 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { useRewriteStore } from '@/store/useRewriteStore';
 import { cancelNodeGeneration, expandPart, modifyNode, retypeNodeToText } from './generate';
 import { resetGenerationSessionsForTests } from './generationSession';
+import { removeNodeVersion } from './nodeVersions';
 
 const fake = vi.hoisted(() => ({
-  mode: 'pause' as 'pause' | 'emit-pause' | 'partial-error',
+  mode: 'pause' as 'pause' | 'emit-pause' | 'partial-error' | 'finish',
+  completed: false,
+  release: () => {},
   started: false,
   aborted: false,
-  reset() { this.mode = 'pause'; this.started = false; this.aborted = false; },
+  reset() { this.mode = 'pause'; this.started = false; this.aborted = false; this.completed = false; this.release = () => {}; },
 }));
 
 vi.mock('@/providers/registry', async (importOriginal) => {
@@ -21,6 +24,14 @@ vi.mock('@/providers/registry', async (importOriginal) => {
       listModels: async () => [],
       async *streamChat(_key: string, opts: { signal: AbortSignal }) {
         fake.started = true;
+        if (fake.mode === 'finish') {
+          if (fake.completed) { yield { delta: '{"terms":[]}', done: true }; return; }
+          yield { delta: 'Generated replacement.', done: false };
+          await new Promise<void>(resolve => { fake.release = resolve; });
+          fake.completed = true;
+          yield { delta: '', done: true };
+          return;
+        }
         if (fake.mode === 'partial-error') {
           yield { delta: 'Partially generated replacement.', done: false };
           throw new Error('provider exploded');
@@ -67,6 +78,27 @@ afterEach(() => {
 });
 
 describe('cancelNodeGeneration', () => {
+  it.each(['explain', 'encyclopedic', 'answer'] as const)('finishes a %s rewrite after its displayed source version is deleted', async contentType => {
+    fake.mode = 'finish';
+    useSettingsStore.setState({ autoTermPreviews: false, autoFreeImages: false });
+    const initial = useGraphStore.getState().project!.nodes.n0!;
+    useGraphStore.getState().updateNode('n0', { versions: [{ ...initial.versions[0]!, contentType }] });
+    const pending = modifyNode('n0', 'rewrite it');
+    await vi.waitFor(() => expect(fake.started).toBe(true));
+    const current = useGraphStore.getState().project!.nodes.n0!;
+    const draftCreatedAt = current.versions[1]!.createdAt;
+    useGraphStore.getState().updateNode('n0', { currentVersionIndex: 0 });
+    useGraphStore.getState().updateNode('n0', removeNodeVersion(current, 0)!);
+    expect(useRewriteStore.getState().snapshot.n0?.draftVersionIndex).toBe(0);
+    fake.release();
+    await pending;
+    const finished = useGraphStore.getState().project!.nodes.n0!;
+    expect(finished.versions).toHaveLength(1);
+    expect(finished.versions[0]).toMatchObject({ createdAt: draftCreatedAt, body: 'Generated replacement.' });
+    expect(finished.generating).toBe(false);
+    expect(finished.generationError).toBeUndefined();
+    expect(fake.aborted).toBe(false);
+  });
   it('aborts the provider and removes only the in-progress rewrite version', async () => {
     const rewrite = modifyNode('n0', 'rewrite it');
     await vi.waitFor(() => expect(fake.started).toBe(true));

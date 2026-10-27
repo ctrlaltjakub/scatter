@@ -13,6 +13,7 @@ import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
 import { prepareImageQuestion } from '@/lib/imageRegionInput';
 import { useNodeTextSelectionStore } from '@/store/useNodeTextSelectionStore';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
+import { enrichChatAnswer } from './enrichment';
 
 vi.mock('@/lib/generate', () => ({ spawnNearParent: () => ({ x: 800, y: 100 }) }));
 // Prompt edits enqueue a settings save. This lifecycle test does not provide
@@ -404,6 +405,70 @@ describe('chat action lifecycle', () => {
     expect(chat().versions.at(-1)?.chat?.state).toBe('stopped');
     expect(chat().versions[chat().currentVersionIndex]?.body).toBe('Readable old answer.');
     expect(getChatDraft('chat-test', 'chat')).toMatchObject({ text: 'Original question', editingTurnId: 'first' });
+  });
+  it('finishes hidden regeneration and uses the visible alternative for the next reply', async () => {
+    let release = () => {};
+    let regenerationSignal: AbortSignal | undefined;
+    const requests: StreamChatOpts[] = [];
+    vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* (_key, options) {
+      requests.push(options);
+      if (requests.length === 2) {
+        regenerationSignal = options.signal;
+        yield { delta: 'New answer in progress. ', done: false };
+        await new Promise<void>(resolve => { release = resolve; });
+        yield { delta: 'Finished in the background.', done: true };
+      } else yield { delta: requests.length === 1 ? 'Original answer.' : 'Follow-up answer.', done: true };
+    });
+    draft('Question'); await submitChat('chat');
+    const original = conversationPath(chat())[0]!;
+    const pending = submitChat('chat', { regenerate: true });
+    await vi.waitFor(() => expect(chat().versions.at(-1)?.body).toBe('New answer in progress. '));
+    const regenerated = conversationPath(chat())[0]!;
+    try {
+      for (const ref of [original, regenerated, original]) {
+        showChatAlternative('chat', ref);
+        expect(chat().versions[chat().currentVersionIndex]?.createdAt).toBe(ref.versionCreatedAt);
+        expect(conversationPath(chat())[0]).toEqual(ref);
+        expect(useChatRuntimeStore.getState().views.chat?.previews[ref.turnId]).toBeUndefined();
+        expect(regenerationSignal?.aborted).toBe(false);
+      }
+    } finally { release(); await pending; }
+    expect(chat().versions.at(-1)?.body).toBe('New answer in progress. Finished in the background.');
+    expect(chat().versions.at(-1)?.chat?.state).toBe('complete');
+    expect(chat().versions[chat().currentVersionIndex]?.createdAt).toBe(original.versionCreatedAt);
+    expect(enrichChatAnswer).toHaveBeenCalledWith('chat-test', 'chat', regenerated, expect.any(AbortSignal));
+    draft('Next question'); await submitChat('chat');
+    expect(chat().versions.at(-1)?.chat?.contextPath).toEqual([original]);
+    expect(requests[2]?.conversation?.filter(message => message.role === 'assistant').map(message => message.content))
+      .toEqual(['Original answer.']);
+    // Once the next turn starts, browsing its predecessor cannot rewrite the
+    // exact alternatives already captured by the provider request.
+    showChatAlternative('chat', regenerated);
+    expect(conversationPath(chat())[0]).toEqual(original);
+    expect(useChatRuntimeStore.getState().views.chat?.previews[original.turnId]).toBe(regenerated.versionCreatedAt);
+    expect(chat().versions.at(-1)?.chat?.contextPath).toEqual([original]);
+  });
+  it('clears a stale temporary preview when choosing the latest alternative and when regenerating', async () => {
+    let current = appendChatAnswer(chat(), { turnId: 'first', createdAt: 2, question: 'Question' });
+    current = updateChatAnswer(current, { turnId: 'first', versionCreatedAt: 2 }, { body: 'Original.' }, { state: 'complete' });
+    current = appendChatAnswer(current, { turnId: 'first', createdAt: 3, question: 'Question', replaceLatest: true });
+    current = updateChatAnswer(current, { turnId: 'first', versionCreatedAt: 3 }, { body: 'Regenerated.' }, { state: 'complete' });
+    useGraphStore.getState().updateNode('chat', { ...current, generating: false });
+    useChatRuntimeStore.getState().view('chat', { previews: { first: 2 } });
+    showChatAlternative('chat', { turnId: 'first', versionCreatedAt: 3 });
+    expect(useChatRuntimeStore.getState().views.chat?.previews.first).toBeUndefined();
+    for (const versionCreatedAt of [2, 3, 2]) {
+      showChatAlternative('chat', { turnId: 'first', versionCreatedAt });
+      expect(chat().versions[chat().currentVersionIndex]?.createdAt).toBe(versionCreatedAt);
+      expect(conversationPath(chat())[0]?.versionCreatedAt).toBe(versionCreatedAt);
+    }
+    useChatRuntimeStore.getState().view('chat', { previews: { first: 3 } });
+    vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* () {
+      yield { delta: 'Another answer.', done: true };
+    });
+    await submitChat('chat', { regenerate: true });
+    expect(useChatRuntimeStore.getState().views.chat?.previews.first).toBeUndefined();
+    expect(chat().versions[chat().currentVersionIndex]?.body).toBe('Another answer.');
   });
   it('does not count a failed search as having searched the web', async () => {
     vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* () {

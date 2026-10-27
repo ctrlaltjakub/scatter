@@ -15,6 +15,7 @@ import { newId } from './ids';
 import { spawnNearParent } from './generate';
 import { resolveInteractiveModel } from './interactiveModel';
 import { configuredPrompt } from './configuredPrompt';
+import { trackGenerationVersions } from './generationVersionTracking';
 import { isStandaloneInteractive } from './nodeContentType';
 import { INTERACTIVE_NODE_W } from './nodeSize';
 import { readInteractiveTheme } from './interactiveTheme';
@@ -174,20 +175,21 @@ export async function buildInteractiveNode(nodeId: string, instruction?: string,
   // Creating/modifying code is content intent; record one undo entry, not each log update.
   graph.updateNode(nodeId, { versions, currentVersionIndex: versionIndex, generating: true, generatingVersionIndex: versionIndex, generationError: undefined });
   const session = beginGenerationSession({ projectId, nodeId, kind: replaceEmpty ? 'spawn' : 'rewrite', sourceVersionIndex: sourceIndex, draftVersionIndex: versionIndex });
+  trackGenerationVersions(session);
   const controller = new AbortController(); const unregister = registerGenerationController(session.id, controller);
   const owned = () => {
     const current = getGenProject(projectId)?.nodes[nodeId];
-    const version = current?.versions[versionIndex];
+    const version = current?.versions[session.draftVersionIndex];
     return getGenerationSession(projectId,nodeId)?.id === session.id && !!current?.generating
-      && current.generatingVersionIndex === versionIndex && version?.createdAt === draft.createdAt
+      && current.generatingVersionIndex === session.draftVersionIndex && version?.createdAt === draft.createdAt
       && version.interactiveBuild?.state === 'building';
   };
   const commit = (patch: Partial<NodeVersion>, nodePatch: Partial<ScatterNode> = {}) => {
     if (!owned()) { controller.abort(); return; }
     const current = getGenProject(projectId)!.nodes[nodeId]!;
-    const nextVersions = current.versions.map((v,i)=>i===versionIndex ? {...v,...patch} : v);
+    const nextVersions = current.versions.map((v,i)=>i===session.draftVersionIndex ? {...v,...patch} : v);
     if (patch.interactiveBuild && patch.interactiveBuild.state !== 'building') {
-      settleBuildHistory(projectId, nodeId, nextVersions[versionIndex]!);
+      settleBuildHistory(projectId, nodeId, nextVersions[session.draftVersionIndex]!);
     }
     updateGenNode(projectId,nodeId,{ ...nodePatch, versions: nextVersions });
   };

@@ -21,6 +21,7 @@ export async function generateImageQuestionTitle(projectId: string, nodeId: stri
   } catch { /* The answer remains usable even if its auxiliary title fails. */ }
   if (signal.aborted) return;
   const node = getGenProject(projectId)?.nodes[nodeId];
+  versionIndex = node?.versions.findIndex(version => version.createdAt === initial.createdAt) ?? -1;
   const version = node?.versions[versionIndex];
   if (!node || !version || version.createdAt !== initial.createdAt || version.header !== initial.header
     || version.imageTitleState !== 'pending') return;

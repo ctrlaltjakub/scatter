@@ -164,7 +164,9 @@ export function updateChatAnswer(
 }
 
 export function selectLatestChatAlternative(node: ScatterNode, ref: ChatAnswerRef): ScatterNode {
-  if (!node.chat || node.chat.turns.at(-1)?.id !== ref.turnId || !answerVersion(node, ref)) return node;
+  const latest = node.chat?.turns.at(-1);
+  if (!node.chat || latest?.id !== ref.turnId || latest.selectedVersionCreatedAt === ref.versionCreatedAt
+    || !answerVersion(node, ref)) return node;
   return { ...node, chat: { ...node.chat, turns: node.chat.turns.map((turn) => turn.id === ref.turnId
     ? { ...turn, selectedVersionCreatedAt: ref.versionCreatedAt } : turn) } };
 }

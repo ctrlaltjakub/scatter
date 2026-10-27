@@ -9,6 +9,7 @@ import { useImageModelCatalogStore } from '@/store/useImageModelCatalogStore';
 import { useMediaUrlStore } from '@/store/useMediaUrlStore';
 import { useNodeStatusStore } from '@/store/useNodeStatusStore';
 import { getGenProject, updateGenNode } from '@/store/bgGen';
+import { trackGenerationVersions } from './generationVersionTracking';
 import { saveAsset, deleteAsset } from '@/opfs/assetsIO';
 import { createArrowSourceSelection } from './sourceSelection';
 import { aspectResize, fitMediaToWidth, MEDIA_SPAWN_MAX_W, type FitResult } from './mediaSizing';
@@ -51,6 +52,7 @@ interface ImageRetryArgs {
   projectId: string;
   nodeId: string;
   versionIndex: number;
+  versionCreatedAt?: number;
   provenance: ImageGenerationProvenance;
 }
 
@@ -66,7 +68,9 @@ export function hasImageRetryArgs(nodeId: string): boolean {
  * is rendered. */
 export function isImageGenerationErrorVersion(nodeId: string, versionIndex: number): boolean {
   const args = retryArgs.get(nodeId);
-  return !args || args.versionIndex === versionIndex;
+  if (!args) return true;
+  return args.versionCreatedAt == null ? args.versionIndex === versionIndex
+    : getGenProject(args.projectId)?.nodes[nodeId]?.versions[versionIndex]?.createdAt === args.versionCreatedAt;
 }
 
 export function configuredImageModelAvailable(
@@ -376,6 +380,8 @@ async function runImageGeneration(args: ImageRetryArgs): Promise<void> {
 
   const session = getGenerationSession(args.projectId, args.nodeId);
   if (!session || session.draftVersionIndex !== args.versionIndex) return;
+  args.versionCreatedAt ??= getGenProject(args.projectId)?.nodes[args.nodeId]?.versions[args.versionIndex]?.createdAt;
+  trackGenerationVersions(session);
   const controller = new AbortController();
   const unregister = registerGenerationController(session.id, controller);
   useNodeStatusStore.getState().setProcessStatus(args.nodeId, 'image-generation', 'GENERATING IMAGE');
@@ -389,7 +395,7 @@ async function runImageGeneration(args: ImageRetryArgs): Promise<void> {
         ? selectedImageEditPrompt(effective.editInstruction, effective.selectedRegions, referenceMode)
         : upgradeSelectedImageEditPrompt(effective.prompt, effective.selectedRegions, referenceMode);
     }
-    const versionLanguageId = versionLanguage(getGenProject(args.projectId)?.nodes[args.nodeId]?.versions[args.versionIndex]);
+    const versionLanguageId = versionLanguage(getGenProject(args.projectId)?.nodes[args.nodeId]?.versions[session.draftVersionIndex]);
     const localizedPrompt = effective.prompt + '\n\n' + configuredPrompt('imageGenerationLanguage', { language: languageInfo(versionLanguageId).name });
     const maxPromptChars = imageModel?.maxPromptChars ?? directModel?.maxPromptChars;
     if (maxPromptChars && localizedPrompt.length > maxPromptChars) {
@@ -428,7 +434,7 @@ async function runImageGeneration(args: ImageRetryArgs): Promise<void> {
     }
     if (controller.signal.aborted || getGenerationSession(args.projectId, args.nodeId)?.id !== session.id) return;
     const currentNode = getGenProject(args.projectId)?.nodes[args.nodeId];
-    const currentVersion = currentNode?.versions[args.versionIndex];
+    const currentVersion = currentNode?.versions[session.draftVersionIndex];
     if (!currentNode || !currentVersion) return;
 
     const byteCopy = new Uint8Array(result.bytes.byteLength);
@@ -441,7 +447,7 @@ async function runImageGeneration(args: ImageRetryArgs): Promise<void> {
     const assetId = newId();
     await saveAsset(args.projectId, assetId, blob);
     const stillCurrent = getGenProject(args.projectId)?.nodes[args.nodeId];
-    if (!stillCurrent || getGenerationSession(args.projectId, args.nodeId)?.id !== session.id) {
+    if (!stillCurrent || controller.signal.aborted || getGenerationSession(args.projectId, args.nodeId)?.id !== session.id) {
       await deleteAsset(args.projectId, assetId);
       return;
     }
@@ -465,14 +471,14 @@ async function runImageGeneration(args: ImageRetryArgs): Promise<void> {
         : undefined,
     };
     const versions = [...stillCurrent.versions];
-    const draftVersion = versions[args.versionIndex]!;
+    const draftVersion = versions[session.draftVersionIndex]!;
     // Editing changes the image, not the user's chosen canvas size. Read the
     // latest draft (it may have been resized or no longer be the viewed version)
     // and only rederive height for the returned image's proportions.
     const displaySize = effective.promptSource === 'image-edit'
       ? aspectResize(dimensions.width, dimensions.height, draftVersion.width ?? DEFAULT_NODE_W)
       : fitMediaToWidth(dimensions.width, dimensions.height);
-    versions[args.versionIndex] = {
+    versions[session.draftVersionIndex] = {
       ...draftVersion,
       body: '',
       media,
@@ -834,6 +840,7 @@ export async function retryImageGeneration(nodeId: string): Promise<void> {
   if (!hasConfiguredImageModel()) return;
   const args = retryArgs.get(nodeId);
   const node = args ? getGenProject(args.projectId)?.nodes[nodeId] : undefined;
+  if (args?.versionCreatedAt != null && node) args.versionIndex = node.versions.findIndex(version => version.createdAt === args.versionCreatedAt);
   if (!args || !node || !node.versions[args.versionIndex] || node.generating) return;
   const kind = node.versions.length === 1 ? 'spawn' : 'rewrite';
   beginGenerationSession({

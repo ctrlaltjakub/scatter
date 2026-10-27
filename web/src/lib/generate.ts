@@ -40,6 +40,7 @@ import {
 import { getActiveProvider, getProviderById } from '@/store/providerSelectors';
 import { renameScatter, isAutoScatterName } from '@/store/projectActions';
 import { getGenProject, updateGenNode } from '@/store/bgGen';
+import { trackGenerationVersions } from './generationVersionTracking';
 import {
   beginGenerationSession,
   cancelGenerationSession,
@@ -740,7 +741,7 @@ async function addChipsToCurrentVersion(nodeId: string, targetVersionIndex?: num
   if (!projId) return;
   const node = getGenProject(projId)?.nodes[nodeId];
   if (!node) return;
-  const idx = targetVersionIndex ?? node.currentVersionIndex;
+  const idx = getGenerationSession(projId, nodeId)?.draftVersionIndex ?? targetVersionIndex ?? node.currentVersionIndex;
   const plainBody = node.versions[idx]?.body ?? '';
   if (!plainBody.trim()) return;
   const imageVersion = node.versions[idx];
@@ -769,7 +770,8 @@ async function addChipsToCurrentVersion(nodeId: string, targetVersionIndex?: num
       plainBody,
       signal: ctrl.signal,
     });
-    if (!ctrl.signal.aborted) writeVersionBodyInPlace(projId, nodeId, idx, chipped);
+    const targetIndex = getGenProject(projId)?.nodes[nodeId]?.versions.findIndex(version => version.createdAt === imageVersion?.createdAt) ?? -1;
+    if (!ctrl.signal.aborted && targetIndex >= 0) writeVersionBodyInPlace(projId, nodeId, targetIndex, chipped);
   } catch {
     // Leave the plain body — never worse than today's chip-free text.
   } finally {
@@ -819,6 +821,7 @@ export async function redoTermMarking(nodeId: string): Promise<void> {
     versions,
     currentVersionIndex: versions.length - 1,
   });
+  if (generationSession) trackGenerationVersions(generationSession);
   await addChipsToCurrentVersion(nodeId, undefined, true); // undo-paused in-place writes; retry missing previews
   if (projectId && generationSession) {
     finishGenerationSession(projectId, nodeId, generationSession.id);
@@ -837,7 +840,7 @@ async function streamIntoVersion(
   // background registry (bgGen.ts) instead of leaking into — or being dropped
   // by — whatever project is active when each chunk arrives.
   const genProjectId = useGraphStore.getState().activeProjectId;
-  const streamVersionIndex = targetVersionIndex
+  const initialStreamVersionIndex = targetVersionIndex
     ?? (genProjectId ? getGenProject(genProjectId)?.nodes[nodeId]?.currentVersionIndex : undefined)
     ?? useGraphStore.getState().project?.nodes[nodeId]?.currentVersionIndex
     ?? 0;
@@ -851,18 +854,20 @@ async function streamIntoVersion(
       nodeId,
       kind: 'spawn',
       sourceVersionIndex: null,
-      draftVersionIndex: streamVersionIndex,
+      draftVersionIndex: initialStreamVersionIndex,
     });
   }
+  const streamVersionIndex = () => generationSession?.draftVersionIndex ?? initialStreamVersionIndex;
+  if (generationSession) trackGenerationVersions(generationSession);
   // A retry reuses the same version object. Clear provenance from the previous
   // attempt before the new request starts so switching search off (or receiving
   // a different source set) can never leave a stale success label/sources.
   if (genProjectId) {
     const node = getGenProject(genProjectId)?.nodes[nodeId];
-    const current = node?.versions[streamVersionIndex];
+    const current = node?.versions[streamVersionIndex()];
     if (node && current) {
       const versions = [...node.versions];
-      versions[streamVersionIndex] = {
+      versions[streamVersionIndex()] = {
         ...current,
         language: current.language ?? normalizeLanguage(useSettingsStore.getState().generationLanguage),
         ...(current.imageQuestion && current.imageTitleState === 'failed' ? { imageTitleState: 'pending' as const } : {}),
@@ -883,7 +888,7 @@ async function streamIntoVersion(
   let finalBody = '';
   let imageTitleTask: Promise<void> | undefined;
   const targetPresent = () => expectedVersionCreatedAt == null || (genProjectId
-    ? getGenProject(genProjectId)?.nodes[nodeId]?.versions[streamVersionIndex]?.createdAt === expectedVersionCreatedAt
+    ? getGenProject(genProjectId)?.nodes[nodeId]?.versions[streamVersionIndex()]?.createdAt === expectedVersionCreatedAt
     : false);
   // In-place first generation leaves the blank card behind when undone.
   // Cancel its request and refuse late writes into that restored version.
@@ -910,9 +915,9 @@ async function streamIntoVersion(
     const node = proj?.nodes[nodeId];
     if (!node) return;
     const versions = [...node.versions];
-    const cur = versions[streamVersionIndex];
+    const cur = versions[streamVersionIndex()];
     if (!cur) return;
-    versions[streamVersionIndex] = { ...cur, body: sanitizedAcc };
+    versions[streamVersionIndex()] = { ...cur, body: sanitizedAcc };
     updateGenNode(genProjectId, nodeId, { versions });
   };
   try {
@@ -923,7 +928,7 @@ async function streamIntoVersion(
     if (genProjectId) updateGenNode(genProjectId, nodeId, { streamingText: true });
     let pass1 = await streamChunks({
       nodeId, variant, parentIdForContext, signal: ctrl.signal, onAcc,
-      imageContext: genProjectId ? getGenProject(genProjectId)?.nodes[nodeId]?.versions[streamVersionIndex]?.imageContext : undefined,
+      imageContext: genProjectId ? getGenProject(genProjectId)?.nodes[nodeId]?.versions[streamVersionIndex()]?.imageContext : undefined,
       commitGate: makeBulletCommitGate(),
     });
     if (superseded()) return;
@@ -964,10 +969,10 @@ async function streamIntoVersion(
       if (genProjectId) {
         const proj = getGenProject(genProjectId);
         const node = proj?.nodes[nodeId];
-        const cur = node?.versions[streamVersionIndex];
+        const cur = node?.versions[streamVersionIndex()];
         if (node && cur) {
           const versions = [...node.versions];
-          versions[streamVersionIndex] = {
+          versions[streamVersionIndex()] = {
             ...cur,
             body: '',
             internalSources: undefined,
@@ -1022,11 +1027,11 @@ async function streamIntoVersion(
       if (genProjectId) {
         const proj = getGenProject(genProjectId);
         const node = proj?.nodes[nodeId];
-        const cur = node?.versions[streamVersionIndex];
+        const cur = node?.versions[streamVersionIndex()];
         if (node && cur) {
           const versions = [...node.versions];
           // Never leave the provider's cut-off URL or half sentence visible.
-          versions[streamVersionIndex] = { ...cur, body: '' };
+          versions[streamVersionIndex()] = { ...cur, body: '' };
           updateGenNode(genProjectId, nodeId, {
             versions,
             generating: false,
@@ -1113,10 +1118,10 @@ async function streamIntoVersion(
     )) {
       const proj = getGenProject(genProjectId);
       const node = proj?.nodes[nodeId];
-      const cur = node?.versions[streamVersionIndex];
+      const cur = node?.versions[streamVersionIndex()];
       if (node && cur) {
         const versions = [...node.versions];
-        versions[streamVersionIndex] = {
+        versions[streamVersionIndex()] = {
           ...cur,
           sources: citationSources.length ? citationSources : cur.sources,
           googleSearchSuggestions: pass1.googleSearchSuggestions,
@@ -1139,7 +1144,7 @@ async function streamIntoVersion(
     if (genProjectId && !ctrl.signal.aborted) {
       // The main vision answer has identified the selected subject. Title work
       // can now run alongside term marking with any text-capable secondary model.
-      imageTitleTask = generateImageQuestionTitle(genProjectId, nodeId, streamVersionIndex, finalBody, ctrl.signal);
+      imageTitleTask = generateImageQuestionTitle(genProjectId, nodeId, streamVersionIndex(), finalBody, ctrl.signal);
     }
 
     // Pass 2 — chip marking. Runs in place on the same version body (via the
@@ -1150,7 +1155,7 @@ async function streamIntoVersion(
     if (CHIP_PASS_KINDS.has(variant.kind) && !ctrl.signal.aborted) {
       if (genProjectId === useGraphStore.getState().activeProjectId) {
         const imageVersion = useGraphStore.getState().project?.nodes[nodeId]
-          ?.versions[streamVersionIndex];
+          ?.versions[streamVersionIndex()];
         if (imageVersion && !imageVersion.imageRecommendations && !imageVersion.wikimediaImages) {
           // The complete prose is now stable. Image discovery can consume this
           // plain snapshot while term marking independently adds [[chips]].
@@ -1180,7 +1185,7 @@ async function streamIntoVersion(
     )) {
       const proj = getGenProject(genProjectId);
       const node = proj?.nodes[nodeId];
-      const cur = node?.versions[streamVersionIndex];
+      const cur = node?.versions[streamVersionIndex()];
       if (cur) {
         let body = cur.body;
         let sources = cur.sources;
@@ -1216,7 +1221,7 @@ async function streamIntoVersion(
           sources = r.sources;
         }
         const versions = [...node!.versions];
-        versions[streamVersionIndex] = {
+        versions[streamVersionIndex()] = {
           ...cur, body, sources,
           googleSearchSuggestions: pass1.googleSearchSuggestions,
           internalSources: internalSources.length ? internalSources : undefined,
@@ -1237,7 +1242,7 @@ async function streamIntoVersion(
     if (genProjectId) updateGenNode(genProjectId, nodeId, { generating: false, streamingText: false });
     useNodeStatusStore.getState().clearStatus(nodeId);
     if (!ctrl.signal.aborted && genProjectId === useGraphStore.getState().activeProjectId) {
-      const version = useGraphStore.getState().project?.nodes[nodeId]?.versions[streamVersionIndex];
+      const version = useGraphStore.getState().project?.nodes[nodeId]?.versions[streamVersionIndex()];
       if (version) void generateTermPreviews(nodeId, version.createdAt);
     }
   } catch (e) {
@@ -1255,10 +1260,10 @@ async function streamIntoVersion(
     // behind. Retry can still regenerate the title from the original question.
     if (genProjectId && !superseded()) {
       const node = getGenProject(genProjectId)?.nodes[nodeId];
-      const version = node?.versions[streamVersionIndex];
+      const version = node?.versions[streamVersionIndex()];
       if (node && version?.imageTitleState === 'pending') {
         const versions = [...node.versions];
-        versions[streamVersionIndex] = { ...version, imageTitleState: 'failed' };
+        versions[streamVersionIndex()] = { ...version, imageTitleState: 'failed' };
         updateGenNode(genProjectId, nodeId, { versions });
       }
     }
@@ -1286,6 +1291,8 @@ async function correctStructureAfterRegen(
   if (!STRUCTURE_CHECK_KINDS.has(kind)) return;
   const node = useGraphStore.getState().project?.nodes[nodeId];
   if (!node || node.generationError) return;
+  const projectId = activeGenerationProjectId();
+  targetVersionIndex = (projectId ? getGenerationSession(projectId, nodeId)?.draftVersionIndex : undefined) ?? targetVersionIndex;
   const body = node.versions[targetVersionIndex]?.body ?? '';
   if (!body || isValidStructure(body)) return;
   setGenFlags(nodeId, { generating: true, generationError: undefined });
@@ -1595,6 +1602,7 @@ function beginBurst(
     preBurstWasAtMin: replaceDraft?.preBurstWasAtMin ?? wasAtMin,
   });
   store.setWorkingBody(nodeId, cur.body);
+  trackGenerationVersions(generationSession);
 }
 
 /**
@@ -1655,7 +1663,8 @@ export function cancelNodeGeneration(
     // it must retain the last usable document rather than deleting that sole
     // version. Ordinary rewrites have a distinct provisional draft to remove.
     if (
-      session.draftVersionIndex !== session.sourceVersionIndex
+      versions.length > 1
+      && session.draftVersionIndex !== session.sourceVersionIndex
       && versions[session.draftVersionIndex]
     ) {
       versions.splice(session.draftVersionIndex, 1);
@@ -1995,6 +2004,8 @@ function placeRewriteCitations(
 function finalizeRewriteCitations(nodeId: string, versionIndex: number, ctx: RewriteCitationCtx): void {
   const node = useGraphStore.getState().project?.nodes[nodeId];
   if (!node) return;
+  const projectId = activeGenerationProjectId();
+  versionIndex = (projectId ? getGenerationSession(projectId, nodeId)?.draftVersionIndex : undefined) ?? versionIndex;
   const cur = node.versions[versionIndex];
   if (!cur) return;
   let body = cur.body;
@@ -2134,7 +2145,7 @@ async function runWholeRewrite(opts: {
     // Then stream the new content in.
     const streamRes = await streamChunks({
       nodeId, variant, parentIdForContext,
-      imageContext: useGraphStore.getState().project?.nodes[nodeId]?.versions[snapshot.preBurstVersionIndex]?.imageContext,
+      imageContext: sourceIndex == null ? undefined : startNode?.versions[sourceIndex]?.imageContext,
       signal: controller.signal,
       onAcc: (sanitizedAcc) => {
         if (sanitizedAcc.trim()) markGenerationTextReceived(snapshot.generationSessionId);

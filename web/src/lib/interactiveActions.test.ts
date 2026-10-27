@@ -6,6 +6,7 @@ import { getAdapter } from '@/providers/registry';
 import { acceptInteractiveDraft, buildInteractiveNode, spawnInteractiveNode, stopInteractiveBuild } from './interactiveActions';
 import { checkInteractiveDocument } from './interactiveProbe';
 import { resetGenerationSessionsForTests } from './generationSession';
+import { removeNodeVersion } from './nodeVersions';
 import { recoverInteractiveNode } from './interactiveRecovery';
 import { isStandaloneInteractive, nodeTypeLabel } from './nodeContentType';
 import { stashDetached, takeDetached } from '@/store/bgGen';
@@ -36,6 +37,28 @@ beforeEach(()=>{vi.restoreAllMocks();resetGenerationSessionsForTests();setup();v
 afterEach(()=>resetGenerationSessionsForTests());
 
 describe('dedicated interactive nodes',()=>{
+  it('finishes regeneration after deleting the older displayed version', async () => {
+    const id = spawnInteractiveNode('source')!;
+    const source = node(id).versions[0]!;
+    useGraphStore.getState().updateNode(id, { versions: [{ ...source,
+      interactive: { html, request: 'Counter', providerId: 'fixture', model: 'code', viewportWidth: 540, viewportHeight: 220 } }] });
+    let release!: () => void;
+    const wait = new Promise<void>(resolve => { release = resolve; });
+    vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* (_key, opts) {
+      await wait; yield { delta: interactiveMetaResponse(opts) ?? html, done: true };
+    });
+    const pending = buildInteractiveNode(id);
+    const current = node(id);
+    expect(current.versions).toHaveLength(2);
+    const createdAt = current.versions[1]!.createdAt;
+    useGraphStore.getState().updateNode(id, { currentVersionIndex: 0 });
+    useGraphStore.getState().updateNode(id, removeNodeVersion(current, source.createdAt)!);
+    release(); await pending;
+    expect(node(id).versions).toHaveLength(1);
+    expect(node(id).versions[0]).toMatchObject({ createdAt, interactive: { html }, interactiveBuild: { state: 'complete' } });
+    expect(node(id).generating).toBe(false);
+    expect(node(id).generationError).toBeUndefined();
+  });
   it.each(['create', 'modify', 'regenerate', 'repair'] as const)('uses newly fitted content dimensions after %s, without inheriting a manual size', async mode => {
     const id = spawnInteractiveNode('source')!;
     const version = node(id).versions[0]!;

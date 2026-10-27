@@ -179,7 +179,8 @@ export function ChatBody({ node, selected, style }: { node: ScatterNode; selecte
                 <VersionCounter current={alternative + 1} total={turn.versionCreatedAts.length} noun="Answer" />
                 <button type="button" aria-label="Next answer" disabled={alternative >= turn.versionCreatedAts.length - 1}
                   onClick={(event) => { event.stopPropagation(); showChatAlternative(node.id, { turnId: turn.id, versionCreatedAt: turn.versionCreatedAts[alternative + 1]! }); }}><ChevronRight size={14} /></button>
-                {createdAt !== turn.selectedVersionCreatedAt && <span className="chat-alternative-note">Alternative version — not used in later replies</span>}
+                {index < node.chat!.turns.length - 1 && createdAt !== turn.selectedVersionCreatedAt
+                  && <span className="chat-alternative-note">Alternative version — not used in later replies</span>}
               </div>}
               <ChatAnswer nodeId={node.id} version={version} />
               <ChatAssistantActions key={createdAt} nodeId={node.id} version={version} latest={index === node.chat!.turns.length - 1}

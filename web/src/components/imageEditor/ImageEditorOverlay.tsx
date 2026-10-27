@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { SquareArrowRight } from 'lucide-react';
 import { useGraphStore } from '@/store/useGraphStore';
+import { removeNodeVersion } from '@/lib/nodeVersions';
 import { useImageEditorStore } from '@/store/useImageEditorStore';
 import { useImageSelectionStore } from '@/store/useImageSelectionStore';
 import { EMPTY_IMAGE_REGIONS } from '@/lib/imageRegions';
@@ -492,12 +493,9 @@ function EditorSession({ nodeId, verIdx }: { nodeId: string; verIdx: number }) {
   };
   const deleteVersion = () => {
     if (total <= 1) return;
-    const versions = [...node.versions];
-    versions.splice(verIdx, 1);
-    useGraphStore.getState().updateNode(nodeId, {
-      versions,
-      currentVersionIndex: Math.max(0, verIdx - 1),
-    });
+    const current = useGraphStore.getState().project?.nodes[nodeId];
+    const patch = current && version && removeNodeVersion(current, version.createdAt);
+    if (patch) useGraphStore.getState().updateNode(nodeId, patch);
   };
 
   // ── Setting changes also restyle the current selection ──────────────────

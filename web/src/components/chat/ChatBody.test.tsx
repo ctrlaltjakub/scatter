@@ -21,6 +21,47 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); window.getSelection()?.removeAllRanges(); });
 
 describe('chat body interaction', () => {
+  it.each(['streaming', 'marking', 'previews', 'complete'] as const)(
+    'keeps version controls working during %s and warns only after another reply starts', stage => {
+      const ref = (versionCreatedAt: number) => ({ turnId: 'first', versionCreatedAt });
+      let node = createChatNode({ id: 'chat', createdAt: 1, position: { x: 0, y: 0 }, bodyHeight: 300 });
+      node = appendChatAnswer(node, { turnId: 'first', createdAt: 2, question: 'Question' });
+      node = updateChatAnswer(node, ref(2), { body: 'Original answer.' }, { state: 'complete' });
+      node = appendChatAnswer(node, { turnId: 'first', createdAt: 3, question: 'Question', replaceLatest: true });
+      node = updateChatAnswer(node, ref(3), { body: 'New answer.',
+        ...(stage === 'marking' ? { answerTermMarking: { fingerprint: 'pending', state: 'pending' as const } } : {}),
+      }, { state: stage === 'streaming' ? 'generating' : 'complete' });
+      node = { ...node, generating: stage === 'streaming', streamingText: stage === 'streaming' };
+      const project = { ...createBlankProject('Version navigation', node.id), nodes: { chat: node } };
+      useGraphStore.setState({ project, activeProjectId: project.id });
+      // Reproduce the temporary preview left behind by switching while writing.
+      useChatRuntimeStore.getState().view('chat', { previews: { first: 2 } });
+      function LiveChat() {
+        const current = useGraphStore(state => state.project!.nodes.chat!);
+        return <ChatBody node={current} selected={false} />;
+      }
+      const { container } = render(<LiveChat />);
+      const warning = 'Alternative version — not used in later replies';
+      expect(screen.queryByText(warning)).toBeNull();
+      for (const versionCreatedAt of [3, 2, 3, 2]) {
+        fireEvent.click(screen.getByRole('button', { name: versionCreatedAt === 3 ? 'Next answer' : 'Previous answer' }));
+        expect(container.querySelector('[data-chat-turn="first"]')).toHaveAttribute('data-chat-version', `${versionCreatedAt}`);
+        expect(useGraphStore.getState().project?.nodes.chat?.chat?.turns[0]?.selectedVersionCreatedAt).toBe(versionCreatedAt);
+        expect(screen.queryByText(warning)).toBeNull();
+      }
+      act(() => {
+        const current = useGraphStore.getState().project!.nodes.chat!;
+        useGraphStore.getState().updateNode('chat', appendChatAnswer(current, { turnId: 'second', createdAt: 4, question: 'Continue' }));
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Next answer' }));
+      expect(screen.getByText(warning)).toBeInTheDocument();
+      const current = useGraphStore.getState().project!.nodes.chat!;
+      expect(current.versions.at(-1)?.chat?.contextPath).toEqual([ref(2)]);
+      expect(current.chat?.turns[0]?.selectedVersionCreatedAt).toBe(2);
+      fireEvent.click(screen.getByRole('button', { name: 'Previous answer' }));
+      expect(screen.queryByText(warning)).toBeNull();
+    },
+  );
   it('disables fact-check on unfocus without restoring it on refocus', () => {
     const node = createChatNode({ id: 'chat', createdAt: 1, position: { x: 0, y: 0 }, bodyHeight: 300 });
     const project = createBlankProject('chat', node.id);

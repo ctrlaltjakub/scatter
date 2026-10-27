@@ -2,6 +2,7 @@
 import { ChevronLeft, ChevronRight, Maximize, Play, RotateCcw, Square, Trash } from 'lucide-react';
 import type { ScatterNode } from '@/store/types';
 import { useGraphStore } from '@/store/useGraphStore';
+import { removeNodeVersion } from '@/lib/nodeVersions';
 import { useInteractiveViewerStore } from '@/store/useInteractiveViewerStore';
 import { useInteractiveRuntimeStore } from '@/store/useInteractiveRuntimeStore';
 import { buildInteractiveNode, stopInteractiveBuild } from '@/lib/interactiveActions';
@@ -20,8 +21,15 @@ export function InteractiveNodeActions({ node, isRoot }: { node: ScatterNode; is
   const busy = !!node.generating;
   const switchVersion = (delta: number) => useGraphStore.getState().updateNode(node.id, { currentVersionIndex: node.currentVersionIndex+delta });
   const remove = () => {
-    if (busy) stopInteractiveBuild(node.id);
-    if (node.versions.length > 1) useGraphStore.getState().updateNode(node.id,{ versions: node.versions.filter((_,i)=>i!==node.currentVersionIndex), currentVersionIndex: Math.max(0,node.currentVersionIndex-1) });
+    const current = useGraphStore.getState().project?.nodes[node.id];
+    const index = current?.versions.findIndex(candidate => candidate.createdAt === version.createdAt) ?? -1;
+    if (!current || index < 0) return;
+    if (current.generating && (current.generatingVersionIndex == null || current.generatingVersionIndex === index)) stopInteractiveBuild(node.id);
+    if (current.versions.length > 1) {
+      const latest = useGraphStore.getState().project!.nodes[node.id]!;
+      const patch = removeNodeVersion(latest, version.createdAt);
+      if (patch) useGraphStore.getState().updateNode(node.id, patch);
+    }
     else { cancelNodeGenerationCascade(node.id); useGraphStore.getState().deleteNodeCascade(node.id); }
   };
   return <div className="side-panel-content interactive-node-actions">

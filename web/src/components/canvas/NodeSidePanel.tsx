@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { useGraphStore } from '@/store/useGraphStore';
+import { removeNodeVersion } from '@/lib/nodeVersions';
 import { useNodeBirthStore } from '@/store/useNodeBirthStore';
 import { useNodeEntranceStyle } from '@/lib/nodeEntrance';
 import { useEditorStore } from '@/store/useEditorStore';
@@ -338,23 +339,22 @@ export function NodeSidePanel() {
   };
 
   const onDelete = () => {
-    if (node.generating) {
+    const current = useGraphStore.getState().project?.nodes[node.id];
+    const displayedIndex = current?.versions.findIndex(version => version.createdAt === v.createdAt) ?? -1;
+    if (!current || displayedIndex < 0) return;
+    if (current.generating && (current.generatingVersionIndex == null || current.generatingVersionIndex === displayedIndex)) {
       // Existing-node rewrites own a provisional version; cancel removes just
       // that current work. A fresh one-version node has no completed fallback,
       // so stop every stream in its subtree before normal cascade deletion.
       const stoppedKind = cancelNodeGeneration(node.id, { discardCurrentWork: true });
-      if (stoppedKind === 'rewrite') return;
+      if (stoppedKind === 'rewrite' && current.versions.length > 1) return;
       cancelNodeGenerationCascade(node.id);
       deleteNodeCascade(node.id);
       return;
     }
-    if (node.versions.length > 1) {
-      const versions = [...node.versions];
-      versions.splice(node.currentVersionIndex, 1);
-      updateNode(node.id, {
-        versions,
-        currentVersionIndex: Math.max(0, node.currentVersionIndex - 1),
-      });
+    if (current.versions.length > 1) {
+      const patch = removeNodeVersion(current, v.createdAt);
+      if (patch) updateNode(node.id, patch);
     } else {
       deleteNodeCascade(node.id);
     }
@@ -511,7 +511,7 @@ export function NodeSidePanel() {
               <button
                 type="button"
                 onClick={onDelete}
-                data-tip={node.generating ? 'Stop generation and delete current work' : 'Delete version (or whole node)'}
+                data-tip={displayedVersionGenerating ? 'Stop generation and delete current work' : 'Delete version (or whole node)'}
                 aria-label="Delete"
               >
                 <Trash size={14} />
@@ -643,7 +643,7 @@ export function NodeSidePanel() {
             <button
               type="button"
               onClick={onDelete}
-              data-tip={node.generating ? 'Stop generation and delete current work' : 'Delete version (or whole node)'}
+              data-tip={displayedVersionGenerating ? 'Stop generation and delete current work' : 'Delete version (or whole node)'}
               aria-label="Delete"
             >
               <Trash size={14} />

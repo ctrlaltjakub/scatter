@@ -95,6 +95,20 @@ describe('NodeSidePanel explain actions', () => {
     fireEvent.click(button);
     expect(useGraphStore.getState().project?.nodes.n0).toBeUndefined();
   });
+  it.each(['explain', 'encyclopedic'] as const)('deletes the displayed old %s version while retaining the generating draft', contentType => {
+    renderPanel(contentType);
+    const node = useGraphStore.getState().project!.nodes.n0!;
+    act(() => useGraphStore.getState().updateNode('n0', {
+      versions: [...node.versions, { ...node.versions[0]!, createdAt: 1, body: 'New draft.' }],
+      generating: true, generatingVersionIndex: 1, currentVersionIndex: 0,
+    }));
+    const button = screen.getByRole('button', { name: 'Delete' });
+    expect(button).toHaveAttribute('data-tip', 'Delete version (or whole node)');
+    fireEvent.click(button);
+    expect(useGraphStore.getState().project!.nodes.n0!).toMatchObject({
+      versions: [{ createdAt: 1, body: 'New draft.' }], currentVersionIndex: 0, generating: true, generatingVersionIndex: 0,
+    });
+  });
 
   it('offers explicit creation and interactive-only regeneration actions', () => {
     const first = renderPanel('explain');

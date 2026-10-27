@@ -4,6 +4,7 @@ import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useImageModelCatalogStore } from '@/store/useImageModelCatalogStore';
 import { resetGenerationSessionsForTests } from './generationSession';
+import { removeNodeVersion } from './nodeVersions';
 import {
   generateImageVersionFromHeader,
   generateImageInMediaNode,
@@ -83,6 +84,30 @@ beforeEach(() => {
 });
 
 describe('media-node image generation lifecycle', () => {
+  it('finishes editing after the displayed source version is deleted and its deletion is undone and redone', async () => {
+    const source = mediaNode();
+    source.versions[0] = { ...source.versions[0]!,
+      media: { source: 'asset', kind: 'image', assetId: 'original', mime: 'image/png', naturalWidth: 1536, naturalHeight: 1024 } };
+    useGraphStore.getState().updateNode('m1', source);
+    let finish!: (value: { bytes: Uint8Array; mime: string }) => void;
+    editMock.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const pending = modifyImageInMediaNode('m1', 'make it blue');
+    await vi.waitFor(() => expect(editMock).toHaveBeenCalledOnce());
+    const current = useGraphStore.getState().project!.nodes.m1!;
+    const draftCreatedAt = current.versions[1]!.createdAt;
+    useGraphStore.temporal.getState().clear();
+    useGraphStore.getState().updateNode('m1', removeNodeVersion(current, 1)!);
+    useGraphStore.temporal.getState().undo();
+    useGraphStore.temporal.getState().redo();
+    finish({ bytes: new Uint8Array([9]), mime: 'image/png' });
+    await pending;
+    const completed = useGraphStore.getState().project!.nodes.m1!;
+    expect(completed.versions).toHaveLength(1);
+    expect(completed.versions[0]).toMatchObject({ createdAt: draftCreatedAt, media: { source: 'asset', kind: 'image' } });
+    expect(completed.versions[0]!.media?.assetId).not.toBe('original');
+    expect(completed.generating).toBe(false);
+    expect(completed.generationError).toBeUndefined();
+  });
   it('captures language for retries, changes it on regeneration, and preserves it on edits', async () => {
     useSettingsStore.setState({ generationLanguage: 'pl' });
     generateMock.mockRejectedValueOnce(new Error('retry me'));

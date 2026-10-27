@@ -4,9 +4,9 @@ The [project README](../../README.md) opens with the linked pixel-font wordmark,
 a one-line description and one hero screenshot. Feature sections are text-only;
 keep the body left-aligned and use the screenshot for the visual overview.
 
-`hero-placeholder.svg` reserves that position until a current screenshot is
-available. Replace it with `hero.png` or `hero.webp`, update the image path and
-alt text in the project README, and remove the placeholder.
+`hero.png` shows a music theory project with text, media and an interactive
+step sequencer. When replacing it, update the image path and alt text in the
+project README to match the new capture.
 
 For the hero capture:
 

@@ -166,13 +166,17 @@ export function showChatAlternative(nodeId: string, ref: ChatAnswerRef): void {
   const graph = useGraphStore.getState();
   const node = graph.project?.nodes[nodeId];
   if (!node?.chat || !answerVersion(node, ref)) return;
-  if (node.chat.turns.at(-1)?.id === ref.turnId && !node.generating) {
-    // Changing the continuation alternative is a user content decision.
+  const runtime = useChatRuntimeStore.getState();
+  const previews = { ...runtime.views[nodeId]?.previews };
+  if (node.chat.turns.at(-1)?.id === ref.turnId) {
+    // Until another turn starts, the visible alternative owns continuation.
+    // Generation and enrichment keep writing to their captured answer identity.
     graph.updateNode(nodeId, selectLatestChatAlternative(node, ref));
+    delete previews[ref.turnId];
   } else {
-    const runtime = useChatRuntimeStore.getState();
-    runtime.view(nodeId, { previews: { ...runtime.views[nodeId]?.previews, [ref.turnId]: ref.versionCreatedAt } });
+    previews[ref.turnId] = ref.versionCreatedAt;
   }
+  runtime.view(nodeId, { previews });
   activateChatAnswer(nodeId, ref);
 }
 
@@ -282,7 +286,11 @@ export async function submitChat(nodeId: string, options: {
       || !answerVersion(state.project.nodes[nodeId]!, ref)) controller.abort();
   });
   const timeout = setTimeout(() => controller.abort(new Error('The answer timed out.')), 10 * 60_000);
-  runtime.view(nodeId, { error: undefined, activity: 'Working', active: ref });
+  // A regenerated answer starts visibly even if this turn had a historic
+  // preview before the later turn was removed.
+  const previews = { ...runtime.views[nodeId]?.previews };
+  delete previews[ref.turnId];
+  runtime.view(nodeId, { error: undefined, activity: 'Working', active: ref, previews });
   runtime.jumpTo(nodeId);
   runtime.setDraft(project.id, nodeId, draft.editingTurnId ? draft.previousDraft ?? EMPTY_CHAT_DRAFT : EMPTY_CHAT_DRAFT);
   const lane = `chat-answer-${createdAt}`;

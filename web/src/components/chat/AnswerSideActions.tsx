@@ -15,6 +15,7 @@ import { AddNodeMenu } from '@/components/canvas/AddNodeMenu';
 import { ChatPanelGroup } from './ChatPanelControls';
 import { VersionCounter } from '@/components/VersionCounter';
 import { useGraphStore } from '@/store/useGraphStore';
+import { removeNodeVersion } from '@/lib/nodeVersions';
 import { useEditorStore } from '@/store/useEditorStore';
 import { AnswerImageActions } from './AnswerImageActions';
 import { AnimatedCollapse } from '../AnimatedCollapse';
@@ -29,6 +30,8 @@ export function AnswerSideActions({ node }: { node: ScatterNode }) {
   const [editOpen, setEditOpen] = useSidePanelDisclosure('text');
   const [, setFactOpen] = useSidePanelDisclosure('fact');
   const version = node.versions[node.currentVersionIndex]!;
+  const displayedGenerating = !!node.generating
+    && (node.generatingVersionIndex == null || node.generatingVersionIndex === node.currentVersionIndex);
   useSettingsStore((state) => state.activeModelRef);
   useSettingsStore((state) => state.providers);
   useModelCatalogStore((state) => state.catalog);
@@ -48,9 +51,17 @@ export function AnswerSideActions({ node }: { node: ScatterNode }) {
     currentVersionIndex: Math.max(0, Math.min(node.versions.length - 1, node.currentVersionIndex + delta)),
   });
   const remove = () => {
-    if (node.generating) { cancelNodeGeneration(node.id, { discardCurrentWork: true }); return; }
-    if (node.versions.length === 1) useGraphStore.getState().deleteNodeCascade(node.id);
-    else useGraphStore.getState().updateNode(node.id, { versions: node.versions.filter((_, i) => i !== node.currentVersionIndex), currentVersionIndex: Math.max(0, node.currentVersionIndex - 1) });
+    const current = useGraphStore.getState().project?.nodes[node.id];
+    const index = current?.versions.findIndex(candidate => candidate.createdAt === version.createdAt) ?? -1;
+    if (!current || index < 0) return;
+    if (current.generating && (current.generatingVersionIndex == null || current.generatingVersionIndex === index)) {
+      cancelNodeGeneration(node.id, { discardCurrentWork: true }); return;
+    }
+    if (current.versions.length === 1) useGraphStore.getState().deleteNodeCascade(node.id);
+    else {
+      const patch = removeNodeVersion(current, version.createdAt);
+      if (patch) useGraphStore.getState().updateNode(node.id, patch);
+    }
   };
   const editTextAction = <button type="button" className="side-action" onClick={() => useEditorStore.getState().openEditor(node.id)}>
     <span className="side-action-icon"><FileText size={15} /></span>Edit or export text
@@ -68,7 +79,7 @@ export function AnswerSideActions({ node }: { node: ScatterNode }) {
           onClick={() => void (version.chat && !version.markdownNote
             ? redoChatTerms(node.id, { turnId: version.chat.turnId, versionCreatedAt: version.createdAt })
             : redoTermMarking(node.id))}><ListRestart size={14} /></button>
-        <button type="button" aria-label="Delete" data-tip={node.generating ? 'Stop generation and delete current work' : 'Delete version (or whole node)'} onClick={remove}><Trash size={14} /></button>
+        <button type="button" aria-label="Delete" data-tip={displayedGenerating ? 'Stop generation and delete current work' : 'Delete version (or whole node)'} onClick={remove}><Trash size={14} /></button>
       </div>
     </div>
     <AddNodeMenu key={node.id} nodeId={node.id} />

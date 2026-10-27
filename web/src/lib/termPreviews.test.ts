@@ -11,7 +11,7 @@ import { answerEnrichmentError } from './chat/sharedEnrichment';
 import { redoTermMarking } from './generate';
 import { useChatRuntimeStore } from '@/store/useChatRuntimeStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
-import { spawnChatAnswer } from './chat/actions';
+import { showChatAlternative, spawnChatAnswer } from './chat/actions';
 import { saveManualEdit } from './generate';
 
 const complete = vi.hoisted(() => vi.fn());
@@ -690,6 +690,44 @@ describe('background preview lifecycle', () => {
     expect(chatVersion(11).termPreviews).toBeUndefined();
     expect(complete).toHaveBeenCalledTimes(2);
     expect(useGraphStore.temporal.getState().pastStates).toHaveLength(0);
+  });
+  it('finishes marking and previews for a hidden regenerated answer while alternatives remain switchable', async () => {
+    const project = seedChat();
+    const original = { turnId: 'second', versionCreatedAt: 12 };
+    const regenerated = { turnId: 'second', versionCreatedAt: 13 };
+    let node = appendChatAnswer(project.nodes.n, { turnId: 'second', createdAt: 13, question: 'Again', replaceLatest: true });
+    node = updateChatAnswer(node, regenerated, { body: 'A **cache** helps.' }, { state: 'complete' });
+    useGraphStore.getState().updateNode('n', { ...node, generating: false, streamingText: false, generatingVersionIndex: undefined });
+    let finishMarking = (_value: string) => {};
+    let finishPreviews = (_value: string) => {};
+    complete.mockImplementationOnce(() => new Promise<string>(resolve => { finishMarking = resolve; }))
+      .mockImplementationOnce(() => new Promise<string>(resolve => { finishPreviews = resolve; }));
+    const marking = enrichChatAnswer(project.id, 'n', regenerated, new AbortController().signal);
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
+    const switchVersions = () => {
+      for (const ref of [original, regenerated, original]) {
+        showChatAlternative('n', ref);
+        const current = useGraphStore.getState().project!.nodes.n!;
+        expect(current.versions[current.currentVersionIndex]?.createdAt).toBe(ref.versionCreatedAt);
+        expect(current.chat?.turns.at(-1)?.selectedVersionCreatedAt).toBe(ref.versionCreatedAt);
+        expect(useChatRuntimeStore.getState().views.n?.previews.second).toBeUndefined();
+      }
+    };
+    switchVersions();
+    expect(complete.mock.calls[0]![0].signal.aborted).toBe(false);
+    finishMarking('{"terms":["cache"]}');
+    await marking;
+    await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(2));
+    expect(chatVersion(13).body).toBe('A **[[cache]]** helps.');
+    expect(chatVersion(12).body).toBe('Answer 12 uses a [[cache]].');
+    switchVersions();
+    expect(complete.mock.calls[1]![0].signal.aborted).toBe(false);
+    finishPreviews(result([0]));
+    await vi.waitFor(() => expect(termPreviewFor(chatVersion(13), 'cache')).toBe(explanation));
+    expect(chatVersion(12).termPreviews).toBeUndefined();
+    expect(useGraphStore.getState().project!.nodes.n!.currentVersionIndex).toBe(3);
+    expect(useGraphStore.getState().project!.nodes.n!.chat?.turns.at(-1)?.selectedVersionCreatedAt).toBe(12);
+    expect(complete).toHaveBeenCalledTimes(2);
   });
   it('backfills visible answers on focus, then historical alternatives when viewed, without repeat requests', async () => {
     seedChat();

@@ -21,6 +21,7 @@ import { EditorState } from '@tiptap/pm/state';
 import { ChevronLeft, ChevronRight, Copy, FileDown, FilePlus, FileText, IndentDecrease, IndentIncrease, Save, Sparkles, SquareArrowRight, Trash, WrapText } from 'lucide-react';
 import { useEditorStore } from '@/store/useEditorStore';
 import { useGraphStore } from '@/store/useGraphStore';
+import { removeNodeVersion } from '@/lib/nodeVersions';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useDisplayBody, useHasAnyActive, useIsWholeActive } from '@/store/useRewriteStore';
 import { generateTextVersionFromHeader, modifyNode, saveManualEdit } from '@/lib/generate';
@@ -387,12 +388,9 @@ function EditorWindow({ nodeId }: { nodeId: string }) {
     clearTimeout(saveTimerRef.current);
     pendingSaveRef.current = undefined;
     draftVersionRef.current = undefined;
-    const versions = [...node.versions];
-    versions.splice(verIdx, 1);
-    useGraphStore.getState().updateNode(nodeId, {
-      versions,
-      currentVersionIndex: Math.max(0, verIdx - 1),
-    });
+    const current = useGraphStore.getState().project?.nodes[nodeId];
+    const patch = current && currentVersion && removeNodeVersion(current, currentVersion.createdAt);
+    if (patch) useGraphStore.getState().updateNode(nodeId, patch);
   };
 
   const demote = () =>
