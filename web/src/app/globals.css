@@ -6346,8 +6346,11 @@ select.input {
   position: absolute;
   inset: 0;
   margin: auto;
-  width: 56px;
-  height: 56px;
+  /* Scale with the video surface as the node resizes; the icon follows below. */
+  width: 20%;
+  height: auto;
+  aspect-ratio: 1;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6360,6 +6363,11 @@ select.input {
   outline: none;
   cursor: var(--cur-click);
   transition: background 0.15s, transform 0.15s;
+}
+.sc-media-play-btn > svg {
+  width: 50%;
+  height: 50%;
+  flex-shrink: 0;
 }
 .sc-media-embed-poster:hover .sc-media-play-btn {
   background: color-mix(in oklab, #000 72%, transparent);

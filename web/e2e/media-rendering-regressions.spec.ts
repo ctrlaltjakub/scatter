@@ -95,6 +95,30 @@ for (const provider of ['youtube', 'vimeo'] as const) {
       const cursor = getComputedStyle(sample).cursor; sample.remove(); return cursor;
     });
     expect(expectedCursor).not.toBe('pointer');
+    // Resizing the actual node must scale both the circle and its icon,
+    // preserving centering and proportions independently of canvas zoom.
+    for (const width of [360, 500, 800]) {
+      await page.evaluate(width => {
+        (window as any).testExport('useGraphStore').getState().setVersionSize('Transparent image', {
+          width, bodyMaxHeight: Math.round(width * 320 / 500),
+        });
+      }, width);
+      await expect.poll(() => play.evaluate(el => parseFloat(getComputedStyle(el).width))).toBeCloseTo(width * .2, 0);
+      const sizes = await play.evaluate(el => {
+        const circle = el.getBoundingClientRect(), icon = el.querySelector('svg')!.getBoundingClientRect();
+        const surface = el.parentElement!.getBoundingClientRect();
+        return { diameter: circle.width, height: circle.height, iconWidth: icon.width,
+          iconHeight: icon.height, offsetX: circle.x + circle.width / 2 - surface.x - surface.width / 2,
+          offsetY: circle.y + circle.height / 2 - surface.y - surface.height / 2 };
+      });
+      expect(sizes.height).toBeCloseTo(sizes.diameter, 0);
+      expect(sizes.iconWidth).toBeCloseTo((sizes.diameter - 2) / 2, 0);
+      expect(sizes.iconHeight).toBeCloseTo(sizes.iconWidth, 0);
+      expect(Math.abs(sizes.offsetX)).toBeLessThan(1);
+      expect(Math.abs(sizes.offsetY)).toBeLessThan(1);
+    }
+    await page.evaluate(() => (window as any).testExport('useGraphStore').getState()
+      .setVersionSize('Transparent image', { width: 500, bodyMaxHeight: 320 }));
     for (const theme of ['mocha', 'latte']) for (const zoom of [.55, 1, 1.5]) {
       await page.evaluate(({ theme, zoom }) => {
         document.documentElement.dataset.theme = theme;
