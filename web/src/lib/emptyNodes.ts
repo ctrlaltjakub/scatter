@@ -26,6 +26,7 @@ export function spawnEmptyTextNode(parentId: string, contentType: 'encyclopedic'
     versions: [{ header: contentType === 'explain' ? 'New explanation' : 'New topic', body: '',
       contentType, generatedBy: 'manual', createdAt: Date.now(), emptyText: true, initialTextFrame: true,
       language: normalizeLanguage(useSettingsStore.getState().generationLanguage),
+      ...(sourceImage ? { imageContext: structuredClone(sourceImage) } : {}),
       width: MIN_NODE_W, minWidth: MIN_NODE_W, bodyMaxHeight: MIN_NODE_W * (contentType === 'explain' ? .625 : 1.25) - APPROX_HEADER_CHROME }],
   };
   const sourceVersion = parent.versions[parent.currentVersionIndex];

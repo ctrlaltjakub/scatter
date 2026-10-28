@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { ArrowUp, FileText, Image as ImageIcon, Paperclip, Square, X } from 'lucide-react';
 import { useGraphStore } from '@/store/useGraphStore';
@@ -19,6 +19,14 @@ export function ChatComposer({ nodeId }: { nodeId: string }) {
   const projectId = useGraphStore((state) => state.project?.id ?? '');
   const node = useGraphStore((state) => state.project?.nodes[nodeId]);
   const parent = useGraphStore((state) => node?.chat?.parentNodeId ? state.project?.nodes[node.chat.parentNodeId] : undefined);
+  const arrows = useGraphStore(state => state.project?.arrows);
+  const originSnapshotId = node?.chat?.originSnapshotId;
+  const snapshots = node?.chat?.parentSnapshots;
+  const parentId = parent?.id;
+  const hasImageOrigin = useMemo(() => !!(originSnapshotId && snapshots?.[originSnapshotId])
+    || !!(parentId && Object.values(arrows ?? {}).some(arrow => arrow.kind === 'auto'
+      && arrow.toNodeId === nodeId && arrow.fromNodeId === parentId && arrow.sourceImage)),
+  [originSnapshotId, snapshots, parentId, arrows, nodeId]);
   const draft = useChatRuntimeStore((state) => state.drafts[chatDraftKey(projectId, nodeId)] ?? EMPTY_CHAT_DRAFT);
   const selection = useNodeTextSelectionStore(state => state.selection?.nodeId === nodeId ? state.selection : null);
   const selectedReference = chatSelectionReference(node, selection);
@@ -34,7 +42,7 @@ export function ChatComposer({ nodeId }: { nodeId: string }) {
   const enterSends = useSettingsStore((state) => state.followUpEnterSends);
   const area = useRef<HTMLTextAreaElement>(null);
   const [attaching, setAttaching] = useState(false);
-  const availability = chatAvailability(parent);
+  const availability = chatAvailability(hasImageOrigin ? undefined : parent);
   const busy = !!node?.generating || compacting;
   const setDraft = useChatRuntimeStore.getState().setDraft;
   useEffect(() => {

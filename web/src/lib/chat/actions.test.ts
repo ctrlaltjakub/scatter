@@ -14,6 +14,8 @@ import { prepareImageQuestion } from '@/lib/imageRegionInput';
 import { useNodeTextSelectionStore } from '@/store/useNodeTextSelectionStore';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { enrichChatAnswer } from './enrichment';
+import { collectReferencedAssetIds } from '@/lib/projectBranch';
+import { LANGUAGES, languageInfo } from '@/lib/languages';
 
 vi.mock('@/lib/generate', () => ({ spawnNearParent: () => ({ x: 800, y: 100 }) }));
 // Prompt edits enqueue a settings save. This lifecycle test does not provide
@@ -50,6 +52,81 @@ const chat = () => useGraphStore.getState().project!.nodes.chat!;
 beforeEach(() => { vi.restoreAllMocks(); setup(); });
 
 describe('chat action lifecycle', () => {
+  it('retains an empty image-selection chat’s context through reload, parent replacement/deletion, new turns, regeneration and fork', async () => {
+    const requests: StreamChatOpts[] = [];
+    vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* (_key, options) {
+      requests.push(options); yield { delta: 'A complete response.', done: true };
+    });
+    const context = { sourceMedia: { source: 'asset' as const, kind: 'image' as const, assetId: 'original', mime: 'image/png' },
+      sourceVersionCreatedAt: 1, regions: [{ x: .2, y: .1, width: .3, height: .4 }, { x: .6, y: .2, width: .1, height: .2 }] };
+    const id = startChat('parent', { sourceImage: context })!;
+    const read = () => useGraphStore.getState().project!.nodes[id]!;
+    expect(requests).toHaveLength(0);
+    expect(useGraphStore.temporal.getState().pastStates).toHaveLength(1);
+    expect(collectReferencedAssetIds([read()])).toContain('original');
+    expect(Object.values(read().chat!.parentSnapshots)[0]?.imageContext).toEqual(context);
+    expect(Object.values(read().chat!.parentSnapshots)[0]?.imageContext).not.toBe(context);
+    const saved = JSON.parse(JSON.stringify(useGraphStore.getState().project!));
+    saved.nodes.parent.versions[0].contentType = 'media';
+    saved.nodes.parent.versions[0].media = { kind: 'video', source: 'asset', assetId: 'different' };
+    saved.nodes.parent.generating = true;
+    useGraphStore.setState({ project: saved });
+    await submitChat(id, { question: 'What is this?' });
+    expect(read().versions.at(-1)?.chat?.state).toBe('complete');
+    const snapshotId = read().chat!.originSnapshotId;
+    expect(read().versions.at(-1)?.chat?.parentSnapshotId).toBe(snapshotId);
+    const withoutParent = structuredClone(useGraphStore.getState().project!);
+    delete withoutParent.nodes.parent; withoutParent.arrows = {};
+    useGraphStore.setState({ project: withoutParent });
+    await submitChat(id, { question: 'Unrelated: what is 17 × 23?' });
+    await submitChat(id, { regenerate: true });
+    expect(requests).toHaveLength(3);
+    for (const request of requests) {
+      const images = request.conversation?.flatMap(message => message.images ?? []);
+      expect(images?.map(image => image.id)).toEqual(['whole-image-context', 'selected-image-parts']);
+    }
+    expect(requests[1]?.conversation?.at(-1)?.content).toBe('Unrelated: what is 17 × 23?');
+    expect(Object.keys(read().chat!.parentSnapshots)).toHaveLength(1);
+    expect(vi.mocked(prepareImageQuestion).mock.lastCall?.[1]).toEqual(context);
+    const forkId = forkChat(id, conversationPath(read()).at(-1)!)!;
+    await submitChat(forkId, { question: 'And what is in the selected part?' });
+    expect(requests.at(-1)?.conversation?.flatMap(message => message.images ?? [])).toHaveLength(2);
+    expect(collectReferencedAssetIds([useGraphStore.getState().project!.nodes[forkId]!])).toContain('original');
+  });
+  it.each(LANGUAGES)('keeps an image-selection question and its $name language separate from reference instructions', async ({ id: language, sample }) => {
+    const requests: StreamChatOpts[] = [];
+    vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* (_key, options) {
+      requests.push(options); yield { delta: sample, done: true };
+    });
+    useSettingsStore.setState({ generationLanguage: language });
+    const id = startChat('parent', { sourceImage: { sourceMedia: { kind: 'image', source: 'asset', assetId: 'image', mime: 'image/png' },
+      regions: [{ x: .2, y: .1, width: .3, height: .4 }] } })!;
+    await submitChat(id, { question: sample });
+    expect(requests[0]?.conversation?.at(-1)?.content).toBe(sample);
+    expect(requests[0]?.conversation?.[0]?.content).toContain(languageInfo(language).name);
+    expect(requests[0]?.conversation?.some(message => message.images?.length === 2)).toBe(true);
+    expect(useGraphStore.getState().project!.nodes[id]!.versions.at(-1)?.language).toBe(language);
+  });
+  it('adopts an older chat’s arrow selection once and reports missing image data without sending an incomplete request', async () => {
+    const context = { sourceMedia: { kind: 'image' as const, source: 'asset' as const, assetId: 'original', mime: 'image/png' },
+      regions: [{ x: .2, y: .1, width: .3, height: .4 }] };
+    const project = useGraphStore.getState().project!;
+    useGraphStore.setState({ project: { ...project, arrows: { a: { ...project.arrows.a!, sourceImage: context } } } });
+    const invoke = vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* () {
+      yield { delta: 'A complete answer.', done: true };
+    });
+    vi.mocked(prepareImageQuestion).mockRejectedValueOnce(new Error('The source image is missing. Upload it again before continuing.'));
+    draft('What is this?');
+    await submitChat('chat');
+    expect(invoke).not.toHaveBeenCalled();
+    expect(useChatRuntimeStore.getState().views.chat?.error).toContain('source image is missing');
+    expect(chat().chat?.originSnapshotId).toBeTruthy();
+    expect(collectReferencedAssetIds([chat()])).toContain('original');
+    await submitChat('chat', { regenerate: true });
+    expect(chat().versions.at(-1)?.chat?.state).toBe('complete');
+    expect(invoke).toHaveBeenCalledOnce();
+    expect(vi.mocked(prepareImageQuestion).mock.lastCall?.[1]).toEqual(context);
+  });
   it('keeps fact-check display pinned during answer navigation and closes it on sending', async () => {
     vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* () { yield { delta: 'A response.', done: true }; });
     draft('First'); await submitChat('chat'); draft('Second'); await submitChat('chat');

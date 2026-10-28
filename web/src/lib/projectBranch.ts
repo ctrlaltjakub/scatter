@@ -34,6 +34,7 @@ export function collectReferencedAssetIds(
   for (const node of nodes) {
     for (const snapshot of Object.values(node.chat?.parentSnapshots ?? {})) {
       if (snapshot.media?.assetId) ids.add(snapshot.media.assetId);
+      if (snapshot.imageContext?.sourceMedia.assetId) ids.add(snapshot.imageContext.sourceMedia.assetId);
     }
     for (const version of node.versions) {
       for (const attachment of version.chat?.attachments ?? []) {

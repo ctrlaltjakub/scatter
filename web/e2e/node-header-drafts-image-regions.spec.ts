@@ -98,6 +98,80 @@ test('Add node follows a live image selection and uses the existing atlas arrow'
   await page.screenshot({ path: info.outputPath('selection-node-atlas.png') });
 });
 
+for (const [kind, label] of [['chat', 'Chat'], ['encyclopedic', 'Encyclopedic node'], ['explain', 'Explanation']]) {
+  test(`selected-image Add node supplies whole image and region to ${kind} generation`, async ({ page }) => {
+    test.setTimeout(90_000);
+    const requests: any[] = [];
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await start(page);
+    await page.route('https://fixture.invalid/**', async route => {
+      if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204,
+        headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*' } });
+      const payload = route.request().postDataJSON();
+      requests.push(payload);
+      const system = payload.messages?.[0]?.content ?? '';
+      const content = system.includes('REQUIRED RESPONSE FORMAT') ? '{"terms":[]}'
+        : kind === 'encyclopedic' ? 'The selected **red square** is a **four-sided shape**.\n\n- Shape\n  - Sides: Four edges surround it.\n  - Corners: Four right angles meet.\n- Color\n  - Fill: The surface is red.\n  - Contrast: The background is pale.'
+          : 'The selected **red square** is a **four-sided shape**.';
+      await route.fulfill({ contentType: 'text/event-stream', headers: { 'access-control-allow-origin': '*' },
+        body: `data: ${JSON.stringify({ choices: [{ delta: { content }, finish_reason: null }] })}\n\n`
+          + `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n` });
+    });
+    await seed(page, 'media');
+    await page.evaluate(() => {
+      const get = (window as any).nodeEditExport;
+      const settings = get('useSettingsStore');
+      settings.setState({ providers: [{ id: 'fixture', preset: 'custom', baseUrl: 'https://fixture.invalid/v1', apiKey: 'fixture-not-a-real-key', enabledModels: ['vision'] }],
+        activeModelRef: { providerId: 'fixture', model: 'vision' }, secondaryUseSameModel: true, generationLanguage: 'en',
+        cameraAutoPan: Object.fromEntries(Object.keys(settings.getState().cameraAutoPan).map(key => [key, false])) });
+      get('useModelCatalogStore').getState().setCatalog('fixture', [{ id: 'vision', contextLength: 128000,
+        caps: { tools: true, vision: true, textOutput: true } }]);
+    });
+    const image = page.locator('[data-image-selection-surface] img');
+    await expect.poll(() => image.evaluate(el => (el as HTMLImageElement).naturalWidth)).toBe(700);
+    const box = (await image.boundingBox())!;
+    await page.mouse.move(box.x + box.width * .08, box.y + box.height * .12);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * .26, box.y + box.height * .42, { steps: 6 });
+    await page.mouse.up();
+    await page.getByRole('button', { name: 'Add node (selection)', exact: true }).click();
+    await page.getByRole('button', { name: label, exact: true }).click();
+    const id = await page.evaluate(() => {
+      const graph = (window as any).nodeEditExport('useGraphStore');
+      const project = JSON.parse(JSON.stringify(graph.getState().project));
+      const id = project.selection[0];
+      const node = project.nodes[id];
+      // Restore the saved child independently, as when its original image was
+      // deleted or this branch was imported into another project.
+      node.position = { x: 0, y: 0 }; node.frozen = true;
+      graph.setState({ project: { ...project, nodes: { [id]: node }, rootNodeId: id, arrows: {}, viewport: { x: 520, y: 100, zoom: .8 } }, panTo: null });
+      return id;
+    });
+    expect(requests).toHaveLength(0);
+    const prompt = page.getByRole('textbox', { name: kind === 'chat' ? 'Chat message' : 'Node generation prompt', exact: true });
+    await prompt.fill('What is this?');
+    await page.getByRole('button', { name: kind === 'chat' ? 'Send message' : 'Generate', exact: true }).click();
+    await expect.poll(() => requests.filter(request => request.messages?.some((message: any) => Array.isArray(message.content)
+      && message.content.some((part: any) => part.type === 'image_url'))).length).toBe(1);
+    const request = requests.find(request => request.messages?.some((message: any) => Array.isArray(message.content)));
+    const parts = request.messages.flatMap((message: any) => Array.isArray(message.content) ? message.content : [{ type: 'text', text: message.content }]);
+    const urls = parts.filter((part: any) => part.type === 'image_url').map((part: any) => part.image_url.url);
+    expect(urls).toHaveLength(2);
+    expect(urls[0]).not.toBe(urls[1]);
+    expect(parts.map((part: any) => part.text ?? '').join('\n')).toContain('If the request is unrelated, answer it without forcing a connection');
+    const sizes = await page.evaluate(async (urls: string[]) => Promise.all(urls.map(url => new Promise<number[]>((resolve, reject) => {
+      const image = new Image(); image.onload = () => resolve([image.naturalWidth, image.naturalHeight]); image.onerror = reject; image.src = url;
+    }))), urls);
+    expect(sizes[0]).toEqual([700, 440]);
+    expect(sizes[1]![0]).toBeLessThan(200);
+    expect(sizes[1]![1]).toBeLessThan(200);
+    await expect(page.locator(`[data-node-id="${id}"]`)).toContainText('four-sided shape');
+    await expect.poll(() => page.evaluate(id => (window as any).nodeEditExport('useGraphStore').getState().project.nodes[id].generating, id)).toBe(false);
+    expect(errors).toEqual([]);
+  });
+}
+
 test('simple headers edit seamlessly from every side panel and save on outside click', async ({ page }, info) => {
   test.setTimeout(120_000);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));

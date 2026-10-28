@@ -1,4 +1,4 @@
-import type { ModelRole, Settings } from '@/store/types';
+import type { ImageRegion, ModelRole, Settings } from '@/store/types';
 import type { ChatMessage, TaskVariant } from './promptBuilder';
 import { buildMessages, buildFollowUpClassifierPrompt } from './promptBuilder';
 import { effectivePrompt, substitute } from './promptDefaults';
@@ -10,6 +10,7 @@ import { GenerationResponseError, parseResponseJson, validateEncyclopedicOutput 
 import { parseFactCheckFinding } from './factCheckCore';
 import { languageInfo, languageDirection } from './languages';
 import { factCheckMessages } from './factCheckRequest';
+import { imageQuestionInstructions } from './imageQuestionPrompt';
 
 export interface ModelDiagnosticCase {
   id: string; label: string; role: ModelRole;
@@ -18,6 +19,8 @@ export interface ModelDiagnosticCase {
   /** Task allowance before scaling by the user's configured role limit. */
   tokens?: number;
   requests: number;
+  /** Exercise the same whole-image + close-up preparation as selected-image nodes. */
+  imageRegions?: ImageRegion[];
   validate?: (text: string) => void;
   modify?: boolean;
   repair?: boolean;
@@ -161,6 +164,15 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
     cases.push({ id: 'search', label: 'Web search and source links', role, kind: 'search', requests: 2, tokens: 4000,
       messages: pair(prompt('nodeWebSearch'), 'Search once for the official NASA page explaining lunar eclipses. State one fact and cite the exact source URL.') });
   }
+  const imageRegions = [{ x: .5, y: 0, width: .5, height: .7 }];
+  const imageReference = imageQuestionInstructions({ sourceMedia: { kind: 'image', source: 'link' }, regions: imageRegions }, settings.customPrompts);
+  cases.push({ id: 'image-selection', label: 'New nodes from image selections · whole image and selected part', role: 'main', kind: 'vision', requests: 1, tokens: 2000, imageRegions,
+    messages: pair(prompt('chatBase'), imageReference + '\n\nWhat is this selected shape? Also read the test code from the whole image. Return JSON with shape (English name), color (English name), and code.'),
+    validate: text => { const value = parseResponseJson(text); assertDiagnostic(value.shape === 'circle' && value.color === 'blue' && /ORBIT\s*27/i.test(String(value.code)),
+      'The answer did not distinguish the selected blue circle from the whole-image context. Check vision support and the Image questions system prompts.'); } });
+  cases.push({ id: 'image-selection-unrelated', label: 'Image reference · follow an unrelated user request', role: 'main', kind: 'vision', requests: 1, tokens: 1200, imageRegions,
+    messages: pair(prompt('chatBase'), imageReference + '\n\nUnrelated question: what is 17 multiplied by 23? Reply with only the number.'),
+    validate: text => assertDiagnostic(text.trim() === '391', 'The image reference interfered with the user’s unrelated request. Check the Image questions: context system prompt.') });
   for (const role of ['main', 'interactive'] as const) cases.push({ id: 'tools', label: 'Tool call and result round-trip', role, kind: 'tools', requests: 2,
     messages: pair(prompt('chatBase'), 'Retrieve my study code using search_conversation. Do not guess; it is not included in this message. Return the retrieved code.') });
   cases.push({ id: 'vision', label: 'Screenshot vision / visual readout', role: 'interactive', kind: 'vision', requests: 1, tokens: 2000,

@@ -29,7 +29,7 @@ import { chatSelectionReference } from './selectionReference';
 import { createArrowSourceSelection } from '@/lib/sourceSelection';
 import { prepareImageQuestion } from '@/lib/imageRegionInput';
 import { secondaryTaskCompletion } from '@/lib/secondaryTaskCompletion';
-import { appendChatAnswer, answerVersion, captureChatParent, chatInitialBodyHeight,
+import { appendChatAnswer, answerVersion, captureChatParent, captureChatImageParent, chatInitialBodyHeight,
   conversationPath, createChatNode, CHAT_NODE_WIDTH, selectLatestChatAlternative, updateChatAnswer,
   removeChatAnswer, removeLastChatTurn, forkChatConversation, validMemoryForPath } from './model';
 import { chatAvailability } from './availability';
@@ -65,6 +65,7 @@ export function startChat(parentId: string, origin: Partial<Pick<Arrow, 'sourceA
   const bodyHeight = chatInitialBodyHeight(typeof window === 'undefined' ? 900 : window.innerHeight);
   // Starting a chat never calls AI. Even a generating parent allows a draft.
   const node = createChatNode({ id: newId(), createdAt: Date.now(), parentNodeId: usableContext ? parentId : undefined,
+    parentSnapshot: origin.sourceImage ? captureChatImageParent(parent, origin.sourceImage, newId()) : undefined,
     informationChunking: useSettingsStore.getState().defaultChatInformationChunking,
     groupId: parent.groupId, position: spawnNearParent(parent, Object.values(project.nodes), CHAT_NODE_WIDTH,
       bodyHeight + APPROX_HEADER_CHROME, origin.sourceImage?.regions), bodyHeight });
@@ -251,7 +252,17 @@ export async function submitChat(nodeId: string, options: {
   const attachments = options.regenerate ? previous?.chat?.attachments : draft.attachments;
   if ((!question && !attachments?.length) || (regenerate && !lastRef)) return;
   const parent = node.chat.parentNodeId ? project.nodes[node.chat.parentNodeId] : undefined;
-  const availability = chatAvailability(options.parentSnapshot ? undefined : parent);
+  const previousParent = previous?.chat?.parentSnapshotId ? node.chat.parentSnapshots[previous.chat.parentSnapshotId] : undefined;
+  // Older selection-created chats stored the region only on their arrow. Adopt
+  // it once, then retain it independently of the arrow and mutable parent.
+  const legacyOrigin = !node.chat.originSnapshotId && parent
+    ? Object.values(project.arrows).find(arrow => arrow.kind === 'auto' && arrow.toNodeId === nodeId && arrow.fromNodeId === parent.id)?.sourceImage
+    : undefined;
+  const originSnapshot = (node.chat.originSnapshotId ? node.chat.parentSnapshots[node.chat.originSnapshotId] : undefined)
+    ?? (legacyOrigin && parent ? captureChatImageParent(parent, legacyOrigin, newId()) : undefined);
+  const fixedSnapshot = options.parentSnapshot
+    ?? (options.regenerate && (previousParent?.selectedText || previousParent?.imageContext) ? previousParent : originSnapshot);
+  const availability = chatAvailability(fixedSnapshot ? undefined : parent);
   if (!availability.available) { runtime.view(nodeId, { error: availability.reason }); return; }
   const evidencePanel = useCitationPanelStore.getState();
   if (evidencePanel.nodeId === nodeId && evidencePanel.mode === 'fact-check') evidencePanel.close();
@@ -267,11 +278,10 @@ export async function submitChat(nodeId: string, options: {
     : chatSelectionReference(node, useNodeTextSelectionStore.getState().selection) ?? draft.reference);
   const createdAt = freshTimestamp(node);
   const ref = { turnId: regenerate ? lastRef!.turnId : newId(), versionCreatedAt: createdAt };
-  const previousParent = previous?.chat?.parentSnapshotId ? node.chat.parentSnapshots[previous.chat.parentSnapshotId] : undefined;
+  if (originSnapshot && !node.chat.originSnapshotId) node = { ...node, chat: { ...node.chat,
+    originSnapshotId: originSnapshot.id, parentSnapshots: { ...node.chat.parentSnapshots, [originSnapshot.id]: originSnapshot } } };
   node = appendChatAnswer(node, { turnId: ref.turnId, createdAt, question, replaceLatest: regenerate,
-    parentSnapshot: options.parentSnapshot ?? (options.regenerate && (previousParent?.selectedText || previousParent?.imageContext)
-      ? previousParent
-      : parent ? captureChatParent(parent, newId()) : undefined),
+    parentSnapshot: fixedSnapshot ?? (parent ? captureChatParent(parent, newId()) : undefined),
     metadata: { providerId: provider.id, reference, attachments, sourceMode: snapshot.mode, activeSourceIds: snapshot.sourceIds,
       ...(options.evidence ? { informationChunking: previous?.chat?.informationChunking } : {}) } });
   const language = options.evidence ? versionLanguage(previous) : normalizeLanguage(options.language ?? settings.generationLanguage);

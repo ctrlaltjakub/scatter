@@ -1,4 +1,4 @@
-import type { NodeVersion, ScatterNode } from '@/store/types';
+import type { ImageQuestionContext, NodeVersion, ScatterNode } from '@/store/types';
 import type {
   ChatAnswerMetadata, ChatAnswerRef, ChatConversation, ChatParentSnapshot,
 } from '@/store/chatTypes';
@@ -24,6 +24,7 @@ export function chatFallbackTitle(question: string): string {
 export function createChatNode(options: {
   id: string; createdAt: number; position: { x: number; y: number };
   parentNodeId?: string; groupId?: string; bodyHeight: number; informationChunking?: boolean;
+  parentSnapshot?: ChatParentSnapshot;
 }): ScatterNode {
   const { id, createdAt, position, parentNodeId, groupId } = options;
   return {
@@ -37,7 +38,8 @@ export function createChatNode(options: {
     }],
     chat: {
       title: 'Chat', informationChunking: options.informationChunking ?? true, turns: [], parentNodeId,
-      parentSnapshots: {}, compactions: [],
+      originSnapshotId: options.parentSnapshot?.id,
+      parentSnapshots: options.parentSnapshot ? { [options.parentSnapshot.id]: structuredClone(options.parentSnapshot) } : {}, compactions: [],
     },
   };
 }
@@ -85,6 +87,17 @@ export function captureChatParent(parent: ScatterNode, id: string, allowPending 
   });
 }
 
+/** A selected image is a fixed reference, not the parent's future active version. */
+export function captureChatImageParent(parent: ScatterNode, imageContext: ImageQuestionContext, id: string): ChatParentSnapshot {
+  const index = parent.versions.findIndex(version => version.createdAt === imageContext.sourceVersionCreatedAt);
+  const snapshot = captureChatParent({ ...parent, currentVersionIndex: index >= 0 ? index : parent.currentVersionIndex }, id, true);
+  snapshot.imageContext = structuredClone(imageContext);
+  snapshot.media = structuredClone(imageContext.sourceMedia);
+  snapshot.versionCreatedAt = imageContext.sourceVersionCreatedAt ?? snapshot.versionCreatedAt;
+  snapshot.fingerprint += JSON.stringify([snapshot.selectedText, snapshot.imageContext]);
+  return snapshot;
+}
+
 export function appendChatAnswer(node: ScatterNode, options: {
   turnId: string; createdAt: number; question: string;
   metadata?: Partial<Omit<ChatAnswerMetadata, 'turnId' | 'question' | 'contextPath'>>;
@@ -106,8 +119,8 @@ export function appendChatAnswer(node: ScatterNode, options: {
     item.nodeId === snapshot.nodeId && item.versionCreatedAt === snapshot.versionCreatedAt
     && item.fingerprint === snapshot.fingerprint
     && item.header === snapshot.header && item.body === snapshot.body
-    && JSON.stringify([item.media, item.sources, item.internalSources])
-      === JSON.stringify([snapshot.media, snapshot.sources, snapshot.internalSources]));
+    && JSON.stringify([item.media, item.sources, item.internalSources, item.selectedText, item.imageContext])
+      === JSON.stringify([snapshot.media, snapshot.sources, snapshot.internalSources, snapshot.selectedText, snapshot.imageContext]));
   const parentSnapshot = knownSnapshot ?? snapshot;
   const metadata: ChatAnswerMetadata = {
     ...options.metadata,
@@ -259,6 +272,7 @@ export function forkChatConversation(
         ? turnIds.get(version.chat.outlineParentTurnId) : undefined,
     } });
   const usedSnapshots = new Set(copy.versions.flatMap((version) => version.chat?.parentSnapshotId ? [version.chat.parentSnapshotId] : []));
+  if (chat.originSnapshotId) usedSnapshots.add(chat.originSnapshotId);
   chat.parentSnapshots = Object.fromEntries(Object.entries(chat.parentSnapshots).filter(([id]) => usedSnapshots.has(id)));
   // Memory and its history entry can share an object after structuredClone.
   // Replacing it prevents remapping the history entry's IDs a second time.

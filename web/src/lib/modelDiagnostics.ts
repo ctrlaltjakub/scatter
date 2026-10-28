@@ -1,4 +1,5 @@
 import type { ModelRole, ProviderAccount, Settings } from '@/store/types';
+import { prepareImageQuestion } from './imageRegionInput';
 import type { ChatChunk, ModelInfo, ProviderConversationMessage, StreamChatOpts, TextToolDefinition } from '@/providers/types';
 import { getAdapter, getImageAdapter, resolveBaseUrl } from '@/providers/registry';
 import { isLocalSearchPreset, validSearchEndpoint, validServerSearch } from '@/providers/modelSearch';
@@ -129,6 +130,9 @@ export async function runDiagnosticJob(job: DiagnosticJob, settings: Settings, s
   const outputTokens = role === 'secondary' ? secondaryOutputTokens(settings, test.tokens ?? 2000)
     : role === 'interactive' ? normalizeGenerationLimit('interactiveOutputTokenCap', settings.interactiveOutputTokenCap)
     : mainOutputTokens(settings.outputTokenCap, test.tokens);
+  const imageInputs = test.kind !== 'vision' ? undefined : test.imageRegions
+    ? (await prepareImageQuestion('model-diagnostic', { sourceMedia: { kind: 'image', source: 'link', url: fixture, mime: 'image/png' }, regions: test.imageRegions }, signal)).images
+    : [{ id: 'fixture', url: fixture, detail: 'high' as const }];
   let requests = 0;
   const invoke = (overrides: Partial<StreamChatOpts> = {}) => {
     if (++requests > test.requests) throw new Error('The test reached its request limit. No automatic retry was made.');
@@ -137,7 +141,7 @@ export async function runDiagnosticJob(job: DiagnosticJob, settings: Settings, s
       serverSearch: provider.serverSearch, allowUnverifiedCapabilities: true,
       webSearchPolicy: test.kind === 'fact-check' ? FACT_CHECK_SEARCH_POLICY : { required: true, toolChoice: 'auto', maxToolCalls: 1 },
       reasoningEffort: role === 'secondary' ? 'low' : role === 'interactive' ? settings.interactiveReasoningEffort : settings.reasoningEffort,
-      ...(test.kind === 'vision' ? { imageInputs: [{ id: 'fixture', url: fixture, detail: 'high' as const }] } : {}), ...overrides };
+      ...(imageInputs ? { imageInputs } : {}), ...overrides };
     return invokeOverride ? invokeOverride(options) : getAdapter(provider.preset).streamChat(provider.apiKey, options, resolveBaseUrl(provider.preset, provider.baseUrl));
   };
   if (test.kind === 'tools') {

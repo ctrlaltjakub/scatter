@@ -11,7 +11,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/readme/hero-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="assets/readme/hero-light.png">
-  <img src="assets/readme/hero-dark.png" alt="A music theory project with connected explanations, a chat, videos, an image and an interactive step sequencer.">
+  <img src="assets/readme/hero-dark.png" alt="A music theory project with term previews, connected explanations, a chat, a video, selected image regions and an interactive step sequencer.">
 </picture>
 
 [Main capabilities](#main-capabilities) · [Get started](#get-started) · [Run locally](#run-locally) · [Privacy and data](#privacy-and-data) · [License](#license)

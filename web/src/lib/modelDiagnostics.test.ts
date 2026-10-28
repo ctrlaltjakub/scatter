@@ -8,10 +8,31 @@ import type { ChatChunk, StreamChatOpts } from '@/providers/types';
 import { LANGUAGES } from './languages';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { DEFAULT_PROMPTS } from './promptDefaults';
+import * as imageInput from './imageRegionInput';
 const settings = (): Settings => ({ ...DEFAULT_SETTINGS, providers: [{ id: 'local', preset: 'custom', apiKey: 'private-test-key', baseUrl: 'http://localhost:1234/v1', enabledModels: ['a', 'b'] }],
   activeModelRef: { providerId: 'local', model: 'a' }, secondaryUseSameModel: true, secondaryModelRef: undefined, interactiveModelRef: undefined, imageModelRef: null });
 afterEach(() => vi.useRealTimers());
 describe('model diagnostics', () => {
+  it.each(['image-selection', 'image-selection-unrelated'])('checks %s with the real image preparation path and one model request', async id => {
+    const cfg = settings();
+    cfg.customPrompts = { imageQuestion: 'Image reference contract: {selection}', imageQuestionSelection: 'Selection coordinates: {regions}' };
+    const job = diagnosticPlan(cfg, 'main').find(job => job.test.id === id)!;
+    const prepared = vi.spyOn(imageInput, 'prepareImageQuestion').mockResolvedValue({ instructions: '', images: [
+      { id: 'whole-image-context', url: 'data:image/png;base64,whole', detail: 'high' },
+      { id: 'selected-image-parts', url: 'data:image/png;base64,crop', detail: 'high' },
+    ] });
+    try {
+      const invoke = vi.fn(async function* (options: StreamChatOpts) {
+        expect(options.imageInputs?.map(image => image.id)).toEqual(['whole-image-context', 'selected-image-parts']);
+        expect(options.messages[1]?.content).toContain('Image reference contract: Selection coordinates:');
+        yield { delta: id === 'image-selection' ? '{"shape":"circle","color":"blue","code":"ORBIT 27"}' : '391', done: true };
+      });
+      expect((await runDiagnosticJob(job, cfg, new AbortController().signal, 'fixture-url', invoke)).status).toBe('passed');
+      expect(prepared).toHaveBeenCalledWith('model-diagnostic', expect.objectContaining({ regions: job.test.imageRegions }), expect.any(AbortSignal));
+      expect(invoke).toHaveBeenCalledOnce();
+      expect(() => job.test.validate?.(id === 'image-selection' ? '{"shape":"triangle","color":"red","code":"ORBIT 27"}' : 'A blue circle.')).toThrow();
+    } finally { prepared.mockRestore(); }
+  });
   it.each([true, false])('fact-check diagnostics require actual search evidence (search=%s), with one attempt', async searched => {
     const cfg = settings(); cfg.providers[0]!.preset = 'openrouter';
     const job = diagnosticPlan(cfg, 'main').find(job => job.test.id === 'fact-check-search')!;

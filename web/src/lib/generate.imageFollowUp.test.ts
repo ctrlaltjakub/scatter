@@ -4,7 +4,8 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { useModelCatalogStore } from '@/store/useModelCatalogStore';
 import { DEFAULT_SETTINGS, type ImageQuestionContext } from '@/store/types';
 import { askImageFollowUp } from './imageFollowUp';
-import { cancelNodeGeneration, regenerateNode, retryGeneration } from './generate';
+import { cancelNodeGeneration, generateEmptyTextNode, regenerateNode, retryGeneration } from './generate';
+import { spawnEmptyTextNode } from './emptyNodes';
 import { resetGenerationSessionsForTests } from './generationSession';
 import { prepareImageQuestion } from './imageRegionInput';
 import { collectReferencedAssetIds } from './projectBranch';
@@ -57,6 +58,42 @@ beforeEach(() => {
 afterEach(() => { resetGenerationSessionsForTests(); useGraphStore.getState().setProject(null); });
 const regions = [{ x: .5, y: 0, width: .5, height: 1 }];
 describe('image follow-up generation', () => {
+  it.each(['encyclopedic', 'explain'] as const)('keeps a manually added %s node’s selected image through reload, parent deletion and regeneration', async type => {
+    fake.route = type === 'explain' ? 'explain' : 'explore';
+    const graph = useGraphStore.getState();
+    const context: ImageQuestionContext = { sourceMedia: graph.project!.nodes.image!.versions[0]!.media!, sourceVersionCreatedAt: 1,
+      regions: [...regions, { x: .1, y: .2, width: .1, height: .1 }] };
+    const id = spawnEmptyTextNode('image', type, context)!;
+    const read = () => useGraphStore.getState().project!.nodes[id]!;
+    expect(collectReferencedAssetIds([read()])).toContain('original-image');
+    expect(fake.calls).toHaveLength(0);
+    expect(read().versions[0]!.imageContext).toEqual(context);
+    expect(read().versions[0]!.imageContext).not.toBe(context);
+    expect(read().versions[0]!.imageContext!.regions).not.toBe(context.regions);
+    const saved = JSON.parse(JSON.stringify(useGraphStore.getState().project!));
+    delete saved.nodes.image; saved.arrows = {}; saved.rootNodeId = id;
+    useGraphStore.setState({ project: saved });
+    await generateEmptyTextNode(id, 'What is this shape?');
+    expect(read().generationError).toBeUndefined();
+    expect(read().versions[0]?.body).toContain('circle');
+    expect(fake.calls.filter(call => call.imageInputs?.length)).toHaveLength(1);
+    expect(fake.calls.find(call => call.imageInputs)?.imageInputs).toHaveLength(2);
+    expect(vi.mocked(prepareImageQuestion).mock.lastCall?.[1]).toEqual(context);
+    await regenerateNode(id);
+    expect(read().generationError).toBeUndefined();
+    expect(read().versions.at(-1)?.imageContext).toEqual(context);
+    expect(prepareImageQuestion).toHaveBeenCalledTimes(2);
+    expect(fake.calls.filter(call => call.imageInputs?.length)).toHaveLength(2);
+  });
+  it('recovers selected-image context from the arrow of an older blank', async () => {
+    const context: ImageQuestionContext = { sourceMedia: useGraphStore.getState().project!.nodes.image!.versions[0]!.media!, regions };
+    const id = spawnEmptyTextNode('image', 'explain', context)!;
+    const node = useGraphStore.getState().project!.nodes[id]!;
+    useGraphStore.getState().updateNode(id, { versions: [{ ...node.versions[0]!, imageContext: undefined }] });
+    await generateEmptyTextNode(id, 'Explain this');
+    expect(vi.mocked(prepareImageQuestion).mock.lastCall?.[1]).toEqual(context);
+    expect(useGraphStore.getState().project!.nodes[id]!.versions[0]!.imageContext).toEqual(context);
+  });
   it.each(['explore', 'explain'])('routes %s through the normal generation pipeline with images and one undo step', async (route) => {
     fake.route = route;
     const onSpawn = vi.fn();

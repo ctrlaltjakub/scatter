@@ -99,6 +99,8 @@ export interface ChatConversation {
   turns: ChatTurn[];
   /** Semantic parent can differ from the graph parent of a fork. */
   parentNodeId?: string;
+  /** Immutable image-selection context captured before the first question. */
+  originSnapshotId?: string;
   parentSnapshots: Record<string, ChatParentSnapshot>;
   forkedFrom?: { nodeId: string } & ChatAnswerRef;
   memory?: ChatMemory;

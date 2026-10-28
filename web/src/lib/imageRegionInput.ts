@@ -4,6 +4,8 @@ import type { ChatImageInput } from '@/providers/types';
 import { loadAsset } from '@/opfs/assetsIO';
 import { isStillImageMedia } from './imageEditActions';
 import { imageRegionBounds, imageRegionsDescription, normalizedImageRegions } from './imageRegions';
+import { imageQuestionInstructions } from './imageQuestionPrompt';
+import { useSettingsStore } from '@/store/useSettingsStore';
 
 export async function loadImageMediaBlob(projectId: string, media: MediaRef, signal?: AbortSignal): Promise<Blob> {
   if (!isStillImageMedia(media)) throw new Error('This action is available only for still images, not GIFs or videos.');
@@ -194,7 +196,7 @@ export async function prepareImageQuestion(
     signal?.throwIfAborted();
     return {
       images,
-      instructions: configuredPrompt('imageQuestion', { plural: bounds ? 's' : '', selection: bounds ? configuredPrompt('imageQuestionSelection', { regions: imageRegionsDescription(context.regions) }) : configuredPrompt('imageQuestionWhole') }),
+      instructions: imageQuestionInstructions(context, useSettingsStore.getState().customPrompts),
     };
   } finally { source.close(); }
 }

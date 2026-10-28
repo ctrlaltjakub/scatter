@@ -2518,10 +2518,14 @@ export async function generateEmptyTextNode(nodeId: string, prompt: string): Pro
   const explain = currentContentType(node) === 'explain';
   const projectId = graph.project!.id;
   const createdAt = nextTextVersionTimestamp(node);
-  const parentId = Object.values(graph.project!.arrows).find(arrow => arrow.kind === 'auto' && arrow.toNodeId === nodeId)?.fromNodeId ?? null;
+  const incoming = Object.values(graph.project!.arrows).find(arrow => arrow.kind === 'auto' && arrow.toNodeId === nodeId);
+  const parentId = incoming?.fromNodeId ?? null;
+  // Recover blanks created before selected image context was saved on versions.
+  const imageContext = current.imageContext ?? incoming?.sourceImage;
   const headerParts: HeaderParts = { subject: question, ...(explain ? { suffix: 'explained' } : {}) };
   graph.updateNode(nodeId, { generationError: undefined, versions: node.versions.map((version, index) =>
     index === node.currentVersionIndex ? { ...version, emptyText: false, initialTextFrame: true, createdAt,
+      ...(imageContext ? { imageContext: structuredClone(imageContext) } : {}),
       language: normalizeLanguage(settings.generationLanguage),
       header: flattenHeaderParts(headerParts), headerParts, generatedBy: explain ? 'explain' : 'follow-up' } : version) });
   await streamIntoVersion(nodeId, explain ? { kind: 'explain', term: question } : { kind: 'follow-up', question }, parentId,
