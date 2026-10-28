@@ -386,7 +386,7 @@ describe('redesigned settings', () => {
     expect(reading).not.toHaveTextContent('Paragraph layout applies to');
     expect(reading).not.toHaveTextContent('Menus, buttons, and interactive content');
     expect(screen.getAllByRole('heading', { level: 3 }).map(heading => heading.textContent))
-      .toEqual(['Color theme', 'Decorative motion', 'Reading', 'Canvas accents', 'Group colors']);
+      .toEqual(['Color theme', 'Reading', 'Canvas accents', 'Group colors']);
     go('Canvas and nodes');
     expect(screen.queryByRole('heading', { name: 'Reading', level: 3 })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Group colors', level: 3 })).toBeNull();

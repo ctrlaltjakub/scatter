@@ -167,6 +167,7 @@ describe('ProjectRestorationScreen', () => {
   });
 
   it('keeps orbits stationary for system reduced motion and animates after an explicit override', () => {
+    localStorage.setItem('scatter-decorative-motion', 'system');
     vi.mocked(matchMedia).mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MediaQueryList);
     let scene!: AuraScene;
     auraLayerMock.mockImplementation((props: { sceneFactory: AuraSceneFactory }) => {

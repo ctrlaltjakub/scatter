@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.use({ browserName: process.env.SCATTER_TEST_BROWSER === 'firefox' ? 'firefox' : 'chromium' });
 
-test('topic motion respects the system by default and the device override survives reload', async ({ page }, info) => {
+test('topic motion overrides reduced motion by default with a persistent developer control', async ({ page }, info) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1500, height: 1100 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -29,21 +29,34 @@ test('topic motion respects the system by default and the device override surviv
   const track = page.locator('.marquee-track').first();
   await expect(track).toBeVisible({ timeout: 20_000 });
   const transform = () => track.evaluate(el => getComputedStyle(el).transform);
+  const initial = await transform();
+  await expect.poll(transform).not.toBe(initial);
+  await page.getByRole('button', { name: 'Open settings', exact: true }).click();
+  await expect(page.getByLabel('Animation', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Developer', exact: true }).click();
+  await page.getByRole('button', { name: 'Decorative motion', exact: true }).click();
+  await expect(page.getByLabel('Animation', { exact: true })).toHaveValue('animate');
+  await page.getByLabel('Animation', { exact: true }).selectOption('system');
+  await page.screenshot({ path: info.outputPath('motion-settings.png') });
+  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
   const still = await transform();
   await page.waitForTimeout(250);
   expect(await transform()).toBe(still);
-  await page.getByRole('button', { name: 'Open settings', exact: true }).click();
-  await page.getByLabel('Animation', { exact: true }).selectOption('animate');
-  await page.screenshot({ path: info.outputPath('motion-settings.png') });
-  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
-  const before = await transform();
-  await expect.poll(transform).not.toBe(before);
   await page.reload();
   await expect(track).toBeVisible({ timeout: 20_000 });
   const reloaded = await transform();
-  await expect.poll(transform).not.toBe(reloaded);
+  await page.waitForTimeout(250);
+  expect(await transform()).toBe(reloaded);
   await page.getByRole('button', { name: 'Open settings', exact: true }).click();
-  await expect(page.getByLabel('Animation', { exact: true })).toHaveValue('animate');
+  await page.getByRole('button', { name: 'Developer', exact: true }).click();
+  await page.getByRole('button', { name: 'Decorative motion', exact: true }).click();
+  await expect(page.getByLabel('Animation', { exact: true })).toHaveValue('system');
+  await page.getByLabel('Animation', { exact: true }).selectOption('animate');
+  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+  const resumed = await transform();
+  await expect.poll(transform).not.toBe(resumed);
+  await page.getByRole('button', { name: 'Open settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Decorative motion', exact: true }).click();
   await page.getByLabel('Animation', { exact: true }).selectOption('pause');
   await page.getByRole('button', { name: 'Close settings', exact: true }).click();
   const paused = await transform();

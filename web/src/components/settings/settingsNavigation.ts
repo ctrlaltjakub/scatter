@@ -3,8 +3,8 @@ export const SETTINGS_PAGES = [
     id: 'theme',
     group: 'Personalize',
     label: 'Appearance',
-    description: 'Choose the theme, motion, node fonts, paragraph layout, and canvas colors.',
-    keywords: 'theme light dark system accent hue shift saturation brightness desaturate darken color arrows resize font typeface dyslexic comic sans monospace custom fonts upload ttf otf woff woff2 reading paragraph sentence lines justify group colors automatic assignment opposites golden angle hierarchy reassign decorative motion animation animate pause remote desktop loading orbits orbs topic suggestions',
+    description: 'Choose the theme, node fonts, paragraph layout, and canvas colors.',
+    keywords: 'theme light dark system accent hue shift saturation brightness desaturate darken color arrows resize font typeface dyslexic comic sans monospace custom fonts upload ttf otf woff woff2 reading paragraph sentence lines justify group colors automatic assignment opposites golden angle hierarchy reassign',
   },
   {
     id: 'canvas',
@@ -75,7 +75,7 @@ export const SETTINGS_PAGES = [
     label: 'Developer',
     description: 'Fine-grained controls and tools for testing the app.',
     keywords:
-      'dev physics forces friction repulsion spring gravity bullet sizing dimensions width height reset overwrite warning diagnostics google drive renewal conflict welcome start screen pixel ruler webgl failure',
+      'dev physics forces friction repulsion spring gravity bullet sizing dimensions width height reset overwrite warning diagnostics google drive renewal conflict welcome start screen pixel ruler webgl failure decorative motion animation animate pause remote desktop loading orbits orbs topic suggestions',
   },
 ] as const;
 

@@ -619,7 +619,6 @@ function GroupColorSettings() {
 
 /* ---- Theme tab ---- */
 function ThemeTab() {
-  const motion = useDecorativeMotion();
   const [theme, setThemeState] = useState<ThemePreference>(DEFAULT_THEME_PREFERENCE);
   const accentHueShift = useSettingsStore((s) => s.accentHueShift);
   const setAccentHueShift = useSettingsStore((s) => s.setAccentHueShift);
@@ -678,18 +677,6 @@ function ThemeTab() {
               </span>
             </button>
           ))}
-        </div>
-      </SettingsSection>
-      <SettingsSection title="Decorative motion"
-        description={<>Controls <strong>loading-screen orbits and moving topic suggestions</strong> on this device. <strong>System</strong> follows your browser’s reduced-motion preference, which Remote Desktop can enable. Choose <strong>Animate</strong> to override it.</>}>
-        <div className="field-row">
-          <label className="field-label" htmlFor="decorative-motion">Animation</label>
-          <select id="decorative-motion" className="input" value={motion.preference}
-            onChange={event => setDecorativeMotionPreference(event.target.value as DecorativeMotionPreference)}>
-            <option value="system">System</option>
-            <option value="animate">Animate</option>
-            <option value="pause">Pause</option>
-          </select>
         </div>
       </SettingsSection>
       <ReadingSettings />
@@ -1389,6 +1376,7 @@ function DataTab({ onClose }: { onClose: () => void }) {
 
 /* ---- Dev tab ---- */
 function DevTab({ onClose }: { onClose: () => void }) {
+  const motion = useDecorativeMotion();
   const activeProject = useGraphStore((s) => s.project);
   const setForceWelcomeA = useSettingsStore((s) => s.setForceWelcomeA);
   const pixelRulerMode = useSettingsStore((s) => s.pixelRulerMode);
@@ -1430,6 +1418,18 @@ function DevTab({ onClose }: { onClose: () => void }) {
           description={<>Controls how <strong>bullets expand and collapse</strong> to fit inside nodes.</>}
         >
           <BulletSizingSliders />
+        </CollapsibleSection>
+        <CollapsibleSection title="Decorative motion"
+          description={<>Controls <strong>loading-screen orbits and moving topic suggestions</strong> on this device. <strong>Animate</strong> overrides system reduced motion and is the default. <strong>System</strong> follows your browser’s preference.</>}>
+          <div className="field-row">
+            <label className="field-label" htmlFor="decorative-motion">Animation</label>
+            <select id="decorative-motion" className="input" value={motion.preference}
+              onChange={event => setDecorativeMotionPreference(event.target.value as DecorativeMotionPreference)}>
+              <option value="animate">Animate</option>
+              <option value="system">System</option>
+              <option value="pause">Pause</option>
+            </select>
+          </div>
         </CollapsibleSection>
         <CollapsibleSection
           title="Developer options"

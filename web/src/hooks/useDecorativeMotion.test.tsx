@@ -10,7 +10,13 @@ beforeEach(() => {
 });
 afterEach(() => { localStorage.removeItem('scatter-decorative-motion'); vi.unstubAllGlobals(); });
 
-it('respects system reduced motion by default and changes live when the OS setting changes', () => {
+it('animates by default even when the system requests reduced motion', () => {
+  const { result } = renderHook(useDecorativeMotion);
+  expect(result.current).toEqual({ preference: 'animate', reduced: false });
+});
+
+it('respects system reduced motion when requested and changes live when the OS setting changes', () => {
+  localStorage.setItem('scatter-decorative-motion', 'system');
   const { result, unmount } = renderHook(useDecorativeMotion);
   expect(result.current).toEqual({ preference: 'system', reduced: true });
   const onChange = media.addEventListener.mock.calls[0]![1];
@@ -33,16 +39,16 @@ it('explicitly restores motion despite a remote desktop system signal and persis
   expect(next.result.current.reduced).toBe(true);
 });
 
-it('updates other open tabs and falls back to System after clearing local data', () => {
+it('updates other open tabs and falls back to Animate after clearing local data', () => {
   const { result } = renderHook(useDecorativeMotion);
   act(() => {
-    localStorage.setItem('scatter-decorative-motion', 'animate');
+    localStorage.setItem('scatter-decorative-motion', 'pause');
     window.dispatchEvent(new StorageEvent('storage', { key: 'scatter-decorative-motion' }));
   });
-  expect(result.current.reduced).toBe(false);
+  expect(result.current.reduced).toBe(true);
   act(() => {
     localStorage.removeItem('scatter-decorative-motion');
     window.dispatchEvent(new StorageEvent('storage', { key: null }));
   });
-  expect(result.current).toEqual({ preference: 'system', reduced: true });
+  expect(result.current).toEqual({ preference: 'animate', reduced: false });
 });

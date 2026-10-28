@@ -12,8 +12,8 @@ function readPreference(): DecorativeMotionPreference {
   if (memoryPreference !== undefined) return memoryPreference;
   try {
     const value = localStorage.getItem(KEY);
-    return value === 'animate' || value === 'pause' ? value : 'system';
-  } catch { return memoryPreference ?? 'system'; }
+    return value === 'system' || value === 'pause' ? value : 'animate';
+  } catch { return memoryPreference ?? 'animate'; }
 }
 
 /** Device-local accessibility/display preference, excluded from project undo and sync. */
@@ -28,7 +28,7 @@ function snapshot(): string {
   const reduced = preference === 'pause' || (preference === 'system' && window.matchMedia?.(QUERY).matches);
   return `${preference}:${reduced ? 'reduce' : 'animate'}`;
 }
-const serverSnapshot = () => 'system:reduce';
+const serverSnapshot = () => 'animate:animate';
 
 function subscribe(update: () => void) {
   const media = window.matchMedia?.(QUERY);
@@ -43,8 +43,8 @@ function subscribe(update: () => void) {
   };
 }
 
-/** Some remote desktops report reduced motion even without a deliberate user choice.
- * Keep respecting it by default, with an explicit override for these two animations. */
+/** Animate by default even when remote desktops report reduced motion. Users
+ * can explicitly follow their system preference or pause these two animations. */
 export function useDecorativeMotion() {
   const value = useSyncExternalStore(subscribe, snapshot, serverSnapshot);
   return { preference: value.split(':')[0] as DecorativeMotionPreference, reduced: value.endsWith(':reduce') };
