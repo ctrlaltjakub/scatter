@@ -8,7 +8,11 @@
 
 <p align="center"><strong>Free, private</strong> and (almost<a href="#license">*</a>) open source · Bring your own <strong>API keys</strong> · Supports <strong>cloud or local models</strong></p>
 
-![A music theory project with connected explanations, a chat, videos, an image and an interactive step sequencer.](assets/readme/hero.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/hero-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="assets/readme/hero-light.png">
+  <img src="assets/readme/hero-dark.png" alt="A music theory project with connected explanations, a chat, videos, an image and an interactive step sequencer.">
+</picture>
 
 [Main capabilities](#main-capabilities) · [Get started](#get-started) · [Run locally](#run-locally) · [Privacy and data](#privacy-and-data) · [License](#license)
 

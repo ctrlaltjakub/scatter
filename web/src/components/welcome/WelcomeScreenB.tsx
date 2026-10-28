@@ -19,6 +19,7 @@ import { ImageProjectInput } from './ImageProjectInput';
 import { WelcomeTabShape } from './WelcomeTabShape';
 import { startChatRoot, startImageRoot, type ProjectStartImage } from '@/lib/projectStart';
 import { generationLanguagePrompt } from '@/lib/generationLanguage';
+import { useDecorativeMotion } from '@/hooks/useDecorativeMotion';
 
 type StartMode = 'topic' | 'chat' | 'image';
 const START_MODES: StartMode[] = ['chat', 'topic', 'image'];
@@ -64,6 +65,7 @@ function cleanRecommendation(raw: string | null): string {
 }
 
 export function WelcomeScreenB({ onOpenSettings, settingsOpen = false }: { onOpenSettings?: () => void; settingsOpen?: boolean }) {
+  const { reduced: reducedMotion } = useDecorativeMotion();
   const [mode, setMode] = useState<StartMode>('chat');
   const [topic, setTopic] = useState('');
   const [chatPrompt, setChatPrompt] = useState('');
@@ -422,6 +424,9 @@ export function WelcomeScreenB({ onOpenSettings, settingsOpen = false }: { onOpe
                   // Duration scales with the row's pill count → constant speed.
                   animationDuration: `${row.length * (ROW_SECS_PER_ITEM[ri] ?? 9)}s`,
                   animationDelay: `-${ROW_DELAYS[ri]}s`,
+                  animationPlayState: reducedMotion ? 'paused' : 'running',
+                  // Overrides the pre-hydration system CSS only after the hook resolves.
+                  animationName: 'marquee-left',
                 }}
               >
                 {[...row, ...row].map((title, ti) => (

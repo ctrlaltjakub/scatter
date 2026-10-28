@@ -6,6 +6,8 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { useSyncStore } from '@/store/useSyncStore';
 import { defaultSyncConfig } from '@/sync/local';
 import { useModelCatalogStore } from '@/store/useModelCatalogStore';
+import { setDecorativeMotionPreference } from '@/hooks/useDecorativeMotion';
+import type { AuraScene, AuraSceneFactory } from '@/lib/asciiAura/sceneState';
 
 const auraLayerMock = vi.hoisted(() => vi.fn());
 
@@ -23,7 +25,8 @@ class ResizeObserverStub {
 
 describe('ProjectRestorationScreen', () => {
   beforeEach(() => {
-    auraLayerMock.mockClear();
+    auraLayerMock.mockReset();
+    localStorage.removeItem('scatter-decorative-motion');
     useSettingsStore.setState({ groupColorAssignment: 'opposites', providers: [], activeModelRef: null, reasoningEffort: 'low' });
     useSyncStore.setState({ config: defaultSyncConfig() });
     document.documentElement.dataset.theme = 'latte';
@@ -38,6 +41,7 @@ describe('ProjectRestorationScreen', () => {
   });
 
   afterEach(() => {
+    localStorage.removeItem('scatter-decorative-motion');
     vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -160,5 +164,24 @@ describe('ProjectRestorationScreen', () => {
     expect(onMinimumCycleComplete).not.toHaveBeenCalled();
     act(() => { vi.advanceTimersByTime(1); });
     expect(onMinimumCycleComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps orbits stationary for system reduced motion and animates after an explicit override', () => {
+    vi.mocked(matchMedia).mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MediaQueryList);
+    let scene!: AuraScene;
+    auraLayerMock.mockImplementation((props: { sceneFactory: AuraSceneFactory }) => {
+      scene = props.sceneFactory({ onDirty: vi.fn() });
+    });
+    render(<ProjectRestorationScreen />);
+    expect(requestAnimationFrame).not.toHaveBeenCalled();
+    act(() => setDecorativeMotionPreference('animate'));
+    const before = [...scene.state.auras.values()].map(aura => ({ ...aura.rect }));
+    const frame = vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0];
+    act(() => frame(performance.now() + 1250));
+    const after = [...scene.state.auras.values()].map(aura => ({ ...aura.rect }));
+    expect(after).not.toEqual(before);
+    vi.mocked(requestAnimationFrame).mockClear();
+    act(() => setDecorativeMotionPreference('pause'));
+    expect(requestAnimationFrame).not.toHaveBeenCalled();
   });
 });

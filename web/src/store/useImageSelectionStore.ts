@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import type { ImageRegion } from './types';
+import type { ImageQuestionContext, ImageRegion } from './types';
 import { useGraphStore } from './useGraphStore';
 import { normalizedImageRegions } from '@/lib/imageRegions';
 import { useImageEditorStore } from './useImageEditorStore';
 import { useLiveViewportStore } from './useLiveViewportStore';
 import { GROUP_LABEL_ZOOM_THRESHOLD } from '@/lib/asciiAura/groupLabels';
+import { isStillImageMedia } from '@/lib/imageEditActions';
 
 export interface ImageSelection {
   projectId: string;
@@ -58,4 +59,18 @@ useImageEditorStore.subscribe(clearUnavailableSelection);
 /** A completed action must not clear a newer gesture or another image's selection. */
 export function clearCapturedImageSelection(captured: ImageSelection | null) {
   if (captured && useImageSelectionStore.getState().selection === captured) useImageSelectionStore.getState().clear();
+}
+
+/** Capture before node creation changes focus and clears the transient gesture. */
+export function captureImageSelection(nodeId: string): ImageQuestionContext | undefined {
+  const selection = useImageSelectionStore.getState().selection;
+  const project = useGraphStore.getState().project;
+  const node = project?.nodes[nodeId];
+  const version = node?.versions[node.currentVersionIndex];
+  if (!selection || selection.nodeId !== nodeId || selection.projectId !== project?.id
+    || selection.versionCreatedAt !== version?.createdAt || !imageSelectionAllowed(nodeId)
+    || !isStillImageMedia(version?.media)) return;
+  const regions = normalizedImageRegions(selection.regions);
+  if (!regions.length) return;
+  return structuredClone({ sourceMedia: version.media, sourceVersionCreatedAt: version.createdAt, regions });
 }

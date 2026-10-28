@@ -4,9 +4,11 @@ The [project README](../../README.md) opens with the linked pixel-font wordmark,
 a one-line description and one hero screenshot. Feature sections are text-only;
 keep the body left-aligned and use the screenshot for the visual overview.
 
-`hero.png` shows a music theory project with text, media and an interactive
-step sequencer. When replacing it, update the image path and alt text in the
-project README to match the new capture.
+`hero-dark.png` and `hero-light.png` show a music theory project with text,
+media and an interactive step sequencer. The README uses a `<picture>` element
+to select the screenshot matching the visitor's theme, with the dark capture
+as the fallback. When replacing them, update both captures and keep the shared
+alt text accurate.
 
 For the hero capture:
 

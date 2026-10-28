@@ -15,7 +15,7 @@ import { classifyFile, classifyLink } from './mediaDetect';
 import { fitMediaToWidth, CHOOSER_MAX_W, MEDIA_CHOOSER_W } from './mediaSizing';
 import { saveAsset } from '@/opfs/assetsIO';
 import { fetchOEmbed } from './oembed';
-import type { ScatterNode, NodeVersion, MediaRef } from '@/store/types';
+import type { ImageQuestionContext, ScatterNode, NodeVersion, MediaRef } from '@/store/types';
 
 import { MEDIA_EXPLAINER } from './mediaInstructions';
 export { MEDIA_EXPLAINER, isMac } from './mediaInstructions';
@@ -82,7 +82,7 @@ function setMedia(nodeId: string, media: MediaRef, header: string, opts?: { skip
 // ── spawn ────────────────────────────────────────────────────────────────
 
 /** Spawn an empty media node connected to `parentId`. No AI. */
-export function spawnMediaNode(parentId: string): string {
+export function spawnMediaNode(parentId: string, sourceImage?: ImageQuestionContext): string {
   const proj = useGraphStore.getState().project;
   if (!proj) return '';
   const parent = proj.nodes[parentId];
@@ -91,7 +91,7 @@ export function spawnMediaNode(parentId: string): string {
   const newNode: ScatterNode = {
     id,
     type: 'media',
-    position: spawnNearParent(parent, Object.values(proj.nodes)),
+    position: spawnNearParent(parent, Object.values(proj.nodes), undefined, undefined, sourceImage?.regions),
     frozen: false,
     groupId: parent.groupId,
     // Empty media nodes are a fixed width; spawn at it so the first paint is
@@ -101,7 +101,7 @@ export function spawnMediaNode(parentId: string): string {
   };
   useGraphStore.getState().addNodeWithArrow(
     newNode,
-    { id: newId(), fromNodeId: parentId, toNodeId: id, kind: 'auto' },
+    { id: newId(), fromNodeId: parentId, toNodeId: id, kind: 'auto', ...(sourceImage ? { sourceImage } : {}) },
   );
   useGraphStore.getState().requestPanTo(id, parentId, 'newNodes');
   return id;

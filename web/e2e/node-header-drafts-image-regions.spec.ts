@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+test.use({ browserName: process.env.SCATTER_TEST_BROWSER === 'firefox' ? 'firefox' : 'chromium' });
+
 async function expose(page: Page) {
   await page.evaluate(() => {
     const win = window as any;
@@ -55,6 +57,46 @@ async function seed(page: Page, kind: string, chain = false) {
   }, { kind, chain });
   await expect(page.locator(`[data-node-id="${kind}"]`)).toBeVisible();
 }
+
+test('Add node follows a live image selection and uses the existing atlas arrow', async ({ page }, info) => {
+  await start(page);
+  await seed(page, 'media');
+  const surface = page.locator('[data-image-selection-surface]');
+  await expect(surface).toBeVisible();
+  const image = surface.locator('img');
+  await expect.poll(() => image.evaluate(el => (el as HTMLImageElement).naturalWidth)).toBe(700);
+  await expect(page.getByRole('button', { name: 'Add node', exact: true })).toBeVisible();
+  const box = (await image.boundingBox())!;
+  const drag = async (x: number, y: number) => {
+    await page.mouse.move(box.x + box.width * x, box.y + box.height * y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * (x + .16), box.y + box.height * (y + .22), { steps: 6 });
+    await page.mouse.up();
+  };
+  await drag(.1, .12);
+  await expect(page.getByRole('button', { name: 'Add node (selection)', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Add node', exact: true })).toBeVisible();
+  await drag(.1, .12);
+  await page.keyboard.down('Control');
+  await drag(.6, .5);
+  await page.keyboard.up('Control');
+  const captured = await page.evaluate(() => (window as any).nodeEditExport('useImageSelectionStore').getState().selection.regions);
+  expect(captured).toHaveLength(2);
+  await page.getByRole('button', { name: 'Add node (selection)', exact: true }).click();
+  await page.getByRole('button', { name: 'Markdown text node', exact: true }).click();
+  await expect(page.locator('[data-node-id]')).toHaveCount(2);
+  const arrow = await page.evaluate(() => Object.values((window as any).nodeEditExport('useGraphStore').getState().project.arrows)[0] as any);
+  expect(arrow.sourceImage.regions).toEqual(captured);
+  const frame = page.locator(`[data-image-atlas="media"] [data-image-atlas-frame="${arrow.id}"]`);
+  const interior = page.locator(`[data-image-arrow-interior="${arrow.id}"]`);
+  await expect(frame).toBeAttached();
+  await expect(interior).toBeAttached();
+  expect(await frame.getAttribute('stroke-dasharray')).toBe(await interior.getAttribute('stroke-dasharray'));
+  await expect(page.locator('.image-region-overlay')).toHaveCount(0);
+  await page.mouse.move(1500, 100);
+  await page.screenshot({ path: info.outputPath('selection-node-atlas.png') });
+});
 
 test('simple headers edit seamlessly from every side panel and save on outside click', async ({ page }, info) => {
   test.setTimeout(120_000);

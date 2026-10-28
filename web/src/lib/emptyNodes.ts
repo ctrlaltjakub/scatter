@@ -1,4 +1,4 @@
-import type { ScatterNode } from '@/store/types';
+import type { ImageQuestionContext, ScatterNode } from '@/store/types';
 import { useGraphStore } from '@/store/useGraphStore';
 import { currentContentType } from './nodeContentType';
 import { MIN_NODE_W, APPROX_HEADER_CHROME } from './nodeSize';
@@ -14,14 +14,14 @@ export function isEmptyTextNode(node: ScatterNode): boolean {
 }
 
 /** Creating a connected blank card is a structural edit: one node+arrow undo step. */
-export function spawnEmptyTextNode(parentId: string, contentType: 'encyclopedic' | 'explain'): string | null {
+export function spawnEmptyTextNode(parentId: string, contentType: 'encyclopedic' | 'explain', sourceImage?: ImageQuestionContext): string | null {
   const graph = useGraphStore.getState();
   const project = graph.project;
   const parent = project?.nodes[parentId];
   if (!project || !parent) return null;
   const id = newId();
   const node: ScatterNode = {
-    id, type: 'manual-empty', position: spawnNearParent(parent, Object.values(project.nodes)),
+    id, type: 'manual-empty', position: spawnNearParent(parent, Object.values(project.nodes), undefined, undefined, sourceImage?.regions),
     frozen: false, groupId: parent.groupId, currentVersionIndex: 0,
     versions: [{ header: contentType === 'explain' ? 'New explanation' : 'New topic', body: '',
       contentType, generatedBy: 'manual', createdAt: Date.now(), emptyText: true, initialTextFrame: true,
@@ -30,6 +30,7 @@ export function spawnEmptyTextNode(parentId: string, contentType: 'encyclopedic'
   };
   const sourceVersion = parent.versions[parent.currentVersionIndex];
   graph.addNodeWithArrow(node, { id: newId(), fromNodeId: parentId, toNodeId: id, kind: 'auto',
+    ...(sourceImage ? { sourceImage } : {}),
     sourceAnswer: sourceVersion?.chat ? { turnId: sourceVersion.chat.turnId, versionCreatedAt: sourceVersion.createdAt } : undefined });
   graph.setSelection([id]);
   graph.requestPanTo(id, parentId, 'newNodes');
@@ -38,14 +39,14 @@ export function spawnEmptyTextNode(parentId: string, contentType: 'encyclopedic'
 
 /** Notes share the detached answer format without a conversation or an AI call.
  * Creation is undoable; opening its editor is navigation. */
-export function spawnMarkdownNote(parentId: string): string | null {
+export function spawnMarkdownNote(parentId: string, sourceImage?: ImageQuestionContext): string | null {
   const graph = useGraphStore.getState();
   const project = graph.project;
   const parent = project?.nodes[parentId];
   if (!project || !parent) return null;
   const id = newId();
   const node: ScatterNode = {
-    id, type: 'manual-empty', position: spawnNearParent(parent, Object.values(project.nodes)),
+    id, type: 'manual-empty', position: spawnNearParent(parent, Object.values(project.nodes), undefined, undefined, sourceImage?.regions),
     groupId: parent.groupId, frozen: false, currentVersionIndex: 0,
     versions: [{ header: 'Markdown text', body: '', contentType: 'answer', markdownNote: true,
       language: normalizeLanguage(useSettingsStore.getState().generationLanguage),
@@ -55,6 +56,7 @@ export function spawnMarkdownNote(parentId: string): string | null {
   };
   const source = parent.versions[parent.currentVersionIndex];
   graph.addNodeWithArrow(node, { id: newId(), fromNodeId: parentId, toNodeId: id, kind: 'auto',
+    ...(sourceImage ? { sourceImage } : {}),
     sourceAnswer: source?.chat ? { turnId: source.chat.turnId, versionCreatedAt: source.createdAt } : undefined });
   graph.setSelection([id]);
   graph.requestPanTo(id, parentId, 'newNodes');

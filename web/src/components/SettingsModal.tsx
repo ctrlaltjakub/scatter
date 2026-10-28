@@ -2,6 +2,7 @@
 import { ReleaseFooter } from './settings/ReleaseFooter';
 import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { colorToCss } from '@/lib/groupColor';
+import { useDecorativeMotion, setDecorativeMotionPreference, type DecorativeMotionPreference } from '@/hooks/useDecorativeMotion';
 import {
   X,
   Trash2,
@@ -618,6 +619,7 @@ function GroupColorSettings() {
 
 /* ---- Theme tab ---- */
 function ThemeTab() {
+  const motion = useDecorativeMotion();
   const [theme, setThemeState] = useState<ThemePreference>(DEFAULT_THEME_PREFERENCE);
   const accentHueShift = useSettingsStore((s) => s.accentHueShift);
   const setAccentHueShift = useSettingsStore((s) => s.setAccentHueShift);
@@ -676,6 +678,18 @@ function ThemeTab() {
               </span>
             </button>
           ))}
+        </div>
+      </SettingsSection>
+      <SettingsSection title="Decorative motion"
+        description={<>Controls <strong>loading-screen orbits and moving topic suggestions</strong> on this device. <strong>System</strong> follows your browser’s reduced-motion preference, which Remote Desktop can enable. Choose <strong>Animate</strong> to override it.</>}>
+        <div className="field-row">
+          <label className="field-label" htmlFor="decorative-motion">Animation</label>
+          <select id="decorative-motion" className="input" value={motion.preference}
+            onChange={event => setDecorativeMotionPreference(event.target.value as DecorativeMotionPreference)}>
+            <option value="system">System</option>
+            <option value="animate">Animate</option>
+            <option value="pause">Pause</option>
+          </select>
         </div>
       </SettingsSection>
       <ReadingSettings />

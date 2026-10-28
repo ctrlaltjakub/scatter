@@ -9,7 +9,7 @@ import { getGenProject, updateGenNode } from '@/store/bgGen';
 import { getProviderById } from '@/store/providerSelectors';
 import { getAdapter, resolveBaseUrl } from '@/providers/registry';
 import type { ProviderConversationMessage, TextToolDefinition } from '@/providers/types';
-import type { InteractiveBuild, NodeVersion, Project, ScatterNode } from '@/store/types';
+import type { ImageQuestionContext, InteractiveBuild, NodeVersion, Project, ScatterNode } from '@/store/types';
 import { beginGenerationSession, cancelGenerationSession, finishGenerationSession, getGenerationSession, markGenerationTextReceived, registerGenerationController } from './generationSession';
 import { newId } from './ids';
 import { spawnNearParent } from './generate';
@@ -68,18 +68,19 @@ function settleBuildHistory(projectId: string, nodeId: string, version: NodeVers
 }
 
 /** Creating the node/arrow and building its content are separate undoable intents. */
-export function spawnInteractiveNode(parentId: string, generate = false): string | null {
+export function spawnInteractiveNode(parentId: string, generate = false, sourceImage?: ImageQuestionContext): string | null {
   const graph = useGraphStore.getState(); const project = graph.project;
   const parent = project?.nodes[parentId];
   if (!project || !parent) return null;
   const source = parent.versions[parent.currentVersionIndex];
   const id = newId();
   const node: ScatterNode = { id, type: 'interactive', frozen: false, groupId: parent.groupId,
-    position: spawnNearParent(parent, Object.values(project.nodes), INTERACTIVE_NODE_W, 660), currentVersionIndex: 0,
+    position: spawnNearParent(parent, Object.values(project.nodes), INTERACTIVE_NODE_W, 660, sourceImage?.regions), currentVersionIndex: 0,
     versions: [{ header: 'New interactive', body: '', createdAt: Date.now(), generatedBy: 'interactive',
       contentType: 'interactive', interactiveStandalone: true, width: INTERACTIVE_NODE_W }],
   };
   graph.addNodeWithArrow(node, { id: newId(), fromNodeId: parentId, toNodeId: id, kind: 'auto',
+    ...(sourceImage ? { sourceImage } : {}),
     sourceAnswer: source?.chat ? { turnId: source.chat.turnId, versionCreatedAt: source.createdAt } : undefined });
   graph.setSelection([id]); graph.requestPanTo(id, parentId, 'newNodes');
   if (generate) void buildInteractiveNode(id, source?.header ?? 'Interactive program', 'create');

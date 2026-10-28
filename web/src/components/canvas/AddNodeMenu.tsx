@@ -7,19 +7,26 @@ import { spawnMediaNode } from '@/lib/mediaActions';
 import { spawnEmptyTextNode, spawnMarkdownNote } from '@/lib/emptyNodes';
 import { spawnInteractiveNode } from '@/lib/interactiveActions';
 import { useGraphStore } from '@/store/useGraphStore';
+import { captureImageSelection, useImageSelectionStore } from '@/store/useImageSelectionStore';
 
 export function AddNodeMenu({ nodeId }: { nodeId: string }) {
   const [open, setOpen] = useSidePanelDisclosure('add');
+  const selectedPart = useImageSelectionStore(s => s.selection?.nodeId === nodeId && s.selection.regions.length > 0);
   const add = (kind: 'chat' | 'media' | 'encyclopedic' | 'explain' | 'interactive' | 'note') => {
-    const id = kind === 'note' ? spawnMarkdownNote(nodeId) : kind === 'chat' ? startChat(nodeId) : kind === 'media' ? spawnMediaNode(nodeId) : kind === 'interactive' ? spawnInteractiveNode(nodeId) : spawnEmptyTextNode(nodeId, kind);
+    const sourceImage = captureImageSelection(nodeId);
+    const id = kind === 'note' ? spawnMarkdownNote(nodeId, sourceImage)
+      : kind === 'chat' ? startChat(nodeId, sourceImage ? { sourceImage } : {})
+        : kind === 'media' ? spawnMediaNode(nodeId, sourceImage)
+          : kind === 'interactive' ? (sourceImage ? spawnInteractiveNode(nodeId, false, sourceImage) : spawnInteractiveNode(nodeId))
+            : spawnEmptyTextNode(nodeId, kind, sourceImage);
     if (id) useGraphStore.getState().setSelection([id]);
     setOpen(false);
   };
   return <>
     <button type="button" className={`side-action side-action-add-node side-disclosure-trigger${open ? ' toggled' : ''}`}
       aria-expanded={open} aria-controls={`add-node-${nodeId}`} onClick={() => setOpen(!open)}
-      data-tip="Create a connected node">
-      <span className="side-action-icon"><Plus size={15} /></span><span className="side-action-label">Add node</span>
+      data-tip={selectedPart ? 'Create a node connected to the selected image region' : 'Create a connected node'}>
+      <span className="side-action-icon"><Plus size={15} /></span><span className="side-action-label">{selectedPart ? 'Add node (selection)' : 'Add node'}</span>
       <span className="side-disclosure-chevron"><ChevronRight size={14} className="sc-collapse-chevron" style={{ transform: open ? 'rotate(90deg)' : undefined }} /></span>
     </button>
     <AnimatedCollapse open={open} id={`add-node-${nodeId}`}><div className="side-disclosure-content">
