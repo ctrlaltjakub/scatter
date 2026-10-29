@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.use({ browserName: process.env.SCATTER_TEST_BROWSER === 'firefox' ? 'firefox' : 'chromium' });
 
-test('topic motion overrides reduced motion by default with a persistent developer control', async ({ page }, info) => {
+test('topic suggestions follow system reduced motion, ignoring the removed device override', async ({ page }) => {
   test.setTimeout(60_000);
   await page.setViewportSize({ width: 1500, height: 1100 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -24,21 +24,13 @@ test('topic motion overrides reduced motion by default with a persistent develop
     }]);
     await win.motionFixture;
     sessionStorage.removeItem('scatter.onboarding');
+    localStorage.setItem('scatter-decorative-motion', 'animate');
   });
   await page.goto('/');
   const track = page.locator('.marquee-track').first();
   await expect(track).toBeVisible({ timeout: 20_000 });
   const transform = () => track.evaluate(el => getComputedStyle(el).transform);
-  const initial = await transform();
-  await expect.poll(transform).not.toBe(initial);
-  await page.getByRole('button', { name: 'Open settings', exact: true }).click();
-  await expect(page.getByLabel('Animation', { exact: true })).toHaveCount(0);
-  await page.getByRole('button', { name: 'Developer', exact: true }).click();
-  await page.getByRole('button', { name: 'Decorative motion', exact: true }).click();
-  await expect(page.getByLabel('Animation', { exact: true })).toHaveValue('animate');
-  await page.getByLabel('Animation', { exact: true }).selectOption('system');
-  await page.screenshot({ path: info.outputPath('motion-settings.png') });
-  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+  await expect.poll(() => track.evaluate(el => getComputedStyle(el).animationName)).toBe('none');
   const still = await transform();
   await page.waitForTimeout(250);
   expect(await transform()).toBe(still);
@@ -47,19 +39,17 @@ test('topic motion overrides reduced motion by default with a persistent develop
   const reloaded = await transform();
   await page.waitForTimeout(250);
   expect(await transform()).toBe(reloaded);
-  await page.getByRole('button', { name: 'Open settings', exact: true }).click();
-  await page.getByRole('button', { name: 'Developer', exact: true }).click();
-  await page.getByRole('button', { name: 'Decorative motion', exact: true }).click();
-  await expect(page.getByLabel('Animation', { exact: true })).toHaveValue('system');
-  await page.getByLabel('Animation', { exact: true }).selectOption('animate');
-  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await expect.poll(() => track.evaluate(el => getComputedStyle(el).animationName)).toBe('marquee-left');
   const resumed = await transform();
   await expect.poll(transform).not.toBe(resumed);
-  await page.getByRole('button', { name: 'Open settings', exact: true }).click();
-  await page.getByRole('button', { name: 'Decorative motion', exact: true }).click();
-  await page.getByLabel('Animation', { exact: true }).selectOption('pause');
-  await page.getByRole('button', { name: 'Close settings', exact: true }).click();
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect.poll(() => track.evaluate(el => getComputedStyle(el).animationName)).toBe('none');
   const paused = await transform();
   await page.waitForTimeout(250);
   expect(await transform()).toBe(paused);
+  await page.getByRole('button', { name: 'Open settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Developer', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Decorative motion', exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Animation', { exact: true })).toHaveCount(0);
 });

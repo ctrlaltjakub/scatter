@@ -31,7 +31,6 @@ import { SidebarWordmark } from './SidebarWordmark';
 import { SourceControls } from './sources/SourceControls';
 import { OfflineIndicator } from './OfflineIndicator';
 import { useResolvedTheme } from '@/hooks/useResolvedTheme';
-import { useDecorativeMotion } from '@/hooks/useDecorativeMotion';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useSyncStore } from '@/store/useSyncStore';
 import { hasSyncConnection } from '@/sync/connection';
@@ -108,7 +107,7 @@ function ActiveRestorationScreen({
   const [colors, setColors] = useState(initialColors);
   const [colorEpoch, setColorEpoch] = useState(0);
   const [size, setSize] = useState<CanvasSize | null>(null);
-  const { reduced: reducedMotion } = useDecorativeMotion();
+  const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -132,6 +131,15 @@ function ActiveRestorationScreen({
     const observer = new ResizeObserver(readSize);
     observer.observe(container);
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (!media) return;
+    const update = () => setReducedMotion(media.matches);
+    update();
+    media.addEventListener?.('change', update);
+    return () => media.removeEventListener?.('change', update);
   }, []);
 
   const initialPoints = useMemo(() => restorationOrbitPoints({

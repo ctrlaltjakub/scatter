@@ -75,7 +75,7 @@ export const SETTINGS_PAGES = [
     label: 'Developer',
     description: 'Fine-grained controls and tools for testing the app.',
     keywords:
-      'dev physics forces friction repulsion spring gravity bullet sizing dimensions width height reset overwrite warning diagnostics google drive renewal conflict welcome start screen pixel ruler webgl failure decorative motion animation animate pause remote desktop loading orbits orbs topic suggestions',
+      'dev physics forces friction repulsion spring gravity bullet sizing dimensions width height reset overwrite warning diagnostics google drive renewal conflict welcome start screen pixel ruler webgl failure',
   },
 ] as const;
 

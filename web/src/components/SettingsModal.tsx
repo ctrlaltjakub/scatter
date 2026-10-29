@@ -2,7 +2,6 @@
 import { ReleaseFooter } from './settings/ReleaseFooter';
 import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { colorToCss } from '@/lib/groupColor';
-import { useDecorativeMotion, setDecorativeMotionPreference, type DecorativeMotionPreference } from '@/hooks/useDecorativeMotion';
 import {
   X,
   Trash2,
@@ -1376,7 +1375,6 @@ function DataTab({ onClose }: { onClose: () => void }) {
 
 /* ---- Dev tab ---- */
 function DevTab({ onClose }: { onClose: () => void }) {
-  const motion = useDecorativeMotion();
   const activeProject = useGraphStore((s) => s.project);
   const setForceWelcomeA = useSettingsStore((s) => s.setForceWelcomeA);
   const pixelRulerMode = useSettingsStore((s) => s.pixelRulerMode);
@@ -1418,18 +1416,6 @@ function DevTab({ onClose }: { onClose: () => void }) {
           description={<>Controls how <strong>bullets expand and collapse</strong> to fit inside nodes.</>}
         >
           <BulletSizingSliders />
-        </CollapsibleSection>
-        <CollapsibleSection title="Decorative motion"
-          description={<>Controls <strong>loading-screen orbits and moving topic suggestions</strong> on this device. <strong>Animate</strong> overrides system reduced motion and is the default. <strong>System</strong> follows your browser’s preference.</>}>
-          <div className="field-row">
-            <label className="field-label" htmlFor="decorative-motion">Animation</label>
-            <select id="decorative-motion" className="input" value={motion.preference}
-              onChange={event => setDecorativeMotionPreference(event.target.value as DecorativeMotionPreference)}>
-              <option value="animate">Animate</option>
-              <option value="system">System</option>
-              <option value="pause">Pause</option>
-            </select>
-          </div>
         </CollapsibleSection>
         <CollapsibleSection
           title="Developer options"
