@@ -1,6 +1,7 @@
 'use client';
-import { Monitor } from 'lucide-react';
+import { ArrowLeft, Monitor } from 'lucide-react';
 import { useDeviceWarnings } from '@/hooks/useDeviceWarnings';
+import { LANDING_URL } from '@/lib/deployment';
 
 /**
  * Full-screen, blurred gate windows that steer Scatter toward desktop use:
@@ -46,11 +47,16 @@ export function DeviceWarning() {
         <div className="device-warning-icon"><Monitor size={28} /></div>
         <h2 className="device-warning-title">{title}</h2>
         <p className="device-warning-body">{body}</p>
-        {showTablet && (
-          <button type="button" className="btn btn-primary" onClick={dismissTablet}>
-            Use anyway
-          </button>
-        )}
+        <div className="device-warning-actions">
+          <a className="btn btn-primary" href={LANDING_URL}>
+            <ArrowLeft size={17} aria-hidden="true" /> Back to landing page
+          </a>
+          {showTablet && (
+            <button type="button" className="btn btn-secondary" onClick={dismissTablet}>
+              Use anyway
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -4972,6 +4972,8 @@ select.input {
 .device-warning-card {
   width: 460px;
   max-width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
   padding: 30px 28px;
   border-radius: 16px;
   text-align: center;
@@ -5003,6 +5005,14 @@ select.input {
   color: var(--subtext0);
   margin: 0 0 18px;
 }
+.device-warning-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.device-warning-actions .btn { min-height: 44px; }
+.device-warning-actions a.btn { text-decoration: none; }
+.device-warning-actions a:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
 
 /* "Canvas graphics unavailable" notice — centered card shown inside .canvas-host
    when WebGL2 is unavailable (or the dev simulate-failure flag is on). Replaces

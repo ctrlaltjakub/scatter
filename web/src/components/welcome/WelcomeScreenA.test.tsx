@@ -73,6 +73,16 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('onboarding settings import', () => {
+  it.each(['choose', 'connect', 'review', 'confirm'] as const)('keeps the landing-page link available at the %s step', step => {
+    saveOnboardingSession('custom', step);
+    render(<WelcomeScreenA />);
+    const link = screen.getByRole('link', { name: 'Landing page' });
+    expect(link).toHaveAttribute('href', 'https://www.scatter.study/?landing=1');
+    expect(link).not.toHaveAttribute('target');
+    expect(link.closest('.onboarding-theme-control')).not.toBeNull();
+    expect(link.closest('fieldset')).toBeNull();
+  });
+
   it.each(['google-drive', 'webdav'] as const)('unlocks onboarding after a failed %s restore and allows retry or another setup method', async provider => {
     useSyncStore.setState({ running: false, error: null, config: { ...defaultSyncConfig(), provider,
       webdav: { baseUrl: 'https://test.invalid', username: 'test', appPassword: 'test', folder: 'test' } } });

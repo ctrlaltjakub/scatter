@@ -30,6 +30,7 @@ import { missingSetupConnections, restoreMissingCredentials, validateOnboardingM
 import { modelDisplayName } from '@/lib/modelDisplay';
 import { ThemeToggleButton } from '@/components/ThemeToggleButton';
 import { isProviderEnabled } from '@/providers/providerPolicy';
+import { LANDING_URL } from '@/lib/deployment';
 
 export function WelcomeScreenA() {
   const providers = useSettingsStore(s => s.providers);
@@ -216,7 +217,10 @@ export function WelcomeScreenA() {
             </button>
           </li>)}
         </ol></nav>
-        <div className="onboarding-theme-control"><ThemeToggleButton /></div>
+        <div className="onboarding-theme-control">
+          <ThemeToggleButton />
+          <a className="onboarding-landing-link" href={LANDING_URL}>Landing page</a>
+        </div>
       </aside>
       <div className="onboarding-main">
         <header className="settings-page-heading"><span className="settings-eyebrow">{path === 'quick' ? 'Quick setup' : path === 'custom' ? 'Custom setup' : 'Restore your setup'} · Step {stepIndex + 1} of {steps.length}</span>
