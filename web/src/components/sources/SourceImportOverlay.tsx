@@ -228,7 +228,7 @@ export function SourceImportOverlay({ attachment }: { attachment?: {
             {parsed.valid.map((url) => (
               <div className="source-queue-row" key={url}><Link2 size={14} /><span><strong>{new URL(url).hostname}</strong><small>{url}</small></span><button type="button" onClick={() => removeQueuedLink(url)} aria-label={`Remove ${url}`}><Trash2 size={14} /></button></div>
             ))}
-            {textValue.trim() && <div className="source-queue-row"><FileText size={14} /><span><strong>{textTitle || proposedTitle(textValue)}</strong><small>{textValue.trim().length.toLocaleString()} characters</small></span><button type="button" onClick={() => { setTextValue(''); setTextTitle(''); }} aria-label="Remove pasted text"><Trash2 size={14} /></button></div>}
+            {textValue.trim() && <div className="source-queue-row"><FileText size={14} /><span><strong>{textTitle || proposedTitle(textValue)}</strong><small>{textValue.trim().length.toLocaleString()} character{textValue.trim().length === 1 ? '' : 's'}</small></span><button type="button" onClick={() => { setTextValue(''); setTextTitle(''); }} aria-label="Remove pasted text"><Trash2 size={14} /></button></div>}
             {!queuedCount && <p>Add a mixed batch, then confirm it once.</p>}
           </aside>
         </div>

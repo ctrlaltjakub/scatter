@@ -215,6 +215,26 @@ describe('NodeCitationsPanel Wikimedia review', () => {
     vi.restoreAllMocks();
   });
 
+  it.each([0, 1, 2])('pluralizes image counts for %s results in automatic and manual search', (count) => {
+    const node = useGraphStore.getState().project!.nodes.n1!;
+    const version = node.versions[0]!;
+    const result = version.wikimediaImages!.results[0]!;
+    const results = Array.from({ length: count }, (_, index) => ({ ...result, pageId: index + 1, fileTitle: `File:Cell-${index + 1}.png` }));
+    useGraphStore.getState().updateNode(node.id, { versions: [{ ...version,
+      wikimediaImages: { ...version.wikimediaImages!, results },
+    }] });
+    render(<NodeCitationsPanel />);
+    expect(screen.getByText(`${count} AI suggestion${count === 1 ? '' : 's'} · Search above queries catalogs directly`)).toBeInTheDocument();
+
+    act(() => useGraphStore.getState().updateNode(node.id, { versions: [{ ...version,
+      imageRecommendations: {
+        schemaVersion: 2, bodyFingerprint: 'body', searchedAt: 3, resultLimit: 48,
+        mode: 'manual', manualQuery: 'Cells', sourceOutcomes: [], results,
+      },
+    }] }));
+    expect(screen.getByText(`Direct catalog search · no AI · ${count} result${count === 1 ? '' : 's'}`)).toBeInTheDocument();
+  });
+
   it('shows relevance, credits, and the explicit spawn action, then opens the gallery', () => {
     render(<NodeCitationsPanel />);
     expect(screen.getByText('Image suggestions')).toBeTruthy();

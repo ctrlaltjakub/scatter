@@ -30,6 +30,17 @@ beforeEach(() => {
 });
 
 describe('SourceImportOverlay', () => {
+  it.each([
+    [' x ', '1 character'],
+    [' xy ', '2 characters'],
+  ])('pluralizes the trimmed pasted-text count for %j', async (text, label) => {
+    const user = userEvent.setup();
+    render(<SourceImportOverlay />);
+    await user.click(screen.getByRole('tab', { name: 'Paste text' }));
+    await user.type(screen.getByPlaceholderText('Paste source text…'), text);
+    expect(screen.getByText(label)).toBeInTheDocument();
+  });
+
   it('reuses file input for message attachments without creating project sources', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn(async () => {}), onClose = vi.fn();

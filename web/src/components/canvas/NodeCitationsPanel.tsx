@@ -172,8 +172,8 @@ function NodeWikimediaPanel() {
       </form>
       <div className="wikimedia-search-summary">
         {recommendationSet && recommendationSet.mode !== 'manual'
-          ? `${results.length} AI suggestions · Search above queries catalogs directly`
-          : `Direct catalog search · no AI${recommendationSet ? ` · ${results.length} results` : ''}`}
+          ? `${results.length} AI suggestion${results.length === 1 ? '' : 's'} · Search above queries catalogs directly`
+          : `Direct catalog search · no AI${recommendationSet ? ` · ${results.length} result${results.length === 1 ? '' : 's'}` : ''}`}
       </div>
       {sourceOutcomes.some((outcome) => outcome.status !== 'success') && (
         <CatalogAvailabilityNotice outcomes={sourceOutcomes} />

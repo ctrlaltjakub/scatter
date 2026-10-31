@@ -14,6 +14,23 @@ vi.mock('@/lib/sourceExtraction', () => ({
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); useChatRuntimeStore.setState({ drafts: {} }); });
 
 describe('message attachments', () => {
+  it.each([
+    [1, 0, '0/1 page'],
+    [1, 1, '1/1 page'],
+    [3, 1, '1/3 pages'],
+    [3, 3, '3/3 pages'],
+  ])('reports PDF progress using the total page count (%s total, %s complete)', async (pageCount, completed, label) => {
+    vi.mocked(extractSourceBlob).mockImplementationOnce(async (_blob, _kind, _signal, onProgress) => {
+      await onProgress?.({ stage: 'ocr', page: 1, pageCount,
+        completedPages: Array.from({ length: completed }, (_, index) => index + 1), text: 'A readable page.' });
+      return { blocks: [{ id: 'page-1', text: 'A readable page.', page: 1 }], pageCount, retainOriginal: true };
+    });
+    const progress = vi.fn();
+    await prepareChatAttachments('p', [new File(['pdf'], 'notes.pdf', { type: 'application/pdf' })], new AbortController().signal, progress);
+
+    expect(progress).toHaveBeenLastCalledWith(`Reading notes.pdf: ${label}…`);
+  });
+
   it('keeps image bytes outside JSON and extracts document text without indexing sources', async () => {
     const image = new File(['png'], 'photo.png', { type: 'image/png' });
     const pdf = new File(['pdf'], 'notes.pdf', { type: 'application/pdf' });

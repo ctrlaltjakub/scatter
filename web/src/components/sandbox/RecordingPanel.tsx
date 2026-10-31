@@ -111,7 +111,7 @@ export function RecordingPanel(p: Props) {
 
       {p.recording && (
         <span style={{ color: 'var(--red)', fontWeight: 600 }}>
-          ● Recording — {p.liveFrameCount} frames
+          ● Recording — {p.liveFrameCount} frame{p.liveFrameCount === 1 ? '' : 's'}
         </span>
       )}
       {p.replaying && (
@@ -157,7 +157,7 @@ export function RecordingPanel(p: Props) {
               maxWidth: 240,
               border: '1px solid color-mix(in oklab, var(--overlay0) 25%, transparent)',
             }}
-            title={`${rec.frames.length} frames, ${(rec.durationMs / 1000).toFixed(1)}s`}
+            title={`${rec.frames.length} frame${rec.frames.length === 1 ? '' : 's'}, ${(rec.durationMs / 1000).toFixed(1)}s`}
           >
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
               {rec.name}

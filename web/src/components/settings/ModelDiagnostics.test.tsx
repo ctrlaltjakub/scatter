@@ -22,6 +22,17 @@ function sampleResult(role: DiagnosticResult['role'], status: DiagnosticResult['
   return { key: job.key, role, model: job.target.model, provider: 'local', label: job.test.label, status, detail: 'Test result details.', milliseconds: status === 'running' ? undefined : 1500 };
 }
 describe('optional model diagnostics UI', () => {
+  it.each([0, 1, 2])('pluralizes the count for %s saved checks after a model is removed', (count) => {
+    const results = Array.from({ length: count }, (_, index) => sampleResult('main', 'passed', index));
+    useSettingsStore.setState({ providers: [], activeModelRef: null });
+    useModelDiagnosticsStore.setState({ results });
+    render(<ModelDiagnostics embedded />);
+    fireEvent.click(screen.getByText('Test model capabilities'));
+    const role = screen.getByRole('region', { name: 'Main model tests' });
+    expect(within(role).getByText(`${count} check${count === 1 ? '' : 's'}`)).toBeInTheDocument();
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it('shows the effective main-model reasoning and updates when server metadata arrives', () => {
     useSettingsStore.setState({ reasoningEffort: 'high' });
     render(<ModelDiagnostics embedded />);

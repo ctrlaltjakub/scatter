@@ -28,7 +28,7 @@ export async function prepareChatAttachments(projectId: string, files: readonly 
         } });
       } else {
         const extracted = await extractSourceBlob(file, kind, signal, (state) => {
-          progress(`Reading ${file.name}: ${state.completedPages.length}/${state.pageCount} pages…`);
+          progress(`Reading ${file.name}: ${state.completedPages.length}/${state.pageCount} page${state.pageCount === 1 ? '' : 's'}…`);
         });
         const text = extracted.blocks.map((block) => `${block.page ? `[Page ${block.page}]\n` : ''}${block.text}`).join('\n\n');
         if (!text.trim()) throw new Error(`${file.name}: no readable text was found.`);

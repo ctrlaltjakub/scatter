@@ -131,7 +131,7 @@ export function ModelDiagnostics({ embedded = false }: { embedded?: boolean }) {
                   ? mainTarget.info?.reasoning?.mode === 'toggle' && mainReasoning !== 'off' ? 'On' : REASONING_LABELS[mainReasoning]
                   : 'Server default'} · Language: {languageInfo(settings.generationLanguage).name}</small>}
               </span>
-              <span className="model-diagnostic-check-count" id={summaryId}><span>{checkCount} checks</span>
+              <span className="model-diagnostic-check-count" id={summaryId}><span>{checkCount} check{checkCount === 1 ? '' : 's'}</span>
                 {results.length > 0 && <span className="model-diagnostic-role-counts">{Object.entries(roleCounts).filter(([, count]) => count > 0).map(([status, count]) => <span key={status} data-status={status}>
                   {status === 'running' && <span className="model-diagnostic-status-icon is-spinning"><LoaderCircle size={12} aria-hidden="true" /></span>}{count} {status}
                 </span>)}</span>}

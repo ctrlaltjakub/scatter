@@ -314,7 +314,7 @@ export function SourceManager({
                 data-tip="Open this source"
               >
                 <strong>{source.title}</strong>
-                <small>{sourceKindLabel(source)}{revision?.pageCount ? ` · ${revision.pageCount} pages` : ''} · Ready</small>
+                <small>{sourceKindLabel(source)}{revision?.pageCount ? ` · ${revision.pageCount} page${revision.pageCount === 1 ? '' : 's'}` : ''} · Ready</small>
               </button>
               {source.originalUrl && (
                 <a href={source.originalUrl} target="_blank" rel="noreferrer" data-link-control data-tip="Visit live webpage" aria-label={`Visit ${source.title}`}><ExternalLink size={15} /></a>
