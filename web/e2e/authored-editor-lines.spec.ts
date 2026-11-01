@@ -39,7 +39,11 @@ async function fixture(page: Page, contentType: 'answer' | 'explain') {
   await page.goto('/');
   await page.locator('[data-node-id="authored"] .node-header').click();
   await page.getByRole('button', { name: 'Edit', exact: true }).click();
-  await page.getByRole('button', { name: 'Edit or export text' }).click();
+  const edit = page.getByRole('button', { name: 'Edit or export text' });
+  // The panel changes position while its disclosure expands. Wait for that
+  // real transition before sending the next pointer event (not a forced click).
+  await expect(page.locator('.sc-animated-collapse').filter({ has: edit })).toHaveAttribute('data-animating', 'false');
+  await edit.click();
   // The editor is lazy-loaded; a cold dev build can need more than five seconds.
   await expect(page.locator('.text-editor-card')).toBeVisible({ timeout: 20_000 });
 }
@@ -58,7 +62,65 @@ async function lineTop(page: Page, text: string, axis: 'top' | 'left' = 'top') {
   }, { text, axis });
 }
 
+test('a synthetic project export imports as a separate project and survives reload', async ({ page }) => {
+  test.setTimeout(90_000);
+  await fixture(page, 'answer');
+  await page.getByRole('button', { name: 'Exit', exact: true }).click();
+  const result = await page.evaluate(async () => {
+    const win = window as any;
+    let get: (name: string) => any = () => { throw new Error('Webpack runtime not found'); };
+    win.webpackChunk_N_E.push([[`archive-check-${Date.now()}`], {}, (require: any) => {
+      get = name => {
+        for (const entry of Object.values(require.c) as any[]) if (entry.exports?.[name]) return entry.exports[name];
+        throw new Error(`Missing export: ${name}`);
+      };
+    }]);
+    const graph = get('useGraphStore');
+    const original = graph.getState().project.id;
+    const archive = await get('exportActiveScatterZip')();
+    const imported = await get('importScatterFromFile')(new File([archive.blob], archive.filename));
+    const project = graph.getState().project;
+    return { original, imported, text: project.nodes.authored.versions[0].body, language: project.nodes.authored.versions[0].language };
+  });
+  expect(result.imported).not.toBe(result.original);
+  expect(result.text).toBe(body);
+  expect(result.language).toBe('en');
+  await page.reload();
+  await expect(page.locator('[data-node-id="authored"]')).toContainText('First sentence. Same line.');
+});
+
 for (const contentType of ['explain', 'answer'] as const) {
+  test(`${contentType} rich paste preserves scripts, safe formatting, and undo/redo`, async ({ page }) => {
+    test.setTimeout(90_000);
+    await fixture(page, contentType);
+    const editor = page.locator('.text-editor-card .ProseMirror');
+    await editor.click();
+    await expect(editor).toBeFocused();
+    await page.keyboard.press('Control+End');
+    await editor.evaluate(element => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text/html', '<p><strong>Paste résumé العربية 日本語 हिंदी</strong> <span data-term="" onclick="bad()">Concept</span></p><p><a href="https://example.com">Reference</a></p>');
+      clipboardData.setData('text/plain', 'Paste résumé العربية 日本語 हिंदी Concept\nReference');
+      const event = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+      // Firefox discards clipboardData passed to a synthetic event constructor.
+      // Supply the real DataTransfer to the same browser paste handler explicitly.
+      Object.defineProperty(event, 'clipboardData', { value: clipboardData });
+      element.dispatchEvent(event);
+    });
+    await expect(editor).toContainText('Paste résumé العربية 日本語 हिंदी');
+    await expect(editor.locator('[onclick]')).toHaveCount(0);
+    await page.keyboard.press('Control+z');
+    await expect(editor).not.toContainText('Paste résumé');
+    await page.keyboard.press('Control+Shift+z');
+    await expect(editor).toContainText('Paste résumé العربية 日本語 हिंदी');
+    if (contentType === 'answer') {
+      await expect(editor.locator('a[href="https://example.com"]')).toHaveCount(1);
+    }
+    await page.getByRole('button', { name: 'Exit', exact: true }).click();
+    await page.getByRole('button', { name: 'Edit or export text' }).click();
+    await expect(editor).toContainText('Paste résumé العربية 日本語 हिंदी');
+  });
+
   test(`${contentType} editor reveals authored lines without punctuation splitting or modifying content`, async ({ page }, info) => {
     test.setTimeout(90_000);
     await fixture(page, contentType);

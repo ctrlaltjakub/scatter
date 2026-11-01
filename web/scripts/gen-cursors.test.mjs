@@ -21,9 +21,23 @@ describe('pre-antialiased cursor assets', () => {
     }
   });
 
-  it('ships deterministic assets, unchanged hotspots and native fallbacks', async () => {
+  it('ships pixel-identical assets, unchanged hotspots and native fallbacks', async () => {
     const css = await generateCursorCss();
-    expect(readFileSync(new URL('../src/app/cursors.css', import.meta.url), 'utf8')).toBe(css);
+    const shipped = readFileSync(new URL('../src/app/cursors.css', import.meta.url), 'utf8');
+    const pngPattern = /data:image\/png;base64,([A-Za-z0-9+/=]+)/g;
+    const expectedPngs = [...shipped.matchAll(pngPattern)];
+    const actualPngs = [...css.matchAll(pngPattern)];
+    // libvips upgrades may change PNG compression without changing a single
+    // displayed pixel. Keep the shipped cursors and compare decoded RGBA, while
+    // still requiring byte-identical SVGs, CSS geometry, hotspots and fallbacks.
+    expect(shipped.replace(pngPattern, 'PNG')).toBe(css.replace(pngPattern, 'PNG'));
+    expect(actualPngs).toHaveLength(expectedPngs.length);
+    for (let i = 0; i < expectedPngs.length; i++) {
+      const expected = await sharp(Buffer.from(expectedPngs[i][1], 'base64')).raw().toBuffer({ resolveWithObject: true });
+      const actual = await sharp(Buffer.from(actualPngs[i][1], 'base64')).raw().toBuffer({ resolveWithObject: true });
+      expect(actual.info).toEqual(expected.info);
+      expect(actual.data).toEqual(expected.data);
+    }
     expect(css).toContain('@supports (cursor: image-set(');
     for (const [name, cursor] of Object.entries(CURSORS)) {
       const declarations = css.split('\n').filter(line => line.trim().startsWith(`--cur-${name}:`));

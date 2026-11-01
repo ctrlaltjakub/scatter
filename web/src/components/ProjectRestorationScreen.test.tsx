@@ -174,9 +174,9 @@ describe('ProjectRestorationScreen', () => {
       scene = props.sceneFactory({ onDirty: vi.fn() });
     });
     const { unmount } = render(<ProjectRestorationScreen />);
-    // The original startup effect reads the system preference after mounting;
-    // any frame scheduled before that read must be cancelled.
-    expect(cancelAnimationFrame).toHaveBeenCalledWith(1);
+    // React may batch the size and preference reads before the first frame.
+    // If mounting scheduled any frames, all must be cancelled for reduced motion.
+    expect(cancelAnimationFrame).toHaveBeenCalledTimes(vi.mocked(requestAnimationFrame).mock.calls.length);
     const onChange = media.addEventListener.mock.calls[0]![1];
     act(() => { media.matches = false; onChange(); });
     const before = [...scene.state.auras.values()].map(aura => ({ ...aura.rect }));

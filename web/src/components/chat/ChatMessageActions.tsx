@@ -21,7 +21,7 @@ import { AddToProjectSourcesButton } from '../node/AddToProjectSourcesButton';
 
 export function CopyMessage({ text, panel = false }: { text: string; panel?: boolean }) {
   const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
-  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   return <button type="button" className={panel ? 'side-action' : undefined} data-tip={status === 'failed' ? 'Could not copy. Select the text and copy it manually.' : 'Copy this message'}
     onClick={() => {

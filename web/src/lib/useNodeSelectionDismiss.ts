@@ -6,7 +6,7 @@ import { isBatchNodeSelection, NODE_SELECTION_CONTROLS } from './nodeSelection';
 
 /** One app-wide listener, with live store reads rather than a subscription
  * that would re-render the canvas on every selection change. */
-export function useNodeSelectionDismiss(canvasRef: RefObject<HTMLElement>) {
+export function useNodeSelectionDismiss(canvasRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const onInteraction = (event: Event) => {
       const graph = useGraphStore.getState();

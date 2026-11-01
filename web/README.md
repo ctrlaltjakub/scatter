@@ -23,10 +23,25 @@ for sync and export choices.
 
 ## Tests
 
+- Types: `npm run typecheck`
 - Unit: `npm test`
 - E2E: `npm run e2e`
+- Interactive browser compatibility: `npm run test:interactive-browsers`
 
-See `../design.md` for the design spec and `../plans/` for implementation plans.
+`dev` and `build` explicitly use webpack. Keep the Transformers.js browser
+alias and `transpilePackages` setting together: Next otherwise externalizes
+that package and traces its native inference dependencies into the server.
+Browser embeddings still run in a Web Worker. Media does not use Next's image
+optimizer, which is disabled.
+
+The optional embedding-worker smoke test downloads the public, quantized model
+and runs local inference; it makes no paid model requests. With a dev server
+running, use `SCATTER_LIVE_IMAGE_SEARCH=1 SCATTER_EMBEDDING_SMOKE=1
+PW_BASE_URL=http://localhost:3000 npx playwright test e2e/embedding-worker.spec.ts
+--browser=chromium --workers=1` (also run with `--browser=firefox`).
+
+See [dependency security notes](../SECURITY.md) for the remaining conditional
+editor advisory and the math-renderer override.
 
 ## Optional Google Drive synchronization
 

@@ -13,7 +13,7 @@ export function ImageProjectInput({ active, busy, onStart }: {
   const [error, setError] = useState('');
   const [dragging, setDragging] = useState(false);
   const input = useRef<HTMLInputElement>(null);
-  const job = useRef<AbortController>();
+  const job = useRef<AbortController | undefined>(undefined);
   useEffect(() => () => job.current?.abort(), []);
   useEffect(() => () => { if (image?.file) URL.revokeObjectURL(image.previewUrl); }, [image]);
 

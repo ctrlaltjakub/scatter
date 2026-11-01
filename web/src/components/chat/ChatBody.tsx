@@ -46,11 +46,11 @@ export function ChatBody({ node, selected, style }: { node: ScatterNode; selecte
     && state.project.selection[0] === node.id);
   const reading = useReadingStore((state) => state.nodeId === node.id);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const settling = useRef<ReturnType<typeof setTimeout>>();
+  const settling = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const follow = useRef(view.atBottom);
   const savedScroll = useRef(view.scrollTop);
   const latestRef = useRef(node);
-  const requestedTurn = useRef<string>();
+  const requestedTurn = useRef<string | undefined>(undefined);
   if (reading) follow.current = false;
   latestRef.current = node;
   const pulse = useGenerationPulseSync(view.compacting);

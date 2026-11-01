@@ -44,7 +44,7 @@ export function ModelDiagnostics({ embedded = false }: { embedded?: boolean }) {
   const state = useModelDiagnosticsStore();
   const [expandedRole, setExpandedRole] = useState<ModelRole | null>(null);
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
-  const copyTimer = useRef<ReturnType<typeof setTimeout>>();
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const id = useId();
   useEffect(() => () => clearTimeout(copyTimer.current), []);
   const plan = useMemo(() => diagnosticPlan(settings), [settings, catalog]);

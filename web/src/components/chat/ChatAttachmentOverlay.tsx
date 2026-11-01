@@ -9,7 +9,7 @@ import { useGraphStore } from '@/store/useGraphStore';
 export function ChatAttachmentOverlay({ projectId, nodeId, onClose }: {
   projectId: string; nodeId: string; onClose: () => void;
 }) {
-  const job = useRef<AbortController>();
+  const job = useRef<AbortController | undefined>(undefined);
   useEffect(() => () => job.current?.abort(), []);
   return createPortal(<SourceImportOverlay attachment={{ onClose,
     onConfirm: async (files, progress) => {

@@ -22,7 +22,7 @@ export function toggleNodeSelection(id: string) {
 
 /** Gesture state and the marquee stay outside React: dragging the rectangle
  * only updates the graph when the set of intersecting nodes actually changes. */
-export function useNodeMultiSelection(containerRef: RefObject<HTMLDivElement>) {
+export function useNodeMultiSelection(containerRef: RefObject<HTMLDivElement | null>) {
   const drag = useRef<{
     pointerId: number; projectId: string; x: number; y: number;
     original: string[]; originalGroupId: string | null; additive: boolean; moved: boolean;

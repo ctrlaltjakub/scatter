@@ -12,7 +12,7 @@ export function TopicInputWindow({ value, onChange, onClose, onSubmit, returnFoc
   onChange: (value: string) => void;
   onClose: () => void;
   onSubmit: () => void;
-  returnFocusRef: RefObject<HTMLElement>;
+  returnFocusRef: RefObject<HTMLElement | null>;
 }) {
   const dialog = useRef<HTMLElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);

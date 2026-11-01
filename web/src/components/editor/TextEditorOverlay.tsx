@@ -152,10 +152,10 @@ function EditorWindow({ nodeId }: { nodeId: string }) {
   }, [editor, chunkIntro]);
 
   const baselineRef = useRef('');
-  const draftVersionRef = useRef<number | undefined>();
+  const draftVersionRef = useRef<number | undefined>(undefined);
   const editProjectRef = useRef(project?.id);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const pendingSaveRef = useRef<{ parts?: HeaderParts; body?: string }>();
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pendingSaveRef = useRef<{ parts?: HeaderParts; body?: string } | undefined>(undefined);
   const [sourceMode, setSourceMode] = useState(false);
   const [sourceText, setSourceText] = useState('');
   const sourceRef = useRef<HTMLTextAreaElement>(null);

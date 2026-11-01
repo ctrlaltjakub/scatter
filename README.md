@@ -132,7 +132,7 @@ npm run dev
 
 Open **[localhost:3000](http://localhost:3000)** and complete onboarding. Enter model-provider keys **in the app** so they are stored in your browser, separate from the deployment.
 
-The app uses **Next.js, React and TypeScript**, with a **WebGL ASCII canvas**, physics-based layout and browser-local persistence.
+The app uses **Next.js 16, React 19 and TypeScript**, with a **WebGL ASCII canvas**, physics-based layout and browser-local persistence. The development and production scripts use **webpack** to preserve the browser-only model-runtime configuration.
 
 - <details>
   <summary><strong>Production build and Google Drive configuration</strong></summary>
@@ -153,9 +153,10 @@ The app uses **Next.js, React and TypeScript**, with a **WebGL ASCII canvas**, p
 - <details>
   <summary><strong>Tests and browser checks</strong></summary>
 
-  **Unit tests** check individual pieces of application logic. Run them from **`web/`**:
+  **Type checks and unit tests** check application types and logic. Run them from **`web/`**:
 
   ```bash
+  npm run typecheck
   npm test
   ```
 

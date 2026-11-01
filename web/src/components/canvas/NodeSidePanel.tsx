@@ -80,7 +80,7 @@ const LEFT_OFFSET = -(PANEL_W + PANEL_GAP);
 /** One measured/moving stack: menus and attribution must never drift apart.
  * The camera-fit selector includes both panels, without changing node sizing. */
 function NodeSidePanelStack({ panelRef, style, snippets, disclosure, children }: {
-  panelRef: RefObject<HTMLDivElement>;
+  panelRef: RefObject<HTMLDivElement | null>;
   style?: CSSProperties;
   snippets?: string[];
   disclosure: { open: SidePanelSection | null; setOpen: (section: SidePanelSection | null) => void };

@@ -366,7 +366,10 @@ test('editor DOCX export keeps emphasis and includes the active version bibliogr
     graph.setState({ activeProjectId: project.id }); graph.getState().requestPanTo(null);
   });
   await openMainPage(page, 'export');
-  await page.getByRole('button', { name: 'Edit or export text' }).click();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  const edit = page.getByRole('button', { name: 'Edit or export text' });
+  await expect(page.locator('.sc-animated-collapse').filter({ has: edit })).toHaveAttribute('data-animating', 'false');
+  await edit.click();
   await expect(page.locator('.text-editor-card')).toBeVisible();
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export to .docx' }).click();

@@ -18,9 +18,13 @@ const nextConfig = {
   // Isolate verification servers/builds without disturbing a running dev app.
   distDir: process.env.SCATTER_DIST_DIR || '.next',
   reactStrictMode: true,
-  experimental: {
-    // Allow worker imports from src/
-  },
+  // The framework's dev badge otherwise overlaps the app's corner controls.
+  devIndicators: false,
+  // Next 16 externalizes this package by default, bypassing the browser alias
+  // below and pulling native ONNX binaries into the server trace.
+  transpilePackages: ['@huggingface/transformers'],
+  // Media is rendered directly in the browser; no Next image optimizer is used.
+  images: { unoptimized: true },
   webpack: (config, { isServer }) => {
     // Transformers.js exposes a Node binary entry whenever webpack resolves
     // packages under Node conditions—even when that import ultimately belongs
@@ -31,8 +35,8 @@ const nextConfig = {
       './node_modules/@huggingface/transformers/dist/transformers.web.js',
       import.meta.url,
     ).pathname;
-    // Next 14's minifier cannot parse the worker-bundled `.mjs` build emitted
-    // by this very new ONNX Runtime release. The equivalent external-WASM UMD
+    // Keep the tested external-WASM browser runtime. The worker-bundled `.mjs`
+    // entry caused minifier failures in earlier builds. The equivalent UMD
     // build has no `import.meta` worker wrapper and is safe for the browser.
     config.resolve.alias['onnxruntime-web/webgpu$'] = new URL(
       './node_modules/onnxruntime-web/dist/ort.webgpu.min.js',
