@@ -10,6 +10,10 @@ import type { AuraScene, AuraSceneFactory } from '@/lib/asciiAura/sceneState';
 
 const auraLayerMock = vi.hoisted(() => vi.fn());
 
+// Layout tests must not start a real connectivity probe that can outlive the
+// simulated browser. OfflineIndicator.test.tsx covers online/offline behavior.
+vi.mock('@/lib/networkStatus', () => ({ useIsBrowserOnline: () => true }));
+
 vi.mock('./canvas/AsciiAuraLayer', () => ({
   AsciiAuraLayer: (props: unknown) => {
     auraLayerMock(props);
