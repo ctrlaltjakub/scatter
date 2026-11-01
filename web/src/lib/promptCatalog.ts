@@ -62,7 +62,7 @@ Keep the requested Markdown structure: headings and short labels remain single l
   base: {
     group: "Foundation",
     label: "System message (base prompt)",
-    description: "Sets the **structure and writing style** for encyclopedic nodes.",
+    description: "Sets the **structure and writing style** for encyclopedic nodes, including **one- or two-sentence bullet descriptions**.",
     help: "Placeholders: {maxLevel1} (max level-1 bullets for this generation; starts at 10, +1 per \"Expand whole\")",
     text: `You are part of **Scatter**, a learning tool where the user explores topics by building a graph of ideas. Your responses become nodes in that graph.
 
@@ -71,14 +71,21 @@ Keep the requested Markdown structure: headings and short labels remain single l
 - After the opening, the entire body is one **two-level** bulleted list — nothing else. No prose paragraphs between bullets.
 - **Indentation is strict.** A level-1 bullet starts at column 0: \`- title\`. A level-2 bullet is indented by EXACTLY TWO SPACES before its marker: \`  - name: description\`. Exactly two levels — **third-level (or deeper) bullets are FORBIDDEN; never indent a bullet by more than two spaces.**
 - **Level 1** bullets are chapter-title noun phrases — short, no trailing description. Think of these as the chapters and sub-chapters of a thorough book about the topic. **Produce at most {maxLevel1} level-1 bullets.** If the topic has more breadth than that, do NOT add more chapters — fold the extra coverage into level-2 children (more depth under each chapter) so you stay within the cap.
-- **Level 2** bullets use \`name: short one-sentence description\` — a literal colon separates a short noun-phrase name from a description of ≤ 120 characters. Give as many level-2 children as the topic genuinely has — if a category contains many members, list them all. Every level-2 line must contain a colon.
+- **Level 2** bullets use \`name: description\` — a literal colon separates a short noun-phrase name from a description of **one or two concise sentences** (≤ 240 characters total). Use a second sentence only when it adds useful information. Put that sentence on a continuation line indented by FOUR SPACES, without a new bullet marker or repeated name; it belongs to the same child, not a third list level. Give as many level-2 children as the topic genuinely has — if a category contains many members, list them all. Every level-2 bullet must contain a colon after its name.
 - **Hard minimum (never violate):** every node has **at least 2 level-1 bullets, and each level-1 bullet has at least 2 level-2 children.** Never output a node that is only level-1 bullets, and never output a level-1 bullet with fewer than two indented children.
-- **Be exhaustive — aim for encyclopedic completeness.** Within the two-level format, cover EVERY significant subtopic, category, type, school, method, key figure, era, or example a thorough encyclopedia article would include — not just the obvious few. When a category has many members, list them ALL as level-2 children. Extra coverage must come from MORE entries, never longer ones: keep every entry compact and information-dense (a short name + one tight ≤120-char sentence, no filler).
+- **Be exhaustive — aim for encyclopedic completeness.** Within the two-level format, cover EVERY significant subtopic, category, type, school, method, key figure, era, or example a thorough encyclopedia article would include — not just the obvious few. When a category has many members, list them ALL as level-2 children. Cover distinct subtopics with MORE entries rather than overloading a description: keep every entry compact and information-dense (a short name + at most two short sentences, no filler).
 - **Order by importance.** At both levels, list from most fundamental / essential first to most peripheral last. The first level-1 covers the most foundational part of the topic; the first level-2 under any level-1 is its most essential sub-point. Do not order chronologically or alphabetically unless that ordering also happens to be the importance ordering.
 - Avoid filler ("It is important to note...", "In conclusion...", openings that just repeat the header). Write no follow-up questions.
 - **Allowed formatting is ONLY:** the opening paragraph, two-level bullets (\`- \` / \`  - \`), and \`**bold**\` for emphasis. **Never** use headings (\`#\`, \`##\`, \`###\`), blockquotes (\`>\`), tables, code fences, or ordinary markdown links. Provider-generated source citations are the sole exception: place each source link immediately after the supported claim, never collected into a source list or cluster elsewhere.
 
 Write PLAIN TEXT only — do not add any special markup beyond the two-level bullets and \`**bold**\`.`,
+  },
+  diagnosticEncyclopedic: {
+    group: 'Advanced format contracts',
+    label: 'Encyclopedic bullet descriptions check',
+    description: 'Checks **two-sentence descriptions** within the encyclopedic outline.',
+    help: 'Keep at least one description with a second sentence on an indented continuation line. Uses the existing generation check, without an extra request.',
+    text: 'Explore triangle perimeter. Use two short sentences in at least one level-2 description. Put its second sentence on a continuation line indented by four spaces, without a new bullet marker or repeated name.',
   },
   contextBlockTemplate: {
     group: "Foundation",
@@ -367,7 +374,7 @@ The user wants the marked section EXPANDED with more concrete information.
 
 5. **Structure constraints depend on which kind of section was marked:**
    - If the marked section is the **opening paragraph** (prose, before any bullet line): your output is also prose. Expand to ~50% more sentences than the original, all information-dense. Do NOT introduce bullets into it.
-   - If the marked section is a sequence of **LEVEL-2 BULLET CHILDREN** (lines that all start with \`  - \` / indented under some level-1 line that sits OUTSIDE the markers): your output is the NEW set of level-2 children, in the SAME indented format. Every output line must start with \`  - \` (two-space indent followed by the bullet marker). You MUST keep every existing child. You MAY add new children (target ~50% more children than the original). You MAY add detail to existing \`name: description\` descriptions but never remove a child or shorten an existing description. You may NOT include a level-1 line in your output (the level-1 line stays unchanged, outside the markers). You may NOT create level-3 nesting (never indent further than \`  - \`). If the original L2 children used the \`name: description\` colon convention, keep that convention.
+   - If the marked section is a sequence of **LEVEL-2 BULLET CHILDREN** (children starting with \`  - \`, possibly with indented continuation sentences, under a level-1 line OUTSIDE the markers): your output is the NEW set of level-2 children, in the SAME indented format. Every child must start with \`  - \` (two-space indent followed by the bullet marker). A description may have up to two concise sentences; put its second sentence on a four-space-indented continuation line without a bullet marker or repeated name. You MUST keep every existing child. You MAY add new children (target ~50% more children than the original). You MAY add detail to existing \`name: description\` descriptions but never remove a child or shorten an existing description. You may NOT include a level-1 line in your output (the level-1 line stays unchanged, outside the markers). You may NOT create level-3 nesting (never indent a BULLET MARKER further than \`  - \`). If the original L2 children used the \`name: description\` colon convention, keep that convention.
 
 6. **Clickable references:** keep the \`[[double-bracket]]\` convention. Be generous with \`[[term]]\` markup in any new content.
 

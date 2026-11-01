@@ -61,7 +61,7 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
       // count: there is deliberately no language-specific punctuation guess.
     } });
   const variants: [string, string, TaskVariant, 'outline' | 'prose' | 'table' | 'fragment'][] = [
-    ['encyclopedic', 'Encyclopedic generation / regeneration', { kind: 'root', topic: 'Triangle perimeter' }, 'outline'],
+    ['encyclopedic', 'Encyclopedic generation / regeneration', { kind: 'root', topic: prompt('diagnosticEncyclopedic') }, 'outline'],
     ['term-node', 'Node from a term', { kind: 'term-click', term: 'equilateral triangle' }, 'outline'],
     ['follow-up', 'Encyclopedic follow-up', { kind: 'follow-up', question: 'Explore polygon perimeter.' }, 'outline'],
     ['selected-follow-up', 'Follow-up on selected text', { kind: 'follow-up', question: 'What other units are used?', selectedText: 'same unit' }, 'outline'],
@@ -84,6 +84,8 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
         ? { ...message, content: message.content + '\n\n' + languagePrompt } : message),
     validate: text => {
       if (shape === 'outline') validateEncyclopedicOutput(text);
+      if (id === 'encyclopedic') assertDiagnostic(/^  - [^\n]+:[^\n]+\r?\n {4}\S/m.test(text),
+        'The outline is missing the requested second sentence on an indented continuation line within a bullet. Check the encyclopedic system prompt and bullet descriptions check, or choose a model that follows the format.');
       if (shape === 'prose') prose(text);
       if (shape === 'table') table(text);
       if (id === 'fact-rewrite') assertDiagnostic(text.includes('12') && text.includes('⟪E1⟫'), 'The correction lost the fact or evidence marker.');

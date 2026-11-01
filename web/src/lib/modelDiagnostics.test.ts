@@ -96,6 +96,20 @@ describe('model diagnostics', () => {
       expect(jobs.find(job => job.test.id === id)?.test.messages[0]?.content, id).toContain(DEFAULT_PROMPTS.proseLineBoundaries);
     }
   });
+  it.each(LANGUAGES)('checks two-sentence encyclopedic descriptions once in $name', async ({ id, sample }) => {
+    useSettingsStore.setState({ ...DEFAULT_SETTINGS, customPrompts: undefined });
+    const cfg = { ...settings(), generationLanguage: id };
+    const job = diagnosticPlan(cfg, 'main').find(job => job.test.id === 'encyclopedic')!;
+    const body = `${sample}\n\n- A\n  - A1: ${sample}\n    ${sample}\n  - A2: ${sample}\n- B\n  - B1: ${sample}\n  - B2: ${sample}`;
+    const invoke = vi.fn(async function* () { yield { delta: body, done: true, finishReason: 'stop' as const }; });
+    expect(job.test.messages[0]!.content).toContain('one or two concise sentences');
+    expect(job.test.messages.at(-1)!.content).toContain(DEFAULT_PROMPTS.diagnosticEncyclopedic);
+    expect(job.test.requests).toBe(1);
+    expect((await runDiagnosticJob(job, cfg, new AbortController().signal, '', invoke)).status).toBe('passed');
+    expect(invoke).toHaveBeenCalledOnce();
+    expect(() => job.test.validate?.(body.replace(`\n    ${sample}`, ''))).toThrow('second sentence');
+    expect(() => job.test.validate?.(body.replace(`\n    ${sample}`, `\n  - A3: ${sample}`))).toThrow('second sentence');
+  });
   it('reports invalid preview content in a single paid capability check', async () => {
     const cfg = settings(), job = diagnosticPlan(cfg, 'secondary').find(job => job.test.id === 'previews')!;
     const invoke = vi.fn(async function* () {

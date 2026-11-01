@@ -3304,7 +3304,9 @@ export function extractSectionFromLLM(output: string, target: ExpandPartTarget):
   let endIdx = startIdx;
   while (
     endIdx < lines.length
-    && (L2_LINE_RE.test(lines[endIdx]!) || lines[endIdx]!.trim() === '')
+    // Descriptions can continue on indented prose lines. Keep those lines
+    // during streaming and final extraction, stopping at the next L1/prose.
+    && (/^[\t ]+\S/.test(lines[endIdx]!) || lines[endIdx]!.trim() === '')
   ) endIdx++;
   while (endIdx > startIdx && lines[endIdx - 1]!.trim() === '') endIdx--;
   return lines.slice(startIdx, endIdx).join('\n');

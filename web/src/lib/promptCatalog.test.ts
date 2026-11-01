@@ -17,6 +17,14 @@ const context = { parent: null, grandparent: null };
 beforeEach(() => useSettingsStore.setState({ ...DEFAULT_SETTINGS, customPrompts: undefined }));
 
 describe('prompt catalog and request wiring', () => {
+  it('allows two concise sentences per encyclopedic description without conflicting expansion rules', () => {
+    const messages = buildMessages({ context, variant: { kind: 'root', topic: 'water' } });
+    expect(messages[0]?.content).toContain('one or two concise sentences');
+    expect(messages[0]?.content).toContain('FOUR SPACES, without a new bullet marker');
+    expect(messages[0]?.content).not.toMatch(/one-sentence description|one tight|≤\s*120/);
+    expect(DEFAULT_PROMPTS.taskExpandPart).toContain('up to two concise sentences');
+    expect(DEFAULT_PROMPTS.taskExpandPart).not.toContain('Every output line must start');
+  });
   it.each(['nodeWebSearch', 'chatWebSearch'] as const)('specifies Markdown citations instead of cite tags for %s', (key) => {
     expect(configuredPrompt(key)).toContain('[source](https://exact-returned-url)');
     expect(configuredPrompt(key)).toContain('Do not wrap citations in HTML/XML tags');

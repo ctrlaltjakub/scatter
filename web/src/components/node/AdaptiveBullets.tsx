@@ -200,6 +200,8 @@ interface RichTextContext {
   chipMasks: DisplayRange[];
   displayOffset: number;
   markInteractive?: boolean;
+  /** Partially collapsed bullets expand first; their inline links stay inert. */
+  interactive?: boolean;
 }
 
 /** Visible text and chip ranges produced by the same marker grammar as richText. */
@@ -408,27 +410,23 @@ function richText(
         const isBold = label.parts.length > 0 && label.parts.every((part) => part.bold);
         const term = label.text;
         const chipStart = displayOffset;
-        const chip = (
-          <ReferenceChip
-            term={term}
-            parentNodeId={parentNodeId}
-            onClick={onClick}
-            resolution={resolution}
-          >
-            {(() => {
-              let offset = chipStart;
-              return label.parts.map((part, partIndex) => {
-                let content: ReactNode = renderPlainRun(part.text, offset, context ? {
-                  ...context, marks: context.marks ? { ...context.marks, modifying: [] } : undefined,
-                  markInteractive: false,
-                } : undefined, `r-${key}-${partIndex}-${term}`);
-                offset += part.text.length;
-                if (part.italic) content = <em>{content}</em>;
-                if (part.strike) content = <del>{content}</del>;
-                if (part.bold && !isBold) content = <strong>{content}</strong>;
-                return <Fragment key={partIndex}>{content}</Fragment>;
-              });
-            })()}
+        const labelContent = (() => {
+          let offset = chipStart;
+          return label.parts.map((part, partIndex) => {
+            let content: ReactNode = renderPlainRun(part.text, offset, context ? {
+              ...context, marks: context.marks ? { ...context.marks, modifying: [] } : undefined,
+              markInteractive: false,
+            } : undefined, `r-${key}-${partIndex}-${term}`);
+            offset += part.text.length;
+            if (part.italic) content = <em>{content}</em>;
+            if (part.strike) content = <del>{content}</del>;
+            if (part.bold && !isBold) content = <strong>{content}</strong>;
+            return <Fragment key={partIndex}>{content}</Fragment>;
+          });
+        })();
+        const chip = context?.interactive === false ? labelContent : (
+          <ReferenceChip term={term} parentNodeId={parentNodeId} onClick={onClick} resolution={resolution}>
+            {labelContent}
           </ReferenceChip>
         );
         const renderedChip = isBold ? <strong>{chip}</strong> : chip;
@@ -451,7 +449,9 @@ function richText(
       if (/^\d+$/.test(numStr)) {
         flush();
         const citationEnd = displayOffset + numStr.length + 2;
-        const citation = <CitationMarker n={Number(numStr)} parentNodeId={parentNodeId} />;
+        const citation = context?.interactive === false
+          ? <span className="cite-marker">[{numStr}]</span>
+          : <CitationMarker n={Number(numStr)} parentNodeId={parentNodeId} />;
         out.push(modifyingAcross(displayOffset, citationEnd, context) ? (
           <span key={`cm-${key++}`} className="source-selection-modifying">{citation}</span>
         ) : (
@@ -469,7 +469,9 @@ function richText(
       if (/^\d+$/.test(numStr)) {
         flush();
         const citationEnd = displayOffset + numStr.length + 2;
-        const citation = <CitationMarker n={Number(numStr)} parentNodeId={parentNodeId} internal />;
+        const citation = context?.interactive === false
+          ? <span className="cite-marker">({numStr})</span>
+          : <CitationMarker n={Number(numStr)} parentNodeId={parentNodeId} internal />;
         out.push(modifyingAcross(displayOffset, citationEnd, context) ? (
           <span key={`icm-${key++}`} className="source-selection-modifying">{citation}</span>
         ) : (
@@ -562,8 +564,8 @@ function arrEq(a: number[], b: number[]): boolean {
  * descriptions, same as `aria-expanded`). Collapsed / partially-open titles and
  * names render as plain text. Either way the AI's partial `[[ ]]` markings
  * inside a title/name are stripped (ignored) — titles never surface partial
- * chips. Descriptions and the opening paragraph keep their normal word-level
- * chips.
+ * chips. Description terms, citations and evidence controls also activate only
+ * when fully expanded. The opening paragraph keeps its normal interactions.
  */
 export function renderBulletInner(
   b: Bullet,
@@ -576,44 +578,34 @@ export function renderBulletInner(
   factReview?: FactReviewPresentation,
 ): ReactNode {
   const max = maxMode(b);
+  const expanded = m >= max;
+  const canReview = (unitId: string) => expanded && factReview?.units.has(unitId);
   const N = b.children.length;
   const describedCount = m >= max ? N : Math.max(0, m - 1);
   const described = b.children.slice(0, describedCount);
   const inline = b.children.slice(describedCount);
-  // A whole title/name rendered as one clickable term, ALWAYS (collapsed,
-  // inline, or fully open). `term` is the clean (marker- and bold-stripped)
-  // text; the visible label keeps inline bold. The AI's partial `[[ ]]`
-  // markings inside a title/name are stripped so titles never surface partial
-  // chips. Descriptions keep their own word-level chips below.
-  const wholeTermLabel = (text: string, sourceField: string): ReactNode => (
-    <span data-sc-source-field={sourceField}>
-      <ReferenceChip
-        term={wholeTerm(text)}
-        parentNodeId={parentNodeId}
-        onClick={onRef}
-        resolution={resolution}
-      >
-        {(() => {
-          const visibleText = stripChipMarkers(text);
-          const field = sourceMarks?.get(sourceField);
-          const clicked = resolution?.childByTerm.has(wholeTerm(text)) ?? false;
-          const visibleMarks = field
-            ? {
-              persistent: clicked ? [] : field.persistent,
-              modifying: field.modifying,
-            }
-            : undefined;
-          return richText(
-            visibleText,
-            parentNodeId,
-            onRef,
-            resolution,
-            richTextContext(visibleText, visibleMarks, resolution, false),
-          );
-        })()}
-      </ReferenceChip>
-    </span>
-  );
+  // Keep the same emphasis and source-field coordinates in every mode. Only
+  // fully expanded bullets wrap their labels in interactive term chips.
+  const wholeTermLabel = (text: string, sourceField: string): ReactNode => {
+    const visibleText = stripChipMarkers(text);
+    const field = sourceMarks?.get(sourceField);
+    const clicked = resolution?.childByTerm.has(wholeTerm(text)) ?? false;
+    const visibleMarks = field
+      ? { persistent: clicked ? [] : field.persistent, modifying: field.modifying }
+      : undefined;
+    const label = richText(
+      visibleText,
+      parentNodeId,
+      onRef,
+      resolution,
+      { ...richTextContext(visibleText, visibleMarks, resolution, false), interactive: expanded },
+    );
+    return <span data-sc-source-field={sourceField}>
+      {expanded ? <ReferenceChip term={wholeTerm(text)} parentNodeId={parentNodeId} onClick={onRef} resolution={resolution}>
+        {label}
+      </ReferenceChip> : label}
+    </span>;
+  };
   return (
     <>
       <div className="sc-ab-title">
@@ -632,18 +624,18 @@ export function renderBulletInner(
           data-fact-unit={factReview?.units.has(`bullet:${bulletIndex}:${j}`)
             ? `bullet:${bulletIndex}:${j}`
             : undefined}
-          onClick={factReview?.units.has(`bullet:${bulletIndex}:${j}`)
+          onClick={canReview(`bullet:${bulletIndex}:${j}`)
             ? (event) => factClick(event, `bullet:${bulletIndex}:${j}`, factReview)
             : undefined}
-          onKeyDown={factReview?.units.has(`bullet:${bulletIndex}:${j}`)
+          onKeyDown={canReview(`bullet:${bulletIndex}:${j}`)
             ? (event) => factKeyDown(event, `bullet:${bulletIndex}:${j}`, factReview)
             : undefined}
-          role={factReview?.units.has(`bullet:${bulletIndex}:${j}`) ? 'button' : undefined}
-          tabIndex={factReview?.units.has(`bullet:${bulletIndex}:${j}`) ? 0 : undefined}
-          aria-label={factReview?.units.has(`bullet:${bulletIndex}:${j}`)
-            ? `Review evidence for: ${factReview.units.get(`bullet:${bulletIndex}:${j}`)?.text}`
+          role={canReview(`bullet:${bulletIndex}:${j}`) ? 'button' : undefined}
+          tabIndex={canReview(`bullet:${bulletIndex}:${j}`) ? 0 : undefined}
+          aria-label={canReview(`bullet:${bulletIndex}:${j}`)
+            ? `Review evidence for: ${factReview?.units.get(`bullet:${bulletIndex}:${j}`)?.text}`
             : undefined}
-          data-tip={factReview?.units.has(`bullet:${bulletIndex}:${j}`) ? 'Review evidence' : undefined}
+          data-tip={canReview(`bullet:${bulletIndex}:${j}`) ? 'Review evidence' : undefined}
         >
           <span className="sc-ab-child-mark">•</span>
           <span className="sc-ab-described-body">
@@ -654,11 +646,12 @@ export function renderBulletInner(
               parentNodeId,
               onRef,
               resolution,
-              richTextContext(
+              { ...richTextContext(
                 c.desc,
                 sourceMarks?.get(`b:${bulletIndex}:c:${j}:desc`),
                 resolution,
-              ),
+                expanded,
+              ), interactive: expanded },
             )}</span>
           </span>
         </div>
@@ -680,30 +673,6 @@ export function renderBulletInner(
                 data-fact-unit={factReview?.units.has(`bullet:${bulletIndex}:${describedCount + j}`)
                   ? `bullet:${bulletIndex}:${describedCount + j}`
                   : undefined}
-                onClick={factReview?.units.has(`bullet:${bulletIndex}:${describedCount + j}`)
-                  ? (event) => factClick(
-                    event,
-                    `bullet:${bulletIndex}:${describedCount + j}`,
-                    factReview,
-                  )
-                  : undefined}
-                onKeyDown={factReview?.units.has(`bullet:${bulletIndex}:${describedCount + j}`)
-                  ? (event) => factKeyDown(
-                    event,
-                    `bullet:${bulletIndex}:${describedCount + j}`,
-                    factReview,
-                  )
-                  : undefined}
-                role={factReview?.units.has(`bullet:${bulletIndex}:${describedCount + j}`)
-                  ? 'button'
-                  : undefined}
-                tabIndex={factReview?.units.has(`bullet:${bulletIndex}:${describedCount + j}`)
-                  ? 0
-                  : undefined}
-                aria-label={factReview?.units.has(`bullet:${bulletIndex}:${describedCount + j}`)
-                  ? `Review evidence for: ${factReview.units.get(`bullet:${bulletIndex}:${describedCount + j}`)?.text}`
-                  : undefined}
-                data-tip={factReview?.units.has(`bullet:${bulletIndex}:${describedCount + j}`) ? 'Review evidence' : undefined}
               >
                 <span className="sc-ab-child-mark">•</span>{' '}
                 {wholeTermLabel(c.name, `b:${bulletIndex}:c:${describedCount + j}:name`)}
@@ -1995,7 +1964,7 @@ export function AdaptiveBullets({
     // selection before the click fires, so ordinary clicks still pass.
     if (!window.getSelection()?.isCollapsed) return;
     const t = e.target as HTMLElement;
-    if (t.closest('.ref-chip, .cite-marker, a, button')) return;
+    if ((modes[i] ?? 0) >= maxMode(bullets[i]!) && t.closest('.ref-chip, .cite-marker, a, button')) return;
     // Intentionally NOT stopping propagation: the click bubbles up to
     // NodeView's onClick, which handles "focus this node" (selection
     // + minimum-pan). Bubbling means we only need to maintain the
