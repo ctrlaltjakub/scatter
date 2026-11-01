@@ -10,8 +10,8 @@
  *   target stage → time-based cooling vs the previous frame's texel.
  *   Output texel: R = integer stage byte, G = stage fraction byte,
  *   B = winner record index (255 = none), A = winner alpha.
- *   Point-orb scenes also write cooled steady proximity (RG) and core heat
- *   (BA) to a second RGBA8 target. Ordinary node scenes do not allocate it.
+ *   Point-orb scenes also write cooled steady proximity to a second RG8
+ *   target. Ordinary node scenes do not allocate or enable this attachment.
  *
  *   Pass B (composite) — one fragment per DEVICE PIXEL onto the
  *   canvas. Maps the pixel to its cell, reads the cell-state texel,
@@ -45,7 +45,7 @@ import {
   GROUP_COLOR_RECORD_LOW_BYTE,
   PROJECT_COLOR_INHERIT_OPACITY_BYTE,
 } from './overlay';
-import { FOCUS_BOOST } from '../sceneState';
+import { AURA_RADIUS_FOCUSED, FOCUS_BOOST } from '../sceneState';
 import { CHAT_RAY_GLSL } from '../chatRays';
 import { OPACITY_SCATTER_GLSL } from '../opacityScatter';
 import {
@@ -122,10 +122,10 @@ uniform float uDtMs;            // ms since the previous pass-A frame
 uniform float uCoolRate;        // displayed ramp stages cooled per second
 uniform int uResetHistory;      // 1 → ignore uPrevState (resize/zoom/restore)
 uniform bool uPointOpacityTrails;
-uniform sampler2D uPrevOpacityHistory; // point-orb proximity (RG) + high-precision normalized core heat (BA)
+uniform sampler2D uPrevOpacityHistory; // optional point-orb proximity, stage + fraction
 
 layout(location = 0) out vec4 outState;
-layout(location = 1) out vec4 outOpacityHistory;
+layout(location = 1) out vec2 outOpacityHistory;
 
 const int MAX_RECORDS = ${MAX_RECORDS};
 const float FOCUS_BOOST = ${fmt(FOCUS_BOOST)};
@@ -267,7 +267,6 @@ void main() {
   // can never flip which aura owns a cell (the colour-bleed bug).
   float total = 0.0;
   int priorityOwner = -1;
-  bool pointCore = false;
   for (int i = 0; i < MAX_RECORDS; i++) {
     if (i >= uRecordCount) break;
     float ds = recordLotteryDensity(i, worldPos);
@@ -280,7 +279,6 @@ void main() {
           // A neighboring orb's diffuse aura must not punch holes in the core
           // or steal its color. Only restoration point scenes use this path.
           priorityOwner = i;
-          pointCore = true;
           break;
         }
       }
@@ -345,26 +343,16 @@ void main() {
     alpha
   );
 
-  outOpacityHistory = vec4(0.0);
+  outOpacityHistory = vec2(0.0);
   if (uPointOpacityTrails) {
     // Track steady proximity, not ripple density: recoloring must not paint
     // bright rings. Keep full stage/fraction precision at every refresh rate.
     float target = (winner >= 0 ? recordLotteryDensity(winner, worldPos) : 0.0)
       * float(STAGES - 1);
-    vec4 previous = uResetHistory == 0 ? texelFetch(uPrevOpacityHistory, cell, 0) : vec4(0.0);
+    vec2 previous = uResetHistory == 0 ? texelFetch(uPrevOpacityHistory, cell, 0).rg : vec2(0.0);
     float prior = previous.r * 255.0 + previous.g;
     float cooled = max(target, prior - uDtMs * 0.001 * uCoolRate);
-    // The small opaque disk leaves its own smooth, two-second wake, rather
-    // than snapping off as soon as the moving center leaves a cell. Keep it
-    // separate from proximity so the diffuse aura's distribution is unchanged.
-    // Use both bytes across the full [0,1] range: repeatedly rounding an
-    // eight-stage fraction would noticeably slow the fade at high refresh rates.
-    float priorCore = previous.b + previous.a / 255.0;
-    float core = max(pointCore ? 1.0 : 0.0,
-      priorCore - uDtMs * 0.001 * uCoolRate / float(STAGES - 1));
-    float coreBytes = core * 255.0;
-    outOpacityHistory = vec4(floor(cooled) / 255.0, fract(cooled),
-      floor(coreBytes) / 255.0, fract(coreBytes));
+    outOpacityHistory = vec2(floor(cooled) / 255.0, fract(cooled));
   }
 }
 `;
@@ -445,7 +433,7 @@ void main() {
   int glyphIdx;
   vec4 color;
   float scatteredOpacity = 1.0;
-  float pointCoreHeat = 0.0;
+  bool pointCore = false;
   {
     vec4 st = texelFetch(uCellState, ivec2(col, row), 0);
     int stage = int(st.r * 255.0 + 0.5);
@@ -453,13 +441,19 @@ void main() {
     uint h = cellHash(col, row);
     if (statusG == 0) {
       if (uPointOpacityTrails) {
-        vec4 history = texelFetch(uOpacityHistory, ivec2(col, row), 0);
+        vec2 history = texelFetch(uOpacityHistory, ivec2(col, row), 0).rg;
         float proximity = clamp((history.r * 255.0 + history.g) / ${fmt(STAGES - 1)}, 0.0, 1.0);
-        pointCoreHeat = clamp(history.b + history.a / 255.0, 0.0, 1.0);
         // Point-aura area percentile is (distance / radius)^2. Its cooled
         // proximity persists after the orb moves on, including ownerless cells.
         float distanceFraction = 1.0 - proximity;
         scatteredOpacity = proximity > 0.0 ? auraOpacityTier(h, distanceFraction * distanceFraction) : 0.5;
+        // The core is just the innermost part of the EXISTING cooled field.
+        // No separate opacity history or fade: cells stop being core cells as
+        // their normal density cools, preserving the established glyph wake.
+        float radius = winner != ${WINNER_NONE}
+          ? texelFetch(uRecords, ivec2(winner * 4 + 1, 0), 0).x : ${fmt(AURA_RADIUS_FOCUSED)};
+        pointCore = proximity > 0.0
+          && distanceFraction * radius * uViewport.z <= ${fmt(POINT_ORB_CORE_RADIUS_PX)};
       } else if (winner != ${WINNER_NONE}) {
         vec4 rect = texelFetch(uRecords, ivec2(winner * 4, 0), 0);
         vec4 owner = texelFetch(uRecords, ivec2(winner * 4 + 1, 0), 0);
@@ -607,10 +601,9 @@ void main() {
   // Apply the random tiers after the slider's saturation, so even at 200%
   // the half-opacity cells retain their contrast. Atlas antialiasing stays intact.
   float fieldAlpha = clamp(inkAlpha * opacity, 0.0, 1.0) * scatteredOpacity;
-  // Core ink reaches true opacity in either theme and cools back into the
-  // scattered field. Respect the user's opacity slider and atlas antialiasing;
-  // functional overlays bypass core heat just as they bypass aura scattering.
-  float a = glyphA * mix(fieldAlpha, clamp(opacity, 0.0, 1.0), pointCoreHeat);
+  // Opaque ink only in the existing field's small core. The opacity slider,
+  // atlas antialiasing and functional overlays keep their established behavior.
+  float a = glyphA * (pointCore ? clamp(opacity, 0.0, 1.0) : fieldAlpha);
   outColor = vec4(color.rgb * a, a); // premultiplied over the white host bg
 }
 `;

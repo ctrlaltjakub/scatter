@@ -80,10 +80,10 @@ describe('chat ray shader integration', () => {
 
 describe('overlay opacity modes', () => {
   test('point-orb opacity trails cool steady proximity without inheriting recolor ripples', () => {
-    const history = PASS_A_FRAGMENT_SRC.slice(PASS_A_FRAGMENT_SRC.indexOf('outOpacityHistory = vec4(0.0)'));
+    const history = PASS_A_FRAGMENT_SRC.slice(PASS_A_FRAGMENT_SRC.indexOf('outOpacityHistory = vec2(0.0)'));
     expect(history).toContain('recordLotteryDensity(winner, worldPos)');
     expect(history).not.toContain('recordDensity(winner, worldPos)');
-    expect(history).toContain('uResetHistory == 0 ? texelFetch(uPrevOpacityHistory, cell, 0) : vec4(0.0)');
+    expect(history).toContain('uResetHistory == 0 ? texelFetch(uPrevOpacityHistory, cell, 0).rg : vec2(0.0)');
     expect(history).toContain('prior - uDtMs * 0.001 * uCoolRate');
     expect(history).toContain('floor(cooled) / 255.0, fract(cooled)');
     const scatter = PASS_B_FRAGMENT_SRC.indexOf('if (uPointOpacityTrails)');
@@ -92,17 +92,18 @@ describe('overlay opacity modes', () => {
     expect(PASS_B_FRAGMENT_SRC).toContain('auraOpacityTier(h, distanceFraction * distanceFraction)');
   });
 
-  test('round point cores have priority and preserve their own cooling trail', () => {
+  test('round point cores use the existing cooled proximity without an independent trail', () => {
     expect(PASS_A_FRAGMENT_SRC).toContain('if (uPointOpacityTrails)');
     expect(PASS_A_FRAGMENT_SRC).toContain('all(equal(rect.zw, vec2(0.0)))');
     expect(PASS_A_FRAGMENT_SRC).toContain(`length(worldPos - rect.xy) * uViewport.z <= ${POINT_ORB_CORE_RADIUS_PX}.0`);
-    expect(PASS_A_FRAGMENT_SRC).toContain('float priorCore = previous.b + previous.a / 255.0;');
-    expect(PASS_A_FRAGMENT_SRC).toContain('priorCore - uDtMs * 0.001 * uCoolRate / float(STAGES - 1)');
-    expect(PASS_A_FRAGMENT_SRC).toContain('floor(coreBytes) / 255.0, fract(coreBytes)');
-    const heat = PASS_B_FRAGMENT_SRC.indexOf('pointCoreHeat = clamp(');
-    expect(heat).toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf('if (statusG == 0)'));
-    expect(heat).toBeLessThan(PASS_B_FRAGMENT_SRC.indexOf('else if (winner !='));
-    expect(PASS_B_FRAGMENT_SRC).toContain('mix(fieldAlpha, clamp(opacity, 0.0, 1.0), pointCoreHeat)');
+    expect(PASS_A_FRAGMENT_SRC).toContain('layout(location = 1) out vec2 outOpacityHistory;');
+    expect(PASS_A_FRAGMENT_SRC).not.toContain('priorCore');
+    expect(PASS_B_FRAGMENT_SRC).not.toContain('pointCoreHeat');
+    const core = PASS_B_FRAGMENT_SRC.indexOf('pointCore = proximity > 0.0');
+    expect(core).toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf('if (statusG == 0)'));
+    expect(core).toBeLessThan(PASS_B_FRAGMENT_SRC.indexOf('else if (winner !='));
+    expect(PASS_B_FRAGMENT_SRC).toContain(`distanceFraction * radius * uViewport.z <= ${POINT_ORB_CORE_RADIUS_PX}.0`);
+    expect(PASS_B_FRAGMENT_SRC).toContain('pointCore ? clamp(opacity, 0.0, 1.0) : fieldAlpha');
   });
 
   test('applies the theme boost once after all opacity overrides, capped before glyph coverage', () => {

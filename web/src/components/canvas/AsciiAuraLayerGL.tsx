@@ -153,7 +153,7 @@ interface GLState {
   overlayTex: WebGLTexture;
   stateTexA: WebGLTexture;
   stateTexB: WebGLTexture;
-  /** Only for startup orbs; RG stage/fraction proximity + BA normalized core heat. */
+  /** Only allocated for startup point-orb scenes; RG8 stage/fraction history. */
   opacityTexA: WebGLTexture | null;
   opacityTexB: WebGLTexture | null;
   fboA: WebGLFramebuffer;
@@ -551,7 +551,7 @@ export function AsciiAuraLayerGL({
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
             if (opacityTex) {
               gl.bindTexture(gl.TEXTURE_2D, opacityTex);
-              gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cellsX, cellsY, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+              gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8, cellsX, cellsY, 0, gl.RG, gl.UNSIGNED_BYTE, null);
               gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, opacityTex, 0);
               gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
             }

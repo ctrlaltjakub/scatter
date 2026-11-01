@@ -48,7 +48,7 @@ test.beforeEach(async ({ page }) => {
   await expect.poll(() => uniform(page)).toBe(1);
 });
 
-test('round opaque orb cores and scattered brightness leave cooling trails without changing ordinary auras', async ({ page }) => {
+test('round opaque orb cores follow existing glyph-field cooling without a separate opacity trail', async ({ page }) => {
   const result = await page.evaluate(() => {
     const get = (window as any).opacityExport;
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 64;
@@ -80,7 +80,7 @@ test('round opaque orb cores and scattered brightness leave cooling trails witho
     const overlay = texture(64, 64, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(64*64*4));
     const targets = [0, 1].map(() => {
       const state = texture(64, 64, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      const history = texture(64, 64, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      const history = texture(64, 64, gl.RG8, gl.RG, gl.UNSIGNED_BYTE, null);
       const fbo = gl.createFramebuffer()!; gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, state, 0);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, history, 0);
@@ -154,16 +154,16 @@ test('round opaque orb cores and scattered brightness leave cooling trails witho
     step(16.5,0,true,false,false);
     const regularMoved = step(48.5,16,false,false,false);
     const pixelAlpha = (frame: ReturnType<typeof step>, x: number, y: number) => frame.pixels[((63-y)*64+x)*4+3]!;
-    const coreHeat = (frame: ReturnType<typeof step>, x: number, y: number) => {
+    const proximity = (frame: ReturnType<typeof step>, x: number, y: number) => {
       const i=(y*64+x)*4;
-      return frame.history[i+2]!/255+frame.history[i+3]!/65025;
+      return (frame.history[i]!+frame.history[i+1]!/255)/8;
     };
     const coreCells: [number, number][] = [];
     let circleMatches = true;
     for (let y=0;y<64;y++) for(let x=0;x<64;x++) {
       const inCircle = Math.hypot(x+0.5-16.5,y+0.5-32.5)*9 <= get('POINT_ORB_CORE_RADIUS_PX');
       if(inCircle) coreCells.push([x,y]);
-      if ((coreHeat(initial,x,y)===1)!==inCircle) circleMatches=false;
+      if ((pixelAlpha(initial,x,y)===255)!==inCircle) circleMatches=false;
     }
     const dark = step(16.5,0,true,false,true,{alpha:0.7});
     const light = step(16.5,0,true,false,true,{alpha:1});
@@ -186,14 +186,16 @@ test('round opaque orb cores and scattered brightness leave cooling trails witho
       coreCount:coreCells.length,circleMatches,
       opaqueBothThemes:coreCells.every(([x,y])=>pixelAlpha(dark,x,y)===255 && pixelAlpha(light,x,y)===255),
       coreWake:{initial:pixelAlpha(initial,16,32),moved:pixelAlpha(moved,16,32),fading:pixelAlpha(fadedFrame,16,32),cooled:pixelAlpha(cooled,16,32)},
-      coreHeat:{moved:coreHeat(moved,16,32),fading:coreHeat(fadedFrame,16,32),cooled:coreHeat(cooled,16,32),reset:coreHeat(resetMoved,16,32),highRefresh:coreHeat(highRefresh,16,32)},
+      proximity:{moved:proximity(moved,16,32),fading:proximity(fadedFrame,16,32),cooled:proximity(cooled,16,32),reset:proximity(resetMoved,16,32)},
+      noSeparateCoreHistory:initial.history.every((v,i)=>i%4!==2&&i%4!==3||v===(i%4===2?0:255)),
+      noLingeringOpacity:pixelAlpha(highRefresh,16,32)<255,
       hidden:zero.pixels.every((v,i)=>i%4!==3||v===0),
       halfCore:coreCells.every(([x,y])=>pixelAlpha(half,x,y)===128),
       labelsUnchanged:coreCells.every(([x,y])=>pixelAlpha(label,x,y)===204),
       overlapPreservesCore:coreCells.every(([x,y])=>pixelAlpha(overlap,x,y)===255 && overlap.state[(y*64+x)*4+2]===0),
       secondCoreOwner:overlap.state[(32*64+24)*4+2],
       zoomIndependent:initial.pixels.every((v,i)=>v===zoomed.pixels[i]),
-      regularCoreHeat:coreHeat(regularMoved,16,32),
+      regularOpaque:regularMoved.pixels.some((v,i)=>i%4===3&&v===255),
     };
     gl.getExtension('WEBGL_lose_context')?.loseContext();
     return result;
@@ -214,23 +216,22 @@ test('round opaque orb cores and scattered brightness leave cooling trails witho
   expect(result.circleMatches).toBe(true);
   expect(result.opaqueBothThemes).toBe(true);
   expect(result.coreWake.initial).toBe(255);
-  expect(result.coreWake.moved).toBeGreaterThan(250);
-  expect(result.coreWake.moved).toBeLessThan(255);
+  expect(result.coreWake.moved).toBe(255);
   expect(result.coreWake.fading).toBeLessThan(result.coreWake.moved);
-  expect(result.coreWake.fading).toBeGreaterThan(180);
   expect(result.coreWake.cooled).toBe(102);
-  expect(result.coreHeat.moved).toBeCloseTo(0.992,3);
-  expect(result.coreHeat.fading).toBeCloseTo(0.692,3);
-  expect(result.coreHeat.cooled).toBe(0);
-  expect(result.coreHeat.reset).toBe(0);
-  expect(result.coreHeat.highRefresh).toBeLessThan(0.002);
+  expect(result.proximity.moved).toBeCloseTo(0.992,3);
+  expect(result.proximity.fading).toBeCloseTo(0.692,3);
+  expect(result.proximity.cooled).toBe(0);
+  expect(result.proximity.reset).toBe(0);
+  expect(result.noSeparateCoreHistory).toBe(true);
+  expect(result.noLingeringOpacity).toBe(true);
   expect(result.hidden).toBe(true);
   expect(result.halfCore).toBe(true);
   expect(result.labelsUnchanged).toBe(true);
   expect(result.overlapPreservesCore).toBe(true);
   expect(result.secondCoreOwner).toBe(1);
   expect(result.zoomIndependent).toBe(true);
-  expect(result.regularCoreHeat).toBe(0);
+  expect(result.regularOpaque).toBe(false);
 });
 
 test('the real orb renderer retains its opacity history through resize and graphics-context restoration', async ({ page }, info) => {
@@ -277,7 +278,7 @@ test('the real orb renderer retains its opacity history through resize and graph
     await page.screenshot({ path: info.outputPath(`orbs-opacity-wake-${theme}.png`) });
   }
   // A restoration failure stops the orbit and its recoloring timer. The old
-  // core must still finish cooling, rather than freezing when the renderer idles.
+  // dense glyphs must still finish cooling, rather than freezing when the renderer idles.
   await page.evaluate(() => {
     const get = (window as any).opacityExport;
     (window as any).orbTestRoot.render(get('createElement')(get('ProjectRestorationScreen'), {
@@ -301,8 +302,16 @@ test('the real orb renderer retains its opacity history through resize and graph
     const pixels = new Uint8Array((max[0]!+1)*(max[1]!+1)*4);
     gl.readPixels(0,0,max[0]!+1,max[1]!+1,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
     gl.bindFramebuffer(gl.FRAMEBUFFER,prev); gl.deleteFramebuffer(framebuffer); gl.activeTexture(active);
+    const pitch = gl.getUniform(p, gl.getUniformLocation(p, 'uCellCssPx')!);
     let fading=0;
-    for(let i=0;i<pixels.length;i+=4) if ((pixels[i+2]!>0||pixels[i+3]!>0) && pixels[i+2]!==255) fading++;
+    for(let y=0;y<=max[1]!;y++) for(let x=0;x<=max[0]!;x++) {
+      const i=(y*(max[0]!+1)+x)*4;
+      if (pixels[i+2]!==0||pixels[i+3]!==255) throw new Error('Unexpected separate core history');
+      const proximity=(pixels[i]!+pixels[i+1]!/255)/8;
+      const dx=(x+0.5)*pitch-canvas.clientWidth/2, dy=(y+0.5)*pitch-canvas.clientHeight/2;
+      const distance=Math.min(Math.hypot(dx,dy-150),Math.hypot(dx,dy+150));
+      if((1-proximity)*225<=24 && distance>24.2) fading++;
+    }
     return fading;
   });
   await expect.poll(fadingCells).toBeGreaterThan(0);
