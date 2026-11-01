@@ -3182,7 +3182,7 @@ select.input {
 .ref-chip.unexplored {
   text-decoration: underline;
   text-underline-offset: 2px;
-  text-decoration-color: color-mix(in oklab, var(--overlay1) 80%, transparent);
+  text-decoration-color: var(--overlay1);
 }
 .ref-chip.unexplored:hover {
   text-decoration-color: var(--text);
@@ -3214,7 +3214,7 @@ select.input {
   cursor: var(--cur-text);
 }
 .ref-chip.zoom-disabled.unexplored:hover {
-  text-decoration-color: color-mix(in oklab, var(--overlay1) 80%, transparent);
+  text-decoration-color: var(--overlay1);
 }
 .ref-chip.zoom-disabled.explored:hover { background: var(--tint-3); }
 /* One delegated, screen-space preview for terms and persisted
@@ -7357,7 +7357,7 @@ select.input {
   color: var(--text);
   font-weight: 700;
   text-decoration: underline;
-  text-decoration-color: color-mix(in oklab, var(--overlay1) 80%, transparent);
+  text-decoration-color: var(--overlay1);
   text-underline-offset: 2px;
 }
 .text-editor-article .editor-l2-list { margin: 3px 0 0; padding-left: 18px; }
@@ -7379,7 +7379,7 @@ select.input {
 .text-editor-article .editor-l2-name {
   font-weight: 700;
   text-decoration: underline;
-  text-decoration-color: color-mix(in oklab, var(--overlay1) 80%, transparent);
+  text-decoration-color: var(--overlay1);
   text-underline-offset: 2px;
 }
 
@@ -7388,7 +7388,7 @@ select.input {
 .text-editor-article .editor-term {
   position: relative;
   text-decoration: underline;
-  text-decoration-color: color-mix(in oklab, var(--overlay1) 80%, transparent);
+  text-decoration-color: var(--overlay1);
   text-underline-offset: 2px;
   cursor: var(--cur-term);
 }

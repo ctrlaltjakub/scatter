@@ -18,7 +18,7 @@ function declarations(root: postcss.Root, selector: string) {
 }
 
 describe('shared text-link presentation', () => {
-  it('keeps the stronger resting underline consistent in nodes, overview, and editors', () => {
+  it('keeps fully opaque grey resting underlines consistent in nodes, overview, and editors', () => {
     for (const selector of [
       '.ref-chip.unexplored',
       '.ref-chip.zoom-disabled.unexplored:hover',
@@ -27,7 +27,7 @@ describe('shared text-link presentation', () => {
       '.text-editor-article .editor-term',
     ]) {
       expect(declarations(globalCss, selector)['text-decoration-color'], selector)
-        .toBe('color-mix(in oklab, var(--overlay1) 80%, transparent)');
+        .toBe('var(--overlay1)');
       expect(declarations(globalCss, selector)['text-decoration-thickness'], selector).toBeUndefined();
     }
   });

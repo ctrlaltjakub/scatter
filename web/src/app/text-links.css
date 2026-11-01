@@ -8,7 +8,7 @@ a[href][data-link-control] .app-link-label {
   border-radius: 2px;
   text-decoration: underline;
   text-underline-offset: 2px;
-  text-decoration-color: color-mix(in oklab, var(--overlay1) 80%, transparent);
+  text-decoration-color: var(--overlay1);
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
   transition: background-color 0.15s ease, text-decoration-color 0.1s;
