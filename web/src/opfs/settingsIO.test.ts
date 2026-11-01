@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { loadSettings, saveSettings } from './settingsIO';
+import { loadSettings, saveSettings, normalizeSettings } from './settingsIO';
+import { settingsSnapshot } from '@/store/settingsSnapshot';
 import { DEFAULT_SETTINGS } from '@/store/types';
 import { PROMPT_KEYS } from '@/lib/promptCatalog';
 import { CURRENT_ADVANCED_DEFAULTS } from '@/lib/advancedSettingsDefaults';
@@ -26,6 +27,21 @@ beforeEach(() => {
 });
 
 describe('settingsIO', () => {
+  it('persists ASCII opacity, including zero, in settings snapshots and reloads', async () => {
+    for (const asciiOpacity of [0, 50, 100, 200]) {
+      const saved = settingsSnapshot({ ...DEFAULT_SETTINGS, asciiOpacity });
+      expect(saved.asciiOpacity).toBe(asciiOpacity);
+      await saveSettings(saved);
+      expect((await loadSettings()).asciiOpacity).toBe(asciiOpacity);
+    }
+  });
+  it('repairs imported ASCII opacity and keeps the previous appearance for legacy settings', () => {
+    for (const value of [undefined, null, '50', NaN, Infinity]) {
+      expect(normalizeSettings({ providers: [], asciiOpacity: value }).asciiOpacity).toBe(100);
+    }
+    expect(normalizeSettings({ providers: [], asciiOpacity: -1 }).asciiOpacity).toBe(0);
+    expect(normalizeSettings({ providers: [], asciiOpacity: 300 }).asciiOpacity).toBe(200);
+  });
   it('persists custom font bytes and the selected font across a restart', async () => {
     await saveSettings({ ...DEFAULT_SETTINGS, customNodeFonts: [customFontFixture], nodeFontId: customFontFixture.id });
     expect(await loadSettings()).toMatchObject({ customNodeFonts: [customFontFixture], nodeFontId: customFontFixture.id });

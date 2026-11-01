@@ -4,7 +4,7 @@ export const SETTINGS_PAGES = [
     group: 'Personalize',
     label: 'Appearance',
     description: 'Choose the theme, node fonts, paragraph layout, and canvas colors.',
-    keywords: 'theme light dark system accent hue shift saturation brightness desaturate darken color arrows resize font typeface dyslexic comic sans monospace custom fonts upload ttf otf woff woff2 reading paragraph sentence lines justify group colors automatic assignment opposites golden angle hierarchy reassign',
+    keywords: 'theme light dark system ascii background opacity transparency glyphs aura statuses labels accent hue shift saturation brightness desaturate darken color arrows resize font typeface dyslexic comic sans monospace custom fonts upload ttf otf woff woff2 reading paragraph sentence lines justify group colors automatic assignment opposites golden angle hierarchy reassign',
   },
   {
     id: 'canvas',

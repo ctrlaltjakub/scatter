@@ -11,6 +11,7 @@ import { settingsSnapshot } from './settingsSnapshot';
 import { mainModelCompatible } from '@/lib/modelMeta';
 import { useModelCatalogStore } from './useModelCatalogStore';
 import { normalizeSelectionWebSearch } from '@/lib/selectionWebSearch';
+import { normalizeAsciiOpacity } from '@/lib/asciiAura/opacity';
 import { manualModelChoice, planRecommendedModels, MODEL_ROLES, modelUpdatePreferences } from '@/lib/recommendedModels';
 import type { ModelRole } from './types';
 import { useImageModelCatalogStore } from './useImageModelCatalogStore';
@@ -104,6 +105,7 @@ interface SettingsState extends Settings {
   setAccentDesaturate: (v: number) => void;
   /** Uniform darkening (lightness % points) for those accents. */
   setAccentDarken: (v: number) => void;
+  setAsciiOpacity: (v: number) => void;
   /** Dedicated model shared by routing, term marking, and free-image discovery. */
   setSecondaryModel: (providerId: string, model: string) => void;
   setSecondaryUseSameModel: (v: boolean) => void;
@@ -367,6 +369,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setAccentHueShift: (v) => { set({ accentHueShift: v }); persist(settingsSnapshot(get())); },
   setAccentDesaturate: (v) => { set({ accentDesaturate: v }); persist(settingsSnapshot(get())); },
   setAccentDarken: (v) => { set({ accentDarken: v }); persist(settingsSnapshot(get())); },
+  // Appearance preference only: no project-content undo entry.
+  setAsciiOpacity: (v) => {
+    const asciiOpacity = normalizeAsciiOpacity(v);
+    if (asciiOpacity === get().asciiOpacity) return;
+    set({ asciiOpacity });
+    persist(settingsSnapshot(get()));
+  },
   setSecondaryModel: (providerId, model) => {
     set({ secondaryModelRef: { providerId, model }, secondaryUseSameModel: false, modelRecommendations: manualModelChoice(get(), 'secondary') });
     persist(settingsSnapshot(get()));

@@ -42,6 +42,26 @@ function go(name: string) {
 }
 
 describe('redesigned settings', () => {
+  it('adjusts ASCII opacity live, supports numeric input, and resets to the unchanged default', () => {
+    render(<SettingsModal open onClose={() => {}} />);
+    const slider = screen.getByRole('slider', { name: 'ASCII opacity' });
+    expect(slider).toHaveValue('100');
+    fireEvent.change(slider, { target: { value: '25' } });
+    expect(useSettingsStore.getState().asciiOpacity).toBe(25);
+    expect(screen.getByRole('spinbutton', { name: 'ASCII opacity value' })).toHaveValue(25);
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'ASCII opacity value' }), { target: { value: '175' } });
+    expect(useSettingsStore.getState().asciiOpacity).toBe(175);
+    expect(slider).toHaveValue('175');
+    fireEvent.change(slider, { target: { value: '0' } });
+    fireEvent.keyUp(slider, { key: 'Home' });
+    expect(useSettingsStore.getState().asciiOpacity).toBe(0);
+    act(() => useSettingsStore.getState().setAsciiOpacity(500));
+    expect(slider).toHaveValue('200');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset ASCII opacity to default' }));
+    expect(slider).toHaveValue('100');
+    expect(useSettingsStore.getState().asciiOpacity).toBe(DEFAULT_SETTINGS.asciiOpacity);
+  });
+
   it('uses the current project tint for panels and keeps disclosure headings inside their panels', () => {
     const project = { ...createBlankProject('Settings preview', 'root'), color: '#ad4f7e' };
     useGraphStore.setState({ project });
@@ -386,7 +406,7 @@ describe('redesigned settings', () => {
     expect(reading).not.toHaveTextContent('Paragraph layout applies to');
     expect(reading).not.toHaveTextContent('Menus, buttons, and interactive content');
     expect(screen.getAllByRole('heading', { level: 3 }).map(heading => heading.textContent))
-      .toEqual(['Color theme', 'Reading', 'Canvas accents', 'Group colors']);
+      .toEqual(['Color theme', 'Reading', 'ASCII background', 'Canvas accents', 'Group colors']);
     go('Canvas and nodes');
     expect(screen.queryByRole('heading', { name: 'Reading', level: 3 })).toBeNull();
     expect(screen.queryByRole('heading', { name: 'Group colors', level: 3 })).toBeNull();

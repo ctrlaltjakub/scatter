@@ -3,6 +3,7 @@ import { MODEL_ROLES, normalizeRecommendations } from '@/lib/recommendedModels';
 import { normalizeAdvancedSettings } from '@/lib/advancedSettingsDefaults';
 import { normalizeSelectionWebSearch } from '@/lib/selectionWebSearch';
 import { normalizeCameraAutoPan } from '@/lib/cameraPreferences';
+import { normalizeAsciiOpacity } from '@/lib/asciiAura/opacity';
 import { DEFAULT_SETTINGS, type Settings, type ProviderAccount, type ActiveModelRef, type ProviderConfig, type KeyBinding } from '@/store/types';
 import { newId } from '@/lib/ids';
 import { KEY_ACTIONS } from '@/lib/keymap';
@@ -258,6 +259,7 @@ function finalize(
     accentHueShift: typeof d.accentHueShift === 'number' ? d.accentHueShift : DEFAULT_SETTINGS.accentHueShift,
     accentDesaturate: typeof d.accentDesaturate === 'number' ? d.accentDesaturate : DEFAULT_SETTINGS.accentDesaturate,
     accentDarken: typeof d.accentDarken === 'number' ? d.accentDarken : DEFAULT_SETTINGS.accentDarken,
+    asciiOpacity: normalizeAsciiOpacity(d.asciiOpacity),
     reasoningEffort:
       isReasoningEffort(d.reasoningEffort)
         ? d.reasoningEffort

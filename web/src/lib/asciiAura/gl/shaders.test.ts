@@ -80,12 +80,22 @@ describe('chat ray shader integration', () => {
 describe('overlay opacity modes', () => {
   test('applies the theme boost once after all opacity overrides, capped before glyph coverage', () => {
     const floor = PASS_B_FRAGMENT_SRC.indexOf(`color.a = max(${OVERLAY_MIN_ALPHA.toFixed(2)}, color.a);`);
-    const boost = 'float a = glyphA * min(1.0, color.a + uAlphaBoost);';
+    const boost = 'float inkAlpha = min(1.0, color.a + uAlphaBoost);';
     expect(PASS_B_FRAGMENT_SRC).toContain('uniform float uAlphaBoost;');
     expect(PASS_B_FRAGMENT_SRC.indexOf(boost)).toBeGreaterThan(floor);
     expect(PASS_B_FRAGMENT_SRC.split('color.a + uAlphaBoost')).toHaveLength(2);
     expect(PASS_B_FRAGMENT_SRC.indexOf('outColor = vec4(color.rgb * a, a);'))
       .toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf(boost));
+  });
+
+  test('applies global opacity after every glyph and overlay, preserving antialiasing and premultiplied output', () => {
+    const scale = PASS_B_FRAGMENT_SRC.indexOf('float a = glyphA * clamp(inkAlpha * uOpacity, 0.0, 1.0);');
+    expect(PASS_B_FRAGMENT_SRC).toContain('uniform float uOpacity;');
+    expect(scale).toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf('float inkAlpha = min(1.0, color.a + uAlphaBoost);'));
+    expect(scale).toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf('if (statusG != 0)'));
+    expect(PASS_B_FRAGMENT_SRC.indexOf('outColor = vec4(color.rgb * a, a);')).toBeGreaterThan(scale);
+    // Only the compositing pass changes; layout, cooling and animation stay intact.
+    expect(PASS_A_FRAGMENT_SRC).not.toContain('uOpacity');
   });
 
   test('lets shape-only labels inherit aura opacity while status text keeps its floor', () => {

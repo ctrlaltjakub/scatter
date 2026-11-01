@@ -109,6 +109,8 @@ import { useCanvasSelectionStore } from '@/store/useCanvasSelectionStore';
 import { AURA_RADIUS_FOCUSED } from '@/lib/asciiAura/sceneState';
 import { paintSelectionOverlay, selectionAuraBorder } from '@/lib/asciiAura/selectionOverlay';
 import { useGraphStore } from '@/store/useGraphStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
+import { normalizeAsciiOpacity } from '@/lib/asciiAura/opacity';
 import { isBatchNodeSelection } from '@/lib/nodeSelection';
 import {
   bboxFullyVisible,
@@ -172,6 +174,7 @@ interface GLState {
   bPaletteCount: WebGLUniformLocation | null;
   bNeutral: WebGLUniformLocation | null;
   bAlphaBoost: WebGLUniformLocation | null;
+  bOpacity: WebGLUniformLocation | null;
   bDeviceCellPx: WebGLUniformLocation | null;
   bCellCssPx: WebGLUniformLocation | null;
   bViewport: WebGLUniformLocation | null;
@@ -237,6 +240,7 @@ export function AsciiAuraLayerGL({
     baselineColor: 'rgba(195,195,195,0.6)', // default matches --scatter-base; used until the CSS var is read
     auraColor: 'rgba(195,195,195,1)',       // default matches --aura-color
     alphaBoost: 0.05,
+    opacity: 1,
     /** Part F/G — CPU-side per-cell overlay buffer (RGBA8, row-major):
      *  R = status glyph index, G = arrow demote, B = status colour index.
      *  Zero-filled each frame (G=0 → no demote, R=0 → no status). */
@@ -428,6 +432,7 @@ export function AsciiAuraLayerGL({
         bPaletteCount: u(progB, 'uPaletteCount'),
         bNeutral: u(progB, 'uNeutral'),
         bAlphaBoost: u(progB, 'uAlphaBoost'),
+        bOpacity: u(progB, 'uOpacity'),
         bDeviceCellPx: u(progB, 'uDeviceCellPx'),
         bCellCssPx: u(progB, 'uCellCssPx'),
         bViewport: u(progB, 'uViewport'),
@@ -468,6 +473,15 @@ export function AsciiAuraLayerGL({
     });
     const unsubscribeSelection = useCanvasSelectionStore.subscribe(() => {
       stateRef.current.dirty = true;
+    });
+    const updateOpacity = () => {
+      stateRef.current.opacity = normalizeAsciiOpacity(useSettingsStore.getState().asciiOpacity) / 100;
+      // Wake an idle field without resetting its animation/cooling history.
+      stateRef.current.dirty = true;
+    };
+    updateOpacity();
+    const unsubscribeSettings = useSettingsStore.subscribe((settings, previous) => {
+      if (settings.asciiOpacity !== previous.asciiOpacity) updateOpacity();
     });
 
     /** (Re)allocate sizing-dependent resources when the container,
@@ -1296,6 +1310,7 @@ export function AsciiAuraLayerGL({
       gl.uniform1i(g.bPaletteCount, s.paletteCount);
       gl.uniform4f(g.bNeutral, neutral.r, neutral.g, neutral.b, neutral.alphaBase);
       gl.uniform1f(g.bAlphaBoost, s.alphaBoost);
+      gl.uniform1f(g.bOpacity, s.opacity);
       gl.uniform1f(g.bDeviceCellPx, s.deviceCellPx);
       gl.uniform1f(g.bCellCssPx, s.deviceCellPx / s.dpr);
       gl.uniform3f(g.bViewport, sc.viewport.x, sc.viewport.y, sc.viewport.zoom);
@@ -1411,6 +1426,7 @@ export function AsciiAuraLayerGL({
       unsubscribeDragHint();
       unsubscribeProjectSyncLabel();
       unsubscribeSelection();
+      unsubscribeSettings();
       canvas.removeEventListener('webglcontextlost', onLost);
       canvas.removeEventListener('webglcontextrestored', onRestored);
       // Delete resources but do NOT loseContext(): React StrictMode

@@ -1,4 +1,5 @@
 'use client';
+import { MAX_ASCII_OPACITY } from '@/lib/asciiAura/opacity';
 import { ReleaseFooter } from './settings/ReleaseFooter';
 import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { colorToCss } from '@/lib/groupColor';
@@ -625,6 +626,8 @@ function ThemeTab() {
   const setAccentDesaturate = useSettingsStore((s) => s.setAccentDesaturate);
   const accentDarken = useSettingsStore((s) => s.accentDarken);
   const setAccentDarken = useSettingsStore((s) => s.setAccentDarken);
+  const asciiOpacity = useSettingsStore((s) => s.asciiOpacity);
+  const setAsciiOpacity = useSettingsStore((s) => s.setAsciiOpacity);
 
   useEffect(() => {
     setThemeState(readThemePreference());
@@ -680,6 +683,25 @@ function ThemeTab() {
       </SettingsSection>
       <ReadingSettings />
       <SettingsSection
+        title="ASCII background"
+        description={<>Adjust <strong>all ASCII glyphs</strong>, including statuses, labels, selection marks, and focused or unfocused node auras.</>}
+      >
+        <AccentSettingRow
+          label="ASCII opacity"
+          value={asciiOpacity}
+          def={DEFAULT_SETTINGS.asciiOpacity}
+          min={0}
+          max={MAX_ASCII_OPACITY}
+          unit="%"
+          live
+          onChange={setAsciiOpacity}
+        />
+        <p className="field-help">
+          <strong>100% preserves the default appearance</strong>. Lower values fade the field; higher values increase its opacity.
+          <strong> 0% hides all ASCII glyphs and labels</strong>. Node content and controls stay unchanged.
+        </p>
+      </SettingsSection>
+      <SettingsSection
         title="Canvas accents"
         description={<>Adjust <strong>arrows and resize handles</strong> relative to each node’s group color. <strong>Ungrouped nodes</strong> stay neutral.</>}
       >
@@ -726,7 +748,8 @@ function ThemeTab() {
  *  default. The slider updates LOCAL state on drag (so the thumb is perfectly
  *  smooth with ZERO canvas work) and only commits — recoloring every node and
  *  arrow — when the drag ENDS (pointer/key up). The number field accepts an
- *  empty value while editing and falls back to the minimum on blur. */
+ *  empty value while editing and falls back to the minimum on blur.
+ *  Cheap renderer-only adjustments can opt into live updates. */
 function AccentSettingRow({
   label,
   value,
@@ -735,6 +758,7 @@ function AccentSettingRow({
   max,
   unit,
   signed = false,
+  live = false,
   onChange,
 }: {
   label: string;
@@ -744,6 +768,7 @@ function AccentSettingRow({
   max: number;
   unit: string;
   signed?: boolean;
+  live?: boolean;
   onChange: (v: number) => void;
 }) {
   const [mag, setMag] = useState(signed ? Math.abs(value) : value);
@@ -769,7 +794,8 @@ function AccentSettingRow({
   const slide = (m: number) => {
     setMagBoth(m);
     setText(String(m));
-  }; // drag = LOCAL only
+    if (live) commit(m, neg);
+  };
   const setDir = (n: boolean) => {
     const next = signed ? magRef.current : (n ? -1 : 1) * Math.abs(magRef.current);
     if (!signed) slide(next);

@@ -1,5 +1,6 @@
 import { CURRENT_ADVANCED_DEFAULTS, type AdvancedDefaults } from '@/lib/advancedSettingsDefaults';
 import { DEFAULT_CAMERA_AUTO_PAN, type CameraAutoPan } from '@/lib/cameraPreferences';
+import { DEFAULT_ASCII_OPACITY } from '@/lib/asciiAura/opacity';
 import type { CustomNodeFont } from '@/lib/customNodeFonts';
 
 export type CatppuccinAccent =
@@ -881,6 +882,8 @@ export interface Settings {
   accentDesaturate: number;
   /** Lightness to remove from those accents, in absolute % points (0 = unchanged). */
   accentDarken: number;
+  /** Global ASCII-field opacity multiplier in percent, including all labels and auras. */
+  asciiOpacity: number;
   /** Preferred main-model effort; coerced to the model's supported levels. */
   reasoningEffort: ReasoningEffort;
   outputTokenCap: number;
@@ -1023,6 +1026,7 @@ export const DEFAULT_SETTINGS: Settings = {
   accentHueShift: 33,
   accentDesaturate: 0,
   accentDarken: 20,
+  asciiOpacity: DEFAULT_ASCII_OPACITY,
   // Default 'low': today the main pass sends no effort, so reasoning models run
   // at their OWN default (often higher/costlier). 'low' is a deliberate, cheaper
   // baseline the user can raise. Reasoning is billed as output tokens.

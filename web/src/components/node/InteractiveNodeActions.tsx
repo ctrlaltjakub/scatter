@@ -12,7 +12,6 @@ import { ChatPanelGroup } from '@/components/chat/ChatPanelControls';
 import { AddNodeMenu } from '@/components/canvas/AddNodeMenu';
 import { cancelNodeGenerationCascade } from '@/lib/generate';
 import { EditHeaderButton } from './EditHeaderButton';
-import { AddToProjectSourcesButton } from './AddToProjectSourcesButton';
 
 export function InteractiveNodeActions({ node, isRoot }: { node: ScatterNode; isRoot: boolean }) {
   const available = useInteractiveGenerationAvailable();
@@ -47,7 +46,6 @@ export function InteractiveNodeActions({ node, isRoot }: { node: ScatterNode; is
     <AddNodeMenu nodeId={node.id}/>
     <ChatPanelGroup node={node}/>
     <EditHeaderButton node={node}/>
-    <AddToProjectSourcesButton version={version} disabled={busy || !ready}/>
     <button type="button" className="side-action" disabled={!ready||busy} onClick={()=>useInteractiveViewerStore.getState().openViewer(node.id,node.currentVersionIndex)}>
       <span className="side-action-icon"><Maximize size={15}/></span>Open enlarged
     </button>

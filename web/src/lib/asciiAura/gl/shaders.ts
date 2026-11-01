@@ -338,6 +338,7 @@ uniform sampler2D uRecords;
 uniform sampler2D uAtlas;
 uniform vec4 uPalette[${MAX_PALETTE}]; // baseline palette, rgba 0-1
 uniform float uAlphaBoost; // theme adjustment shared by all glyph/label kinds
+uniform float uOpacity; // global user multiplier, including statuses and selection
 uniform int uPaletteCount;
 uniform vec4 uNeutral;          // parsed --scatter-base rgba
 uniform float uDeviceCellPx;
@@ -526,7 +527,8 @@ void main() {
 
   // Increase the assembled ink once, including status floors and inherited
   // label alpha. Keep fully opaque ink at 1 and empty/antialiased pixels intact.
-  float a = glyphA * min(1.0, color.a + uAlphaBoost);
+  float inkAlpha = min(1.0, color.a + uAlphaBoost);
+  float a = glyphA * clamp(inkAlpha * uOpacity, 0.0, 1.0);
   outColor = vec4(color.rgb * a, a); // premultiplied over the white host bg
 }
 `;

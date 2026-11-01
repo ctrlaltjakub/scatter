@@ -39,6 +39,7 @@ const SETTINGS_FIELDS = {
   accentHueShift: true,
   accentDesaturate: true,
   accentDarken: true,
+  asciiOpacity: true,
   reasoningEffort: true,
   outputTokenCap: true,
   secondaryOutputTokenCap: true,
