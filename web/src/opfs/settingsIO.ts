@@ -260,6 +260,8 @@ function finalize(
     accentDesaturate: typeof d.accentDesaturate === 'number' ? d.accentDesaturate : DEFAULT_SETTINGS.accentDesaturate,
     accentDarken: typeof d.accentDarken === 'number' ? d.accentDarken : DEFAULT_SETTINGS.accentDarken,
     asciiOpacity: normalizeAsciiOpacity(d.asciiOpacity),
+    asciiLabelOpacityEnabled: d.asciiLabelOpacityEnabled === true,
+    asciiLabelOpacity: normalizeAsciiOpacity(d.asciiLabelOpacity),
     reasoningEffort:
       isReasoningEffort(d.reasoningEffort)
         ? d.reasoningEffort

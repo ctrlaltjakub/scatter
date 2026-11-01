@@ -45,6 +45,7 @@ import {
 } from './overlay';
 import { FOCUS_BOOST } from '../sceneState';
 import { CHAT_RAY_GLSL } from '../chatRays';
+import { OPACITY_SCATTER_GLSL } from '../opacityScatter';
 import {
   MAX_RECORDS,
   KIND_GHOST,
@@ -338,7 +339,8 @@ uniform sampler2D uRecords;
 uniform sampler2D uAtlas;
 uniform vec4 uPalette[${MAX_PALETTE}]; // baseline palette, rgba 0-1
 uniform float uAlphaBoost; // theme adjustment shared by all glyph/label kinds
-uniform float uOpacity; // global user multiplier, including statuses and selection
+uniform float uOpacity; // global/background user multiplier
+uniform float uLabelOpacity; // follows uOpacity unless the independent control is enabled
 uniform int uPaletteCount;
 uniform vec4 uNeutral;          // parsed --scatter-base rgba
 uniform float uDeviceCellPx;
@@ -359,6 +361,7 @@ const int STAGE_LENGTHS[${STAGES}] = ${stageLengthsGlsl};
 
 ${HASH_GLSL}
 ${CHAT_RAY_GLSL}
+${OPACITY_SCATTER_GLSL}
 
 // glyphIndexByHash (ramp.ts) — hash % pool, offset into the flat atlas.
 int glyphIndexByHash(int stage, uint h) {
@@ -397,11 +400,27 @@ void main() {
   // i.e. it reads as the same glyphs that would otherwise occupy that space.
   int glyphIdx;
   vec4 color;
+  float scatteredOpacity = 1.0;
   {
     vec4 st = texelFetch(uCellState, ivec2(col, row), 0);
     int stage = int(st.r * 255.0 + 0.5);
     int winner = int(st.b * 255.0 + 0.5);
     uint h = cellHash(col, row);
+    if (statusG == 0) {
+      if (winner != ${WINNER_NONE}) {
+        vec4 rect = texelFetch(uRecords, ivec2(winner * 4, 0), 0);
+        vec4 owner = texelFetch(uRecords, ivec2(winner * 4 + 1, 0), 0);
+        // Collapse ghosts have no steady radius; use their original footprint.
+        float radius = owner.x > 0.0 ? owner.x
+          : texelFetch(uRecords, ivec2(winner * 4 + 3, 0), 0).y;
+        vec2 worldPos = ((vec2(col, row) + 0.5) * uCellCssPx - uViewport.xy) / uViewport.z;
+        vec2 outside = max(max(rect.xy - worldPos, worldPos - rect.xy - rect.zw), vec2(0.0));
+        scatteredOpacity = auraOpacityTier(h, auraAreaFraction(length(outside), rect.zw, radius));
+      } else if (stage > 0) {
+        // A vanished aura's cooling trail is still an aura effect, not text.
+        scatteredOpacity = auraOpacityTier(h, 1.0);
+      }
+    }
     if (stage == 0) {
       glyphIdx = 0; // '.'
       bool focusedWinner = false;
@@ -528,7 +547,10 @@ void main() {
   // Increase the assembled ink once, including status floors and inherited
   // label alpha. Keep fully opaque ink at 1 and empty/antialiased pixels intact.
   float inkAlpha = min(1.0, color.a + uAlphaBoost);
-  float a = glyphA * clamp(inkAlpha * uOpacity, 0.0, 1.0);
+  float opacity = statusG != 0 ? uLabelOpacity : uOpacity;
+  // Apply the random tiers after the slider's saturation, so even at 200%
+  // the 75% and 50% cells retain their contrast. Atlas antialiasing stays intact.
+  float a = glyphA * clamp(inkAlpha * opacity, 0.0, 1.0) * scatteredOpacity;
   outColor = vec4(color.rgb * a, a); // premultiplied over the white host bg
 }
 `;

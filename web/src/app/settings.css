@@ -923,6 +923,10 @@ dialog.local-model-guide::backdrop { background: color-mix(in oklab, var(--crust
   border-top: 1px solid var(--settings-line);
   cursor: var(--cur-click);
 }
+.settings-modal .field-row--disabled {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
 .settings-toggle-row > span:first-child {
   flex: 1;
   min-width: 0;

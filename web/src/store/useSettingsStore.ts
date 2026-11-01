@@ -106,6 +106,8 @@ interface SettingsState extends Settings {
   /** Uniform darkening (lightness % points) for those accents. */
   setAccentDarken: (v: number) => void;
   setAsciiOpacity: (v: number) => void;
+  setAsciiLabelOpacityEnabled: (v: boolean) => void;
+  setAsciiLabelOpacity: (v: number) => void;
   /** Dedicated model shared by routing, term marking, and free-image discovery. */
   setSecondaryModel: (providerId: string, model: string) => void;
   setSecondaryUseSameModel: (v: boolean) => void;
@@ -374,6 +376,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const asciiOpacity = normalizeAsciiOpacity(v);
     if (asciiOpacity === get().asciiOpacity) return;
     set({ asciiOpacity });
+    persist(settingsSnapshot(get()));
+  },
+  setAsciiLabelOpacityEnabled: (v) => {
+    if (v === get().asciiLabelOpacityEnabled) return;
+    set({ asciiLabelOpacityEnabled: v });
+    persist(settingsSnapshot(get()));
+  },
+  setAsciiLabelOpacity: (v) => {
+    const asciiLabelOpacity = normalizeAsciiOpacity(v);
+    if (asciiLabelOpacity === get().asciiLabelOpacity) return;
+    set({ asciiLabelOpacity });
     persist(settingsSnapshot(get()));
   },
   setSecondaryModel: (providerId, model) => {

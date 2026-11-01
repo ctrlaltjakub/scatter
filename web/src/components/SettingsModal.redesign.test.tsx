@@ -42,6 +42,28 @@ function go(name: string) {
 }
 
 describe('redesigned settings', () => {
+  it('disables the separate label slider until enabled, retains its value and resets independently', () => {
+    render(<SettingsModal open onClose={() => {}} />);
+    const toggle = screen.getByRole('switch', { name: /Independent label opacity/ });
+    const slider = screen.getByRole('slider', { name: 'Label and status opacity' });
+    const number = screen.getByRole('spinbutton', { name: 'Label and status opacity value' });
+    const reset = screen.getByRole('button', { name: 'Reset Label and status opacity to default' });
+    expect(toggle).not.toBeChecked();
+    for (const input of [slider, number, reset]) expect(input).toBeDisabled();
+    expect(slider.closest('.field-row')).toHaveClass('field-row--disabled');
+    fireEvent.click(toggle);
+    for (const input of [slider, number, reset]) expect(input).toBeEnabled();
+    fireEvent.change(slider, { target: { value: '150' } });
+    expect(useSettingsStore.getState()).toMatchObject({ asciiLabelOpacityEnabled: true, asciiLabelOpacity: 150, asciiOpacity: 100 });
+    fireEvent.click(toggle);
+    expect(slider).toBeDisabled();
+    expect(slider).toHaveValue('150');
+    fireEvent.click(toggle);
+    expect(slider).toHaveValue('150');
+    fireEvent.click(reset);
+    expect(slider).toHaveValue('100');
+    expect(toggle).toBeChecked();
+  });
   it('adjusts ASCII opacity live, supports numeric input, and resets to the unchanged default', () => {
     render(<SettingsModal open onClose={() => {}} />);
     const slider = screen.getByRole('slider', { name: 'ASCII opacity' });

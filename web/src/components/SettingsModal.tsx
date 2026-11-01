@@ -628,6 +628,10 @@ function ThemeTab() {
   const setAccentDarken = useSettingsStore((s) => s.setAccentDarken);
   const asciiOpacity = useSettingsStore((s) => s.asciiOpacity);
   const setAsciiOpacity = useSettingsStore((s) => s.setAsciiOpacity);
+  const asciiLabelOpacityEnabled = useSettingsStore((s) => s.asciiLabelOpacityEnabled);
+  const setAsciiLabelOpacityEnabled = useSettingsStore((s) => s.setAsciiLabelOpacityEnabled);
+  const asciiLabelOpacity = useSettingsStore((s) => s.asciiLabelOpacity);
+  const setAsciiLabelOpacity = useSettingsStore((s) => s.setAsciiLabelOpacity);
 
   useEffect(() => {
     setThemeState(readThemePreference());
@@ -698,8 +702,25 @@ function ThemeTab() {
         />
         <p className="field-help">
           <strong>100% preserves the default appearance</strong>. Lower values fade the field; higher values increase its opacity.
-          <strong> 0% hides all ASCII glyphs and labels</strong>. Node content and controls stay unchanged.
+          <strong> 0% hides the background</strong> and any labels following this setting. Node content and controls stay unchanged.
         </p>
+        <SettingsToggle
+          title="Independent label opacity"
+          description={<>Set <strong>labels, statuses, and selection markers</strong> separately from auras and their effects. When off, they follow <strong>ASCII opacity</strong>.</>}
+          checked={asciiLabelOpacityEnabled}
+          onChange={setAsciiLabelOpacityEnabled}
+        />
+        <AccentSettingRow
+          label="Label and status opacity"
+          value={asciiLabelOpacity}
+          def={DEFAULT_SETTINGS.asciiLabelOpacity}
+          min={0}
+          max={MAX_ASCII_OPACITY}
+          unit="%"
+          live
+          disabled={!asciiLabelOpacityEnabled}
+          onChange={setAsciiLabelOpacity}
+        />
       </SettingsSection>
       <SettingsSection
         title="Canvas accents"
@@ -759,6 +780,7 @@ function AccentSettingRow({
   unit,
   signed = false,
   live = false,
+  disabled = false,
   onChange,
 }: {
   label: string;
@@ -769,6 +791,7 @@ function AccentSettingRow({
   unit: string;
   signed?: boolean;
   live?: boolean;
+  disabled?: boolean;
   onChange: (v: number) => void;
 }) {
   const [mag, setMag] = useState(signed ? Math.abs(value) : value);
@@ -785,7 +808,9 @@ function AccentSettingRow({
   }, [value, signed]);
 
   const clampMag = (m: number) => Math.max(min, Math.min(max, m));
-  const commit = (m: number, n: boolean) => onChange(signed && n ? -m : m);
+  const commit = (m: number, n: boolean) => {
+    if (!disabled) onChange(signed && n ? -m : m);
+  };
   const setMagBoth = (m: number) => {
     magRef.current = m;
     setMag(m);
@@ -811,7 +836,7 @@ function AccentSettingRow({
   };
 
   return (
-    <div className="field-row">
+    <div className={`field-row${disabled ? ' field-row--disabled' : ''}`}>
       <label className="field-label">{label}</label>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {/* Fixed-width slot so sliders line up whether or not a row has a toggle. */}
@@ -821,6 +846,7 @@ function AccentSettingRow({
               <button
                 type="button"
                 className={!neg ? 'on' : ''}
+                disabled={disabled}
                 onClick={() => setDir(false)}
                 title={`${label}: positive (+)`}
                 aria-label={`${label}: positive (+)`}
@@ -831,6 +857,7 @@ function AccentSettingRow({
               <button
                 type="button"
                 className={neg ? 'on' : ''}
+                disabled={disabled}
                 onClick={() => setDir(true)}
                 title={`${label}: negative (−)`}
                 aria-label={`${label}: negative (−)`}
@@ -845,6 +872,7 @@ function AccentSettingRow({
         <input
           type="range"
           aria-label={label}
+          disabled={disabled}
           min={min}
           max={max}
           step={1}
@@ -859,6 +887,7 @@ function AccentSettingRow({
         <input
           type="number"
           aria-label={`${label} value`}
+          disabled={disabled}
           className="input accent-num"
           min={min}
           max={max}
@@ -891,6 +920,7 @@ function AccentSettingRow({
           type="button"
           className="shortcut-action-btn"
           onClick={reset}
+          disabled={disabled}
           title="Reset to default"
           aria-label={`Reset ${label} to default`}
         >

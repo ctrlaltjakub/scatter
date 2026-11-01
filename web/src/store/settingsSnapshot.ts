@@ -40,6 +40,8 @@ const SETTINGS_FIELDS = {
   accentDesaturate: true,
   accentDarken: true,
   asciiOpacity: true,
+  asciiLabelOpacityEnabled: true,
+  asciiLabelOpacity: true,
   reasoningEffort: true,
   outputTokenCap: true,
   secondaryOutputTokenCap: true,

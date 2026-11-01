@@ -89,13 +89,25 @@ describe('overlay opacity modes', () => {
   });
 
   test('applies global opacity after every glyph and overlay, preserving antialiasing and premultiplied output', () => {
-    const scale = PASS_B_FRAGMENT_SRC.indexOf('float a = glyphA * clamp(inkAlpha * uOpacity, 0.0, 1.0);');
+    const scale = PASS_B_FRAGMENT_SRC.indexOf('float a = glyphA * clamp(inkAlpha * opacity, 0.0, 1.0) * scatteredOpacity;');
     expect(PASS_B_FRAGMENT_SRC).toContain('uniform float uOpacity;');
+    expect(PASS_B_FRAGMENT_SRC).toContain('uniform float uLabelOpacity;');
+    expect(PASS_B_FRAGMENT_SRC).toContain('float opacity = statusG != 0 ? uLabelOpacity : uOpacity;');
     expect(scale).toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf('float inkAlpha = min(1.0, color.a + uAlphaBoost);'));
     expect(scale).toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf('if (statusG != 0)'));
     expect(PASS_B_FRAGMENT_SRC.indexOf('outColor = vec4(color.rgb * a, a);')).toBeGreaterThan(scale);
     // Only the compositing pass changes; layout, cooling and animation stay intact.
     expect(PASS_A_FRAGMENT_SRC).not.toContain('uOpacity');
+  });
+
+  test('scatters only aura/effect cells, leaving functional overlays and ambient dots intact', () => {
+    const scatter = PASS_B_FRAGMENT_SRC.slice(PASS_B_FRAGMENT_SRC.indexOf('float scatteredOpacity = 1.0;'),
+      PASS_B_FRAGMENT_SRC.indexOf('if (stage == 0)'));
+    expect(scatter).toContain('if (statusG == 0)');
+    expect(scatter).toContain('auraOpacityTier(h, auraAreaFraction(length(outside), rect.zw, radius))');
+    expect(scatter).toContain('else if (stage > 0)');
+    expect(scatter).not.toContain('owner.y'); // both focused and unfocused, including restoration orbs
+    expect(PASS_A_FRAGMENT_SRC).not.toContain('auraOpacityTier'); // no layout/ownership/cooling changes
   });
 
   test('lets shape-only labels inherit aura opacity while status text keeps its floor', () => {

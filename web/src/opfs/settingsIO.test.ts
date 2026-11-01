@@ -27,6 +27,15 @@ beforeEach(() => {
 });
 
 describe('settingsIO', () => {
+  it('persists independent label opacity and defaults legacy or malformed imports to off', async () => {
+    expect(normalizeSettings({ providers: [] })).toMatchObject({ asciiLabelOpacityEnabled: false, asciiLabelOpacity: 100 });
+    expect(normalizeSettings({ providers: [], asciiLabelOpacityEnabled: 'true', asciiLabelOpacity: NaN }))
+      .toMatchObject({ asciiLabelOpacityEnabled: false, asciiLabelOpacity: 100 });
+    for (const asciiLabelOpacityEnabled of [false, true]) for (const asciiLabelOpacity of [0, 75, 200]) {
+      await saveSettings(settingsSnapshot({ ...DEFAULT_SETTINGS, asciiOpacity: 0, asciiLabelOpacityEnabled, asciiLabelOpacity }));
+      expect(await loadSettings()).toMatchObject({ asciiOpacity: 0, asciiLabelOpacityEnabled, asciiLabelOpacity });
+    }
+  });
   it('persists ASCII opacity, including zero, in settings snapshots and reloads', async () => {
     for (const asciiOpacity of [0, 50, 100, 200]) {
       const saved = settingsSnapshot({ ...DEFAULT_SETTINGS, asciiOpacity });

@@ -110,7 +110,7 @@ import { AURA_RADIUS_FOCUSED } from '@/lib/asciiAura/sceneState';
 import { paintSelectionOverlay, selectionAuraBorder } from '@/lib/asciiAura/selectionOverlay';
 import { useGraphStore } from '@/store/useGraphStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
-import { normalizeAsciiOpacity } from '@/lib/asciiAura/opacity';
+import { asciiOpacityMultipliers } from '@/lib/asciiAura/opacity';
 import { isBatchNodeSelection } from '@/lib/nodeSelection';
 import {
   bboxFullyVisible,
@@ -175,6 +175,7 @@ interface GLState {
   bNeutral: WebGLUniformLocation | null;
   bAlphaBoost: WebGLUniformLocation | null;
   bOpacity: WebGLUniformLocation | null;
+  bLabelOpacity: WebGLUniformLocation | null;
   bDeviceCellPx: WebGLUniformLocation | null;
   bCellCssPx: WebGLUniformLocation | null;
   bViewport: WebGLUniformLocation | null;
@@ -241,6 +242,7 @@ export function AsciiAuraLayerGL({
     auraColor: 'rgba(195,195,195,1)',       // default matches --aura-color
     alphaBoost: 0.05,
     opacity: 1,
+    labelOpacity: 1,
     /** Part F/G — CPU-side per-cell overlay buffer (RGBA8, row-major):
      *  R = status glyph index, G = arrow demote, B = status colour index.
      *  Zero-filled each frame (G=0 → no demote, R=0 → no status). */
@@ -433,6 +435,7 @@ export function AsciiAuraLayerGL({
         bNeutral: u(progB, 'uNeutral'),
         bAlphaBoost: u(progB, 'uAlphaBoost'),
         bOpacity: u(progB, 'uOpacity'),
+        bLabelOpacity: u(progB, 'uLabelOpacity'),
         bDeviceCellPx: u(progB, 'uDeviceCellPx'),
         bCellCssPx: u(progB, 'uCellCssPx'),
         bViewport: u(progB, 'uViewport'),
@@ -475,13 +478,17 @@ export function AsciiAuraLayerGL({
       stateRef.current.dirty = true;
     });
     const updateOpacity = () => {
-      stateRef.current.opacity = normalizeAsciiOpacity(useSettingsStore.getState().asciiOpacity) / 100;
+      const opacity = asciiOpacityMultipliers(useSettingsStore.getState());
+      stateRef.current.opacity = opacity.aura;
+      stateRef.current.labelOpacity = opacity.label;
       // Wake an idle field without resetting its animation/cooling history.
       stateRef.current.dirty = true;
     };
     updateOpacity();
     const unsubscribeSettings = useSettingsStore.subscribe((settings, previous) => {
-      if (settings.asciiOpacity !== previous.asciiOpacity) updateOpacity();
+      if (settings.asciiOpacity !== previous.asciiOpacity
+        || settings.asciiLabelOpacity !== previous.asciiLabelOpacity
+        || settings.asciiLabelOpacityEnabled !== previous.asciiLabelOpacityEnabled) updateOpacity();
     });
 
     /** (Re)allocate sizing-dependent resources when the container,
@@ -1311,6 +1318,7 @@ export function AsciiAuraLayerGL({
       gl.uniform4f(g.bNeutral, neutral.r, neutral.g, neutral.b, neutral.alphaBase);
       gl.uniform1f(g.bAlphaBoost, s.alphaBoost);
       gl.uniform1f(g.bOpacity, s.opacity);
+      gl.uniform1f(g.bLabelOpacity, s.labelOpacity);
       gl.uniform1f(g.bDeviceCellPx, s.deviceCellPx);
       gl.uniform1f(g.bCellCssPx, s.deviceCellPx / s.dpr);
       gl.uniform3f(g.bViewport, sc.viewport.x, sc.viewport.y, sc.viewport.zoom);
