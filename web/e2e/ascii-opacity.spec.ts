@@ -154,7 +154,7 @@ test('independent labels remain visible with a hidden background and restore the
   await expect.poll(() => uniform(page, 'uLabelOpacity')).toBe(1.25);
 });
 
-test('the actual GPU shader scatters three tiers around rectangles and point orbs, but not labels', async ({ page }) => {
+test('the GPU shader uses a central 10/50/40 mix, halves ambient dots and preserves labels', async ({ page }) => {
   const results = await page.evaluate(() => {
     const get = (window as any).opacityExport;
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
@@ -209,6 +209,16 @@ test('the actual GPU shader scatters three tiers around rectangles and point orb
       }
       output.push({name,counts,inner:innerSum/innerCount,outer:outerSum/outerCount,stable:pixels.every((a,i)=>a===first[i])});
     }
+    // No winner and stage zero: ambient dots are all half opacity, not a
+    // lottery. Labels over the same cells must still bypass that reduction.
+    for (let i=0; i<state.length; i+=4) state[i+2]=255;
+    texture(0,'uCellState',512,512,state);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+    const ambient = new Uint8Array(state.length);
+    gl.readPixels(0,0,512,512,gl.RGBA,gl.UNSIGNED_BYTE,ambient);
+    for(let i=3;i<ambient.length;i+=4) {
+      if(ambient[i]!==102) throw new Error(`Ambient dot is not half opacity: ${ambient[i]}`);
+    }
     // Labels, statuses and selection marks all use overlay glyphs. None get
     // the aura scatter, and they still render with uOpacity == 0.
     for (const mode of [0, 255, 254, 252]) {
@@ -226,10 +236,10 @@ test('the actual GPU shader scatters three tiers around rectangles and point orb
   for (const result of results) {
     expect(Object.keys(result.counts).map(Number).sort((a,b)=>a-b)).toEqual([102,153,204]);
     const total = Object.values(result.counts).reduce((a,b)=>a+b,0);
-    expect(result.counts[102]!/total).toBeCloseTo(0.25,2);
+    expect(result.counts[102]!/total).toBeCloseTo(0.4,2);
     expect(result.counts[153]!/total).toBeCloseTo(0.5,2);
-    expect(result.counts[204]!/total).toBeCloseTo(0.25,2);
-    expect(result.inner).toBeGreaterThan(result.outer + 15);
+    expect(result.counts[204]!/total).toBeCloseTo(0.1,2);
+    expect(result.inner).toBeGreaterThan(result.outer + 30);
     expect(result.stable).toBe(true);
   }
 });

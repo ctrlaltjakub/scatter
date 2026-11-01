@@ -419,6 +419,9 @@ void main() {
       } else if (stage > 0) {
         // A vanished aura's cooling trail is still an aura effect, not text.
         scatteredOpacity = auraOpacityTier(h, 1.0);
+      } else {
+        // Plain ambient dots outside all auras are uniformly half opacity.
+        scatteredOpacity = 0.5;
       }
     }
     if (stage == 0) {

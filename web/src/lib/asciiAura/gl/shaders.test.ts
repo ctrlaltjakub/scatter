@@ -100,12 +100,14 @@ describe('overlay opacity modes', () => {
     expect(PASS_A_FRAGMENT_SRC).not.toContain('uOpacity');
   });
 
-  test('scatters only aura/effect cells, leaving functional overlays and ambient dots intact', () => {
+  test('scatters aura/effect cells and halves ambient dots without dimming functional overlays', () => {
     const scatter = PASS_B_FRAGMENT_SRC.slice(PASS_B_FRAGMENT_SRC.indexOf('float scatteredOpacity = 1.0;'),
       PASS_B_FRAGMENT_SRC.indexOf('if (stage == 0)'));
     expect(scatter).toContain('if (statusG == 0)');
     expect(scatter).toContain('auraOpacityTier(h, auraAreaFraction(length(outside), rect.zw, radius))');
     expect(scatter).toContain('else if (stage > 0)');
+    expect(scatter).toContain('scatteredOpacity = 0.5;');
+    expect(scatter.indexOf('scatteredOpacity = 0.5;')).toBeGreaterThan(scatter.indexOf('else if (stage > 0)'));
     expect(scatter).not.toContain('owner.y'); // both focused and unfocused, including restoration orbs
     expect(PASS_A_FRAGMENT_SRC).not.toContain('auraOpacityTier'); // no layout/ownership/cooling changes
   });

@@ -1,10 +1,17 @@
 /** Stable opacity tiers for aura cells. Labels and other functional overlays
- * bypass these tiers. The middle tier always owns half the probability; the
- * full/half tiers trade probability with distance, averaging one quarter each
- * over an unclipped aura. No frame-time seed: resting cells never flicker. */
-const FULL_SHARE = 0.25;
+ * bypass these tiers. Normalized exponential curves keep the overall shares
+ * at 10% full / 50% three-quarter / 40% half opacity over an unclipped aura,
+ * with brighter cells concentrated near its origin. No frame-time seed. */
+const FULL_SHARE = 0.1;
 const MID_SHARE = 0.5;
-const NEAR_BIAS = 0.2;
+const FULL_FALLOFF = 4;
+const BRIGHT_FALLOFF = 1;
+// Integral of exp(-k * area) over [0, 1] is (1 - exp(-k)) / k.
+// Normalize the cumulative thresholds, not individual tiers: full opacity
+// falls off sharply, while the >=75% threshold has a gentler exponential tail.
+// Both remain monotonic, never cross, and stay below 1 without clipping.
+const FULL_WEIGHT = FULL_SHARE * FULL_FALLOFF / (1 - Math.exp(-FULL_FALLOFF));
+const BRIGHT_WEIGHT = (FULL_SHARE + MID_SHARE) * BRIGHT_FALLOFF / (1 - Math.exp(-BRIGHT_FALLOFF));
 const HASH_SALT = 0x9e3779b9;
 const HASH_MIX = 0x85ebca6b;
 
@@ -24,8 +31,10 @@ export function auraOpacityTier(cellHash: number, areaFraction: number): number 
   h = Math.imul(h ^ (h >>> 16), HASH_MIX) >>> 0;
   h = (h ^ (h >>> 13)) >>> 0;
   const random = h / 4294967296;
-  const full = FULL_SHARE + NEAR_BIAS * (1 - 2 * Math.max(0, Math.min(1, areaFraction)));
-  return random < full ? 1 : random < full + MID_SHARE ? 0.75 : 0.5;
+  const area = Math.max(0, Math.min(1, areaFraction));
+  const full = FULL_WEIGHT * Math.exp(-FULL_FALLOFF * area);
+  const bright = BRIGHT_WEIGHT * Math.exp(-BRIGHT_FALLOFF * area);
+  return random < full ? 1 : random < bright ? 0.75 : 0.5;
 }
 
 // Keep the GPU implementation tied to the statistical reference above.
@@ -43,7 +52,9 @@ float auraOpacityTier(uint cellSeed, float areaFraction) {
   h = (h ^ (h >> 16u)) * ${HASH_MIX}u;
   h = h ^ (h >> 13u);
   float random = float(h) * (1.0 / 4294967296.0);
-  float full = ${FULL_SHARE} + ${NEAR_BIAS} * (1.0 - 2.0 * clamp(areaFraction, 0.0, 1.0));
-  return random < full ? 1.0 : random < full + ${MID_SHARE} ? 0.75 : 0.5;
+  float area = clamp(areaFraction, 0.0, 1.0);
+  float full = ${FULL_WEIGHT} * exp(-${FULL_FALLOFF.toFixed(1)} * area);
+  float bright = ${BRIGHT_WEIGHT} * exp(-${BRIGHT_FALLOFF.toFixed(1)} * area);
+  return random < full ? 1.0 : random < bright ? 0.75 : 0.5;
 }
 `;
