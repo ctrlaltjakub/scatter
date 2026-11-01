@@ -34,6 +34,13 @@ that package and traces its native inference dependencies into the server.
 Browser embeddings still run in a Web Worker. Media does not use Next's image
 optimizer, which is disabled.
 
+The project `.npmrc` skips ONNX Runtime's optional native GPU binary downloads.
+Those CUDA/TensorRT files are not used by browser inference; the browser model
+and WebAssembly assets remain available. Other dependency install scripts and
+the publication/credential hooks still run normally.
+Vercel also sets the supported `ONNXRUNTIME_NODE_INSTALL=skip` environment
+variable explicitly, so deployment does not depend on npm's custom-config support.
+
 The optional embedding-worker smoke test downloads the public, quantized model
 and runs local inference; it makes no paid model requests. With a dev server
 running, use `SCATTER_LIVE_IMAGE_SEARCH=1 SCATTER_EMBEDDING_SMOKE=1
