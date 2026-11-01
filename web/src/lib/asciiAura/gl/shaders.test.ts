@@ -4,6 +4,7 @@ import { boldRayGlyphIndex } from './atlasLayout';
 import {
   EXPLAIN_QUESTION_UNFOCUSED_ALPHA_BOOST,
   OVERLAY_MIN_ALPHA,
+  POINT_ORB_CORE_RADIUS_PX,
   PASS_B_FRAGMENT_SRC,
   PASS_A_FRAGMENT_SRC,
 } from './shaders';
@@ -79,16 +80,29 @@ describe('chat ray shader integration', () => {
 
 describe('overlay opacity modes', () => {
   test('point-orb opacity trails cool steady proximity without inheriting recolor ripples', () => {
-    const history = PASS_A_FRAGMENT_SRC.slice(PASS_A_FRAGMENT_SRC.indexOf('if (uPointOpacityTrails)'));
+    const history = PASS_A_FRAGMENT_SRC.slice(PASS_A_FRAGMENT_SRC.indexOf('outOpacityHistory = vec4(0.0)'));
     expect(history).toContain('recordLotteryDensity(winner, worldPos)');
     expect(history).not.toContain('recordDensity(winner, worldPos)');
-    expect(history).toContain('uResetHistory == 0 ? texelFetch(uPrevOpacityHistory, cell, 0).rg');
+    expect(history).toContain('uResetHistory == 0 ? texelFetch(uPrevOpacityHistory, cell, 0) : vec4(0.0)');
     expect(history).toContain('prior - uDtMs * 0.001 * uCoolRate');
     expect(history).toContain('floor(cooled) / 255.0, fract(cooled)');
     const scatter = PASS_B_FRAGMENT_SRC.indexOf('if (uPointOpacityTrails)');
     expect(scatter).toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf('if (statusG == 0)'));
     expect(scatter).toBeLessThan(PASS_B_FRAGMENT_SRC.indexOf('else if (winner !='));
     expect(PASS_B_FRAGMENT_SRC).toContain('auraOpacityTier(h, distanceFraction * distanceFraction)');
+  });
+
+  test('round point cores have priority and preserve their own cooling trail', () => {
+    expect(PASS_A_FRAGMENT_SRC).toContain('if (uPointOpacityTrails)');
+    expect(PASS_A_FRAGMENT_SRC).toContain('all(equal(rect.zw, vec2(0.0)))');
+    expect(PASS_A_FRAGMENT_SRC).toContain(`length(worldPos - rect.xy) * uViewport.z <= ${POINT_ORB_CORE_RADIUS_PX}.0`);
+    expect(PASS_A_FRAGMENT_SRC).toContain('float priorCore = previous.b + previous.a / 255.0;');
+    expect(PASS_A_FRAGMENT_SRC).toContain('priorCore - uDtMs * 0.001 * uCoolRate / float(STAGES - 1)');
+    expect(PASS_A_FRAGMENT_SRC).toContain('floor(coreBytes) / 255.0, fract(coreBytes)');
+    const heat = PASS_B_FRAGMENT_SRC.indexOf('pointCoreHeat = clamp(');
+    expect(heat).toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf('if (statusG == 0)'));
+    expect(heat).toBeLessThan(PASS_B_FRAGMENT_SRC.indexOf('else if (winner !='));
+    expect(PASS_B_FRAGMENT_SRC).toContain('mix(fieldAlpha, clamp(opacity, 0.0, 1.0), pointCoreHeat)');
   });
 
   test('applies the theme boost once after all opacity overrides, capped before glyph coverage', () => {
@@ -102,7 +116,7 @@ describe('overlay opacity modes', () => {
   });
 
   test('applies global opacity after every glyph and overlay, preserving antialiasing and premultiplied output', () => {
-    const scale = PASS_B_FRAGMENT_SRC.indexOf('float a = glyphA * clamp(inkAlpha * opacity, 0.0, 1.0) * scatteredOpacity;');
+    const scale = PASS_B_FRAGMENT_SRC.indexOf('float fieldAlpha = clamp(inkAlpha * opacity, 0.0, 1.0) * scatteredOpacity;');
     expect(PASS_B_FRAGMENT_SRC).toContain('uniform float uOpacity;');
     expect(PASS_B_FRAGMENT_SRC).toContain('uniform float uLabelOpacity;');
     expect(PASS_B_FRAGMENT_SRC).toContain('float opacity = statusG != 0 ? uLabelOpacity : uOpacity;');

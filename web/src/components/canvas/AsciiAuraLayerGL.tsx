@@ -27,7 +27,7 @@ import { generatingTitleDotVisible, isImageTitlePending } from '@/lib/imageQuest
  *     resolution (crisp on HiDPI; identical at dpr 1).
  *   - Animations at refresh rate instead of 20 fps.
  *
- * Idle behavior: rendering stops COOL_TAIL_MS after the last dirty
+ * Idle behavior: rendering stops COOL_TAIL_MS (scaled for slower scenes) after the last dirty
  * signal / active animation (covers the longest possible cooling
  * trail — the old CPU renderer instead did a CPU-side hasCoolingCells readback,
  * which a GPU pipeline can't do without stalling).
@@ -153,7 +153,7 @@ interface GLState {
   overlayTex: WebGLTexture;
   stateTexA: WebGLTexture;
   stateTexB: WebGLTexture;
-  /** Only allocated for startup point-orb scenes; RG8 stage/fraction history. */
+  /** Only for startup orbs; RG stage/fraction proximity + BA normalized core heat. */
   opacityTexA: WebGLTexture | null;
   opacityTexB: WebGLTexture | null;
   fboA: WebGLFramebuffer;
@@ -551,7 +551,7 @@ export function AsciiAuraLayerGL({
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
             if (opacityTex) {
               gl.bindTexture(gl.TEXTURE_2D, opacityTex);
-              gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8, cellsX, cellsY, 0, gl.RG, gl.UNSIGNED_BYTE, null);
+              gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cellsX, cellsY, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
               gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, opacityTex, 0);
               gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
             }
@@ -1420,7 +1420,11 @@ export function AsciiAuraLayerGL({
         || statusAwake(now) || labelAwake(now) || dragHintAwake(now);
       if (s.dirty || active) s.lastActivity = now;
       if (!s.fontReady) return;
-      if (now - s.lastActivity > COOL_TAIL_MS) return; // idle
+      // Startup orbs cool more slowly than graph auras. Let their whole wake
+      // finish when movement stops (e.g. a restore error or reduced motion).
+      const coolRate = sc.coolStagesPerSecond ?? COOL_STAGES_PER_SEC;
+      const coolTailMs = COOL_TAIL_MS * COOL_STAGES_PER_SEC / coolRate;
+      if (now - s.lastActivity > coolTailMs) return; // idle
       if (!ensureSized()) return;
       s.dirty = false;
       render(now);

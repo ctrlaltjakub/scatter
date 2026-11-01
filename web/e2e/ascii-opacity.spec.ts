@@ -48,7 +48,7 @@ test.beforeEach(async ({ page }) => {
   await expect.poll(() => uniform(page)).toBe(1);
 });
 
-test('point-orb brightness stays in the wake, cools away and ignores recolor ripples', async ({ page }) => {
+test('round opaque orb cores and scattered brightness leave cooling trails without changing ordinary auras', async ({ page }) => {
   const result = await page.evaluate(() => {
     const get = (window as any).opacityExport;
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 64;
@@ -75,12 +75,12 @@ test('point-orb brightness stays in the wake, cools away and ignores recolor rip
     }
     const a = program('PASS_A_FRAGMENT_SRC'), b = program('PASS_B_FRAGMENT_SRC');
     gl.bindVertexArray(gl.createVertexArray()); gl.viewport(0, 0, 64, 64);
-    const records = texture(4, 1, gl.RGBA32F, gl.RGBA, gl.FLOAT, null);
+    const records = texture(8, 1, gl.RGBA32F, gl.RGBA, gl.FLOAT, null);
     const atlas = texture(256, 1, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(1024).fill(255));
     const overlay = texture(64, 64, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(64*64*4));
     const targets = [0, 1].map(() => {
       const state = texture(64, 64, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      const history = texture(64, 64, gl.RG8, gl.RG, gl.UNSIGNED_BYTE, null);
+      const history = texture(64, 64, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null);
       const fbo = gl.createFramebuffer()!; gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, state, 0);
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, history, 0);
@@ -93,16 +93,27 @@ test('point-orb brightness stays in the wake, cools away and ignores recolor rip
       gl.uniform1i(gl.getUniformLocation(p, name), unit);
     };
     let next = 0;
-    function step(x: number, dt: number, reset = false, ripple = false, trails = true) {
+    function step(x: number, dt: number, reset = false, ripple = false, trails = true,
+      options: { zoom?: number; opacity?: number; alpha?: number; label?: boolean; overlap?: boolean } = {}) {
       const read = targets[1-next]!, write = targets[next]!; next = 1-next;
+      // One output pixel per cell with opaque atlas coverage isolates ink
+      // alpha. World coordinates still use the real 9 CSS-pixel cell pitch.
+      const zoom = options.zoom ?? 0.75, toWorld = 9 / zoom, alpha = options.alpha ?? 0.8;
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, records);
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 4, 1, gl.RGBA, gl.FLOAT,
-        new Float32Array([x,32.5,0,0,12,1,0.8,0,1,1,1,ripple?1:0,ripple?0:-1,-1,-1,-1]));
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 8, 1, gl.RGBA, gl.FLOAT,
+        new Float32Array([
+          x*toWorld,32.5*toWorld,0,0,12*toWorld,1,alpha,0,1,1,1,ripple?1:0,ripple?0:-1,-1,-1,-1,
+          24.5*toWorld,32.5*toWorld,0,0,12*toWorld,1,alpha,0,1,0,0,0,-1,-1,-1,-1,
+        ]));
+      gl.bindTexture(gl.TEXTURE_2D, overlay);
+      const overlayData = new Uint8Array(64*64*4);
+      if (options.label) for (let i=0;i<overlayData.length;i+=4) overlayData[i]=1;
+      gl.texSubImage2D(gl.TEXTURE_2D,0,0,0,64,64,gl.RGBA,gl.UNSIGNED_BYTE,overlayData);
       gl.bindFramebuffer(gl.FRAMEBUFFER, write.fbo); gl.useProgram(a);
       bind(a, 0, 'uRecords', records); bind(a, 1, 'uPrevState', read.state); bind(a, 2, 'uPrevOpacityHistory', read.history);
-      gl.uniform1i(gl.getUniformLocation(a,'uRecordCount'),1);
-      gl.uniform3f(gl.getUniformLocation(a,'uViewport'),0,0,1);
-      gl.uniform1f(gl.getUniformLocation(a,'uCellCssPx'),1);
+      gl.uniform1i(gl.getUniformLocation(a,'uRecordCount'),options.overlap?2:1);
+      gl.uniform3f(gl.getUniformLocation(a,'uViewport'),0,0,zoom);
+      gl.uniform1f(gl.getUniformLocation(a,'uCellCssPx'),9);
       gl.uniform1f(gl.getUniformLocation(a,'uDtMs'),dt);
       gl.uniform1f(gl.getUniformLocation(a,'uCoolRate'),4); // same two-second cooldown as restoration
       gl.uniform1i(gl.getUniformLocation(a,'uResetHistory'),reset?1:0);
@@ -116,10 +127,12 @@ test('point-orb brightness stays in the wake, cools away and ignores recolor rip
       bind(b,3,'uOverlay',overlay); bind(b,4,'uOpacityHistory',write.history);
       gl.uniform1i(gl.getUniformLocation(b,'uPointOpacityTrails'),trails?1:0);
       for (const name of ['uOpacity','uLabelOpacity','uDeviceCellPx','uCellCssPx']) gl.uniform1f(gl.getUniformLocation(b,name),1);
+      gl.uniform1f(gl.getUniformLocation(b,'uOpacity'),options.opacity??1);
+      gl.uniform1f(gl.getUniformLocation(b,'uCellCssPx'),9);
       gl.uniform1f(gl.getUniformLocation(b,'uCanvasHpx'),64);
-      gl.uniform3f(gl.getUniformLocation(b,'uViewport'),0,0,1);
+      gl.uniform3f(gl.getUniformLocation(b,'uViewport'),0,0,zoom);
       gl.uniform2i(gl.getUniformLocation(b,'uCellsMax'),63,63);
-      gl.uniform4f(gl.getUniformLocation(b,'uNeutral'),1,1,1,0.8);
+      gl.uniform4f(gl.getUniformLocation(b,'uNeutral'),1,1,1,alpha);
       gl.drawArrays(gl.TRIANGLES,0,3);
       const pixels = new Uint8Array(history.length); gl.readPixels(0,0,64,64,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
       if (gl.getError() !== gl.NO_ERROR) throw new Error('Orb cooldown GPU probe failed');
@@ -131,7 +144,8 @@ test('point-orb brightness stays in the wake, cools away and ignores recolor rip
     const count = (frame: ReturnType<typeof step>) => full.filter(i=>frame.pixels[i]===204).length;
     const moved = step(48.5,16);
     const retained = count(moved);
-    const fading = count(step(48.5,600));
+    const fadedFrame = step(48.5,600);
+    const fading = count(fadedFrame);
     const cooled = step(48.5,2500);
     const reset = step(16.5,0,true);
     const resetMoved = step(48.5,0,true);
@@ -139,6 +153,28 @@ test('point-orb brightness stays in the wake, cools away and ignores recolor rip
     const ripple = step(16.5,0,true,true);
     step(16.5,0,true,false,false);
     const regularMoved = step(48.5,16,false,false,false);
+    const pixelAlpha = (frame: ReturnType<typeof step>, x: number, y: number) => frame.pixels[((63-y)*64+x)*4+3]!;
+    const coreHeat = (frame: ReturnType<typeof step>, x: number, y: number) => {
+      const i=(y*64+x)*4;
+      return frame.history[i+2]!/255+frame.history[i+3]!/65025;
+    };
+    const coreCells: [number, number][] = [];
+    let circleMatches = true;
+    for (let y=0;y<64;y++) for(let x=0;x<64;x++) {
+      const inCircle = Math.hypot(x+0.5-16.5,y+0.5-32.5)*9 <= get('POINT_ORB_CORE_RADIUS_PX');
+      if(inCircle) coreCells.push([x,y]);
+      if ((coreHeat(initial,x,y)===1)!==inCircle) circleMatches=false;
+    }
+    const dark = step(16.5,0,true,false,true,{alpha:0.7});
+    const light = step(16.5,0,true,false,true,{alpha:1});
+    const zero = step(16.5,0,true,false,true,{opacity:0});
+    const half = step(16.5,0,true,false,true,{opacity:0.5});
+    const label = step(16.5,0,true,false,true,{label:true});
+    const overlap = step(16.5,0,true,false,true,{overlap:true});
+    const zoomed = step(16.5,0,true,false,true,{zoom:1.5});
+    step(16.5,0,true);
+    let highRefresh = initial;
+    for(let i=0;i<240;i++) highRefresh=step(48.5,1000/120);
     const result = {
       full:full.length,retained,fading,cooled:count(cooled),reset:count(resetMoved),
       allCooledHalf:full.every(i=>cooled.pixels[i]===102),
@@ -147,6 +183,17 @@ test('point-orb brightness stays in the wake, cools away and ignores recolor rip
       rippleChangesGlyphs:plain.state.some((v,i)=>i%4===0 && v!==ripple.state[i]),
       regularRetained:count(regularMoved),
       resetReproducible:initial.pixels.every((v,i)=>v===reset.pixels[i]),
+      coreCount:coreCells.length,circleMatches,
+      opaqueBothThemes:coreCells.every(([x,y])=>pixelAlpha(dark,x,y)===255 && pixelAlpha(light,x,y)===255),
+      coreWake:{initial:pixelAlpha(initial,16,32),moved:pixelAlpha(moved,16,32),fading:pixelAlpha(fadedFrame,16,32),cooled:pixelAlpha(cooled,16,32)},
+      coreHeat:{moved:coreHeat(moved,16,32),fading:coreHeat(fadedFrame,16,32),cooled:coreHeat(cooled,16,32),reset:coreHeat(resetMoved,16,32),highRefresh:coreHeat(highRefresh,16,32)},
+      hidden:zero.pixels.every((v,i)=>i%4!==3||v===0),
+      halfCore:coreCells.every(([x,y])=>pixelAlpha(half,x,y)===128),
+      labelsUnchanged:coreCells.every(([x,y])=>pixelAlpha(label,x,y)===204),
+      overlapPreservesCore:coreCells.every(([x,y])=>pixelAlpha(overlap,x,y)===255 && overlap.state[(y*64+x)*4+2]===0),
+      secondCoreOwner:overlap.state[(32*64+24)*4+2],
+      zoomIndependent:initial.pixels.every((v,i)=>v===zoomed.pixels[i]),
+      regularCoreHeat:coreHeat(regularMoved,16,32),
     };
     gl.getExtension('WEBGL_lose_context')?.loseContext();
     return result;
@@ -162,6 +209,28 @@ test('point-orb brightness stays in the wake, cools away and ignores recolor rip
   expect(result.rippleChangesGlyphs).toBe(true);
   expect(result.regularRetained).toBe(0);
   expect(result.resetReproducible).toBe(true);
+  expect(result.coreCount).toBeGreaterThan(10);
+  expect(result.coreCount).toBeLessThan(30);
+  expect(result.circleMatches).toBe(true);
+  expect(result.opaqueBothThemes).toBe(true);
+  expect(result.coreWake.initial).toBe(255);
+  expect(result.coreWake.moved).toBeGreaterThan(250);
+  expect(result.coreWake.moved).toBeLessThan(255);
+  expect(result.coreWake.fading).toBeLessThan(result.coreWake.moved);
+  expect(result.coreWake.fading).toBeGreaterThan(180);
+  expect(result.coreWake.cooled).toBe(102);
+  expect(result.coreHeat.moved).toBeCloseTo(0.992,3);
+  expect(result.coreHeat.fading).toBeCloseTo(0.692,3);
+  expect(result.coreHeat.cooled).toBe(0);
+  expect(result.coreHeat.reset).toBe(0);
+  expect(result.coreHeat.highRefresh).toBeLessThan(0.002);
+  expect(result.hidden).toBe(true);
+  expect(result.halfCore).toBe(true);
+  expect(result.labelsUnchanged).toBe(true);
+  expect(result.overlapPreservesCore).toBe(true);
+  expect(result.secondCoreOwner).toBe(1);
+  expect(result.zoomIndependent).toBe(true);
+  expect(result.regularCoreHeat).toBe(0);
 });
 
 test('the real orb renderer retains its opacity history through resize and graphics-context restoration', async ({ page }, info) => {
@@ -186,22 +255,58 @@ test('the real orb renderer retains its opacity history through resize and graph
     const location = program ? gl.getUniformLocation(program, 'uPointOpacityTrails') : null;
     return location !== null && gl.getUniform(program, location) === true;
   });
-  const ink = () => page.evaluate(async () => {
+  const ink = (mode: 'total' | 'opaque' = 'total') => page.evaluate(async mode => {
     const canvas = document.querySelector('.project-restoration-canvas canvas') as HTMLCanvasElement;
     const capture = (window as any).opacityExport('screenshotRenderer')(canvas);
     const img = new Image(); img.src = await capture(1); await img.decode();
     const copy = document.createElement('canvas'); copy.width = img.width; copy.height = img.height;
     const ctx = copy.getContext('2d')!; ctx.drawImage(img, 0, 0);
     const pixels = ctx.getImageData(0, 0, copy.width, copy.height).data;
-    let sum = 0; for (let i=3; i<pixels.length; i+=4) sum += pixels[i]!;
+    let sum = 0, opaque = 0;
+    for (let i=3; i<pixels.length; i+=4) { sum += pixels[i]!; if(pixels[i]===255) opaque++; }
     const gl = canvas.getContext('webgl2')!;
     if (gl.getError() !== gl.NO_ERROR) throw new Error('The orb renderer reported a GPU error');
-    return sum;
-  });
+    return mode === 'opaque' ? opaque : sum;
+  }, mode);
   await expect.poll(enabled).toBe(true);
   await expect.poll(ink).toBeGreaterThan(0);
-  await page.waitForTimeout(700);
-  await page.screenshot({ path: info.outputPath('orbs-opacity-wake.png') });
+  for (const theme of ['dark', 'light']) {
+    await page.evaluate(theme => (window as any).opacityExport('applyThemePreference')(theme), theme);
+    await expect.poll(() => ink('opaque')).toBeGreaterThan(100);
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: info.outputPath(`orbs-opacity-wake-${theme}.png`) });
+  }
+  // A restoration failure stops the orbit and its recoloring timer. The old
+  // core must still finish cooling, rather than freezing when the renderer idles.
+  await page.evaluate(() => {
+    const get = (window as any).opacityExport;
+    (window as any).orbTestRoot.render(get('createElement')(get('ProjectRestorationScreen'), {
+      error: new Error('Synthetic restoration failure'),
+    }));
+  });
+  const fadingCells = () => page.evaluate(() => {
+    const canvas = document.querySelector('.project-restoration-canvas canvas') as HTMLCanvasElement;
+    const gl = canvas.getContext('webgl2')!;
+    const p = gl.getParameter(gl.CURRENT_PROGRAM);
+    const historyLocation = gl.getUniformLocation(p, 'uOpacityHistory');
+    const sizeLocation = gl.getUniformLocation(p, 'uCellsMax');
+    if (!historyLocation || !sizeLocation) throw new Error('Orb composite uniforms are missing');
+    const unit = gl.getUniform(p, historyLocation);
+    const max = gl.getUniform(p, sizeLocation) as Int32Array;
+    const active = gl.getParameter(gl.ACTIVE_TEXTURE), prev = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+    gl.activeTexture(gl.TEXTURE0 + unit);
+    const texture = gl.getParameter(gl.TEXTURE_BINDING_2D);
+    const framebuffer = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+    const pixels = new Uint8Array((max[0]!+1)*(max[1]!+1)*4);
+    gl.readPixels(0,0,max[0]!+1,max[1]!+1,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,prev); gl.deleteFramebuffer(framebuffer); gl.activeTexture(active);
+    let fading=0;
+    for(let i=0;i<pixels.length;i+=4) if ((pixels[i+2]!>0||pixels[i+3]!>0) && pixels[i+2]!==255) fading++;
+    return fading;
+  });
+  await expect.poll(fadingCells).toBeGreaterThan(0);
+  await expect.poll(fadingCells, { timeout: 5_000 }).toBe(0);
   await page.setViewportSize({ width: 1320, height: 900 });
   await expect.poll(ink).toBeGreaterThan(0);
   await page.evaluate(() => new Promise<void>(resolve => {
