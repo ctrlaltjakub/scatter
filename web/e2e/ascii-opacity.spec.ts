@@ -48,6 +48,179 @@ test.beforeEach(async ({ page }) => {
   await expect.poll(() => uniform(page)).toBe(1);
 });
 
+test('point-orb brightness stays in the wake, cools away and ignores recolor ripples', async ({ page }) => {
+  const result = await page.evaluate(() => {
+    const get = (window as any).opacityExport;
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 64;
+    const gl = canvas.getContext('webgl2')!;
+    if (!gl) throw new Error('WebGL2 is required');
+    function program(fragment: string) {
+      const p = gl.createProgram()!;
+      for (const [type, source] of [[gl.VERTEX_SHADER, get('VERTEX_SRC')], [gl.FRAGMENT_SHADER, get(fragment)]] as const) {
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source); gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader)!);
+        gl.attachShader(p, shader); gl.deleteShader(shader);
+      }
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)!);
+      return p;
+    }
+    function texture(width: number, height: number, internal: number, format: number, type: number, data: Uint8Array | Float32Array | null) {
+      const tex = gl.createTexture()!; gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texImage2D(gl.TEXTURE_2D, 0, internal, width, height, 0, format, type, data);
+      return tex;
+    }
+    const a = program('PASS_A_FRAGMENT_SRC'), b = program('PASS_B_FRAGMENT_SRC');
+    gl.bindVertexArray(gl.createVertexArray()); gl.viewport(0, 0, 64, 64);
+    const records = texture(4, 1, gl.RGBA32F, gl.RGBA, gl.FLOAT, null);
+    const atlas = texture(256, 1, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(1024).fill(255));
+    const overlay = texture(64, 64, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(64*64*4));
+    const targets = [0, 1].map(() => {
+      const state = texture(64, 64, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      const history = texture(64, 64, gl.RG8, gl.RG, gl.UNSIGNED_BYTE, null);
+      const fbo = gl.createFramebuffer()!; gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, state, 0);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, history, 0);
+      gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('Orb history framebuffer is incomplete');
+      return { state, history, fbo };
+    });
+    const bind = (p: WebGLProgram, unit: number, name: string, tex: WebGLTexture) => {
+      gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.uniform1i(gl.getUniformLocation(p, name), unit);
+    };
+    let next = 0;
+    function step(x: number, dt: number, reset = false, ripple = false, trails = true) {
+      const read = targets[1-next]!, write = targets[next]!; next = 1-next;
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, records);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 4, 1, gl.RGBA, gl.FLOAT,
+        new Float32Array([x,32.5,0,0,12,1,0.8,0,1,1,1,ripple?1:0,ripple?0:-1,-1,-1,-1]));
+      gl.bindFramebuffer(gl.FRAMEBUFFER, write.fbo); gl.useProgram(a);
+      bind(a, 0, 'uRecords', records); bind(a, 1, 'uPrevState', read.state); bind(a, 2, 'uPrevOpacityHistory', read.history);
+      gl.uniform1i(gl.getUniformLocation(a,'uRecordCount'),1);
+      gl.uniform3f(gl.getUniformLocation(a,'uViewport'),0,0,1);
+      gl.uniform1f(gl.getUniformLocation(a,'uCellCssPx'),1);
+      gl.uniform1f(gl.getUniformLocation(a,'uDtMs'),dt);
+      gl.uniform1f(gl.getUniformLocation(a,'uCoolRate'),4); // same two-second cooldown as restoration
+      gl.uniform1i(gl.getUniformLocation(a,'uResetHistory'),reset?1:0);
+      gl.uniform1i(gl.getUniformLocation(a,'uPointOpacityTrails'),trails?1:0);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+      const history = new Uint8Array(64*64*4), state = new Uint8Array(history.length);
+      gl.readBuffer(gl.COLOR_ATTACHMENT0); gl.readPixels(0,0,64,64,gl.RGBA,gl.UNSIGNED_BYTE,state);
+      gl.readBuffer(gl.COLOR_ATTACHMENT1); gl.readPixels(0,0,64,64,gl.RGBA,gl.UNSIGNED_BYTE,history);
+      gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.useProgram(b);
+      bind(b,0,'uCellState',write.state); bind(b,1,'uRecords',records); bind(b,2,'uAtlas',atlas);
+      bind(b,3,'uOverlay',overlay); bind(b,4,'uOpacityHistory',write.history);
+      gl.uniform1i(gl.getUniformLocation(b,'uPointOpacityTrails'),trails?1:0);
+      for (const name of ['uOpacity','uLabelOpacity','uDeviceCellPx','uCellCssPx']) gl.uniform1f(gl.getUniformLocation(b,name),1);
+      gl.uniform1f(gl.getUniformLocation(b,'uCanvasHpx'),64);
+      gl.uniform3f(gl.getUniformLocation(b,'uViewport'),0,0,1);
+      gl.uniform2i(gl.getUniformLocation(b,'uCellsMax'),63,63);
+      gl.uniform4f(gl.getUniformLocation(b,'uNeutral'),1,1,1,0.8);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+      const pixels = new Uint8Array(history.length); gl.readPixels(0,0,64,64,gl.RGBA,gl.UNSIGNED_BYTE,pixels);
+      if (gl.getError() !== gl.NO_ERROR) throw new Error('Orb cooldown GPU probe failed');
+      return { history, state, pixels };
+    }
+    const initial = step(16.5,0,true);
+    const full: number[] = [];
+    for (let i=3;i<initial.pixels.length;i+=4) if (initial.pixels[i]===204) full.push(i);
+    const count = (frame: ReturnType<typeof step>) => full.filter(i=>frame.pixels[i]===204).length;
+    const moved = step(48.5,16);
+    const retained = count(moved);
+    const fading = count(step(48.5,600));
+    const cooled = step(48.5,2500);
+    const reset = step(16.5,0,true);
+    const resetMoved = step(48.5,0,true);
+    const plain = step(16.5,0,true);
+    const ripple = step(16.5,0,true,true);
+    step(16.5,0,true,false,false);
+    const regularMoved = step(48.5,16,false,false,false);
+    const result = {
+      full:full.length,retained,fading,cooled:count(cooled),reset:count(resetMoved),
+      allCooledHalf:full.every(i=>cooled.pixels[i]===102),
+      hasGlyphWake:moved.state.some((v,i)=>i%4===0 && v>0 && moved.state[i+2]===255),
+      rippleHistoryEqual:plain.history.every((v,i)=>v===ripple.history[i]),
+      rippleChangesGlyphs:plain.state.some((v,i)=>i%4===0 && v!==ripple.state[i]),
+      regularRetained:count(regularMoved),
+      resetReproducible:initial.pixels.every((v,i)=>v===reset.pixels[i]),
+    };
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    return result;
+  });
+  expect(result.full).toBeGreaterThan(10);
+  expect(result.retained).toBeGreaterThan(result.full*0.8);
+  expect(result.fading).toBeLessThan(result.retained);
+  expect(result.cooled).toBe(0);
+  expect(result.reset).toBe(0);
+  expect(result.allCooledHalf).toBe(true);
+  expect(result.hasGlyphWake).toBe(true);
+  expect(result.rippleHistoryEqual).toBe(true);
+  expect(result.rippleChangesGlyphs).toBe(true);
+  expect(result.regularRetained).toBe(0);
+  expect(result.resetReproducible).toBe(true);
+});
+
+test('the real orb renderer retains its opacity history through resize and graphics-context restoration', async ({ page }, info) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto('/'); await expose(page);
+  await page.evaluate(() => {
+    const get = (window as any).opacityExport;
+    const host = document.createElement('div');
+    Object.assign(host.style, { position: 'fixed', inset: '0', zIndex: '99999' });
+    document.body.append(host);
+    const root = get('createRoot')(host);
+    (window as any).orbTestRoot = root;
+    root.render(get('createElement')(get('ProjectRestorationScreen'), {}));
+  });
+  const enabled = () => page.evaluate(() => {
+    const canvas = document.querySelector('.project-restoration-canvas canvas') as HTMLCanvasElement;
+    const gl = canvas?.getContext('webgl2');
+    if (!gl || gl.isContextLost()) return false;
+    const program = gl.getParameter(gl.CURRENT_PROGRAM);
+    const location = program ? gl.getUniformLocation(program, 'uPointOpacityTrails') : null;
+    return location !== null && gl.getUniform(program, location) === true;
+  });
+  const ink = () => page.evaluate(async () => {
+    const canvas = document.querySelector('.project-restoration-canvas canvas') as HTMLCanvasElement;
+    const capture = (window as any).opacityExport('screenshotRenderer')(canvas);
+    const img = new Image(); img.src = await capture(1); await img.decode();
+    const copy = document.createElement('canvas'); copy.width = img.width; copy.height = img.height;
+    const ctx = copy.getContext('2d')!; ctx.drawImage(img, 0, 0);
+    const pixels = ctx.getImageData(0, 0, copy.width, copy.height).data;
+    let sum = 0; for (let i=3; i<pixels.length; i+=4) sum += pixels[i]!;
+    const gl = canvas.getContext('webgl2')!;
+    if (gl.getError() !== gl.NO_ERROR) throw new Error('The orb renderer reported a GPU error');
+    return sum;
+  });
+  await expect.poll(enabled).toBe(true);
+  await expect.poll(ink).toBeGreaterThan(0);
+  await page.waitForTimeout(700);
+  await page.screenshot({ path: info.outputPath('orbs-opacity-wake.png') });
+  await page.setViewportSize({ width: 1320, height: 900 });
+  await expect.poll(ink).toBeGreaterThan(0);
+  await page.evaluate(() => new Promise<void>(resolve => {
+    const canvas = document.querySelector('.project-restoration-canvas canvas') as HTMLCanvasElement;
+    const extension = canvas.getContext('webgl2')!.getExtension('WEBGL_lose_context');
+    if (!extension) throw new Error('Context-loss extension is required for this test');
+    (window as any).orbContextLoss = extension;
+    canvas.addEventListener('webglcontextlost', () => resolve(), { once: true });
+    extension.loseContext();
+  }));
+  await expect.poll(() => page.evaluate(() => (document.querySelector('.project-restoration-canvas canvas') as HTMLCanvasElement)
+    .getContext('webgl2')!.isContextLost())).toBe(true);
+  await page.evaluate(() => (window as any).orbContextLoss.restoreContext());
+  await expect.poll(enabled).toBe(true);
+  await expect.poll(ink).toBeGreaterThan(0);
+  await page.evaluate(() => (window as any).orbTestRoot.unmount());
+  expect(errors).toEqual([]);
+});
+
 test('opacity scales all rendered ink, updates an idle field, resets and survives reload', async ({ page }, info) => {
   test.setTimeout(120_000);
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
@@ -154,7 +327,7 @@ test('independent labels remain visible with a hidden background and restore the
   await expect.poll(() => uniform(page, 'uLabelOpacity')).toBe(1.25);
 });
 
-test('the GPU shader concentrates a 5/10/85 mix near nodes and orbs, halves ambient dots and preserves labels', async ({ page }) => {
+test('the GPU shader uses only 5% full and 95% half opacity near nodes and orbs, halves ambient dots and preserves labels', async ({ page }) => {
   const results = await page.evaluate(() => {
     const get = (window as any).opacityExport;
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
@@ -199,7 +372,7 @@ test('the GPU shader concentrates a 5/10/85 mix near nodes and orbs, halves ambi
       const draw = () => { gl.drawArrays(gl.TRIANGLES, 0, 3); gl.readPixels(0, 0, 512, 512, gl.RGBA, gl.UNSIGNED_BYTE, pixels); };
       draw(); const first = pixels.slice(); draw();
       const counts: Record<number, number> = {}; let innerSum=0, innerCount=0, outerSum=0, outerCount=0;
-      let innerFull=0, innerBright=0, outerBright=0;
+      let innerFull=0, outerFull=0;
       for (let row=0; row<512; row++) for (let col=0; col<512; col++) {
         const d = Math.hypot(Math.max(x-col-0.5,0,col+0.5-x-width),Math.max(y-row-0.5,0,row+0.5-y-height));
         if (d <= 0 || d >= radius) continue;
@@ -210,13 +383,12 @@ test('the GPU shader concentrates a 5/10/85 mix near nodes and orbs, halves ambi
         if (area < 0.25) {
           innerSum+=a; innerCount++;
           if (a === 204) innerFull++;
-          if (a > 102) innerBright++;
         }
-        if (area > 0.75) { outerSum+=a; outerCount++; if (a > 102) outerBright++; }
+        if (area > 0.75) { outerSum+=a; outerCount++; if (a === 204) outerFull++; }
       }
       output.push({name,counts,inner:innerSum/innerCount,outer:outerSum/outerCount,
-        innerFullShare:innerFull/counts[204]!,innerBrightShare:innerBright/(counts[204]!+counts[153]!),
-        outerBrightShare:outerBright/outerCount,stable:pixels.every((a,i)=>a===first[i])});
+        innerFullShare:innerFull/counts[204]!,outerFullShare:outerFull/outerCount,
+        stable:pixels.every((a,i)=>a===first[i])});
     }
     // No winner and stage zero: ambient dots are all half opacity, not a
     // lottery. Labels over the same cells must still bypass that reduction.
@@ -243,15 +415,13 @@ test('the GPU shader concentrates a 5/10/85 mix near nodes and orbs, halves ambi
     return output;
   });
   for (const result of results) {
-    expect(Object.keys(result.counts).map(Number).sort((a,b)=>a-b)).toEqual([102,153,204]);
+    expect(Object.keys(result.counts).map(Number).sort((a,b)=>a-b)).toEqual([102,204]);
     const total = Object.values(result.counts).reduce((a,b)=>a+b,0);
-    expect(result.counts[102]!/total).toBeCloseTo(0.85,2);
-    expect(result.counts[153]!/total).toBeCloseTo(0.1,2);
+    expect(result.counts[102]!/total).toBeCloseTo(0.95,2);
     expect(result.counts[204]!/total).toBeCloseTo(0.05,2);
-    expect(result.inner).toBeGreaterThan(result.outer + 30);
+    expect(result.inner).toBeGreaterThan(result.outer + 18);
     expect(result.innerFullShare).toBeGreaterThan(0.93);
-    expect(result.innerBrightShare).toBeGreaterThan(0.75);
-    expect(result.outerBrightShare).toBeLessThan(0.01);
+    expect(result.outerFullShare).toBeLessThan(0.001);
     expect(result.stable).toBe(true);
   }
 });

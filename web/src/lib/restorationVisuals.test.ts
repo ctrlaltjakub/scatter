@@ -79,6 +79,7 @@ describe('restoration visuals', () => {
 
     expect(controller.scene.state.viewport.zoom).toBe(RESTORATION_ZOOM);
     expect(controller.scene.state.coolStagesPerSecond).toBe(RESTORATION_COOL_STAGES_PER_SEC);
+    expect(controller.scene.state.pointOpacityTrails).toBe(true);
     expect(8 / RESTORATION_COOL_STAGES_PER_SEC * 1_000)
       .toBe(RESTORATION_COOLING_DURATION_MS);
     expect([...controller.scene.state.auras.values()]).toEqual(expect.arrayContaining([

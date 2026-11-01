@@ -153,6 +153,9 @@ interface GLState {
   overlayTex: WebGLTexture;
   stateTexA: WebGLTexture;
   stateTexB: WebGLTexture;
+  /** Only allocated for startup point-orb scenes; RG8 stage/fraction history. */
+  opacityTexA: WebGLTexture | null;
+  opacityTexB: WebGLTexture | null;
   fboA: WebGLFramebuffer;
   fboB: WebGLFramebuffer;
   /** true → next pass A READS B and WRITES A. */
@@ -166,6 +169,8 @@ interface GLState {
   aDtMs: WebGLUniformLocation | null;
   aCoolRate: WebGLUniformLocation | null;
   aResetHistory: WebGLUniformLocation | null;
+  aPointOpacityTrails: WebGLUniformLocation | null;
+  aPrevOpacityHistory: WebGLUniformLocation | null;
   // Uniform locations (pass B)
   bCellState: WebGLUniformLocation | null;
   bRecords: WebGLUniformLocation | null;
@@ -176,6 +181,8 @@ interface GLState {
   bAlphaBoost: WebGLUniformLocation | null;
   bOpacity: WebGLUniformLocation | null;
   bLabelOpacity: WebGLUniformLocation | null;
+  bPointOpacityTrails: WebGLUniformLocation | null;
+  bOpacityHistory: WebGLUniformLocation | null;
   bDeviceCellPx: WebGLUniformLocation | null;
   bCellCssPx: WebGLUniformLocation | null;
   bViewport: WebGLUniformLocation | null;
@@ -411,13 +418,15 @@ export function AsciiAuraLayerGL({
 
       const stateTexA = makeStateTexture(gl);
       const stateTexB = makeStateTexture(gl);
+      const opacityTexA = scene.state.pointOpacityTrails ? makeStateTexture(gl) : null;
+      const opacityTexB = scene.state.pointOpacityTrails ? makeStateTexture(gl) : null;
       const fboA = gl.createFramebuffer()!;
       const fboB = gl.createFramebuffer()!;
 
       const u = (p: WebGLProgram, name: string) => gl.getUniformLocation(p, name);
       return {
         gl, progA, progB, vao,
-        recordsTex, atlasTex, overlayTex, stateTexA, stateTexB, fboA, fboB,
+        recordsTex, atlasTex, overlayTex, stateTexA, stateTexB, opacityTexA, opacityTexB, fboA, fboB,
         writeA: true,
         aRecords: u(progA, 'uRecords'),
         aPrevState: u(progA, 'uPrevState'),
@@ -427,6 +436,8 @@ export function AsciiAuraLayerGL({
         aDtMs: u(progA, 'uDtMs'),
         aCoolRate: u(progA, 'uCoolRate'),
         aResetHistory: u(progA, 'uResetHistory'),
+        aPointOpacityTrails: u(progA, 'uPointOpacityTrails'),
+        aPrevOpacityHistory: u(progA, 'uPrevOpacityHistory'),
         bCellState: u(progB, 'uCellState'),
         bRecords: u(progB, 'uRecords'),
         bAtlas: u(progB, 'uAtlas'),
@@ -436,6 +447,8 @@ export function AsciiAuraLayerGL({
         bAlphaBoost: u(progB, 'uAlphaBoost'),
         bOpacity: u(progB, 'uOpacity'),
         bLabelOpacity: u(progB, 'uLabelOpacity'),
+        bPointOpacityTrails: u(progB, 'uPointOpacityTrails'),
+        bOpacityHistory: u(progB, 'uOpacityHistory'),
         bDeviceCellPx: u(progB, 'uDeviceCellPx'),
         bCellCssPx: u(progB, 'uCellCssPx'),
         bViewport: u(progB, 'uViewport'),
@@ -463,6 +476,8 @@ export function AsciiAuraLayerGL({
       s.resetHistory = true;
       s.atlasBuiltForCellPx = 0;
       s.deviceW = 0; // force size/texture realloc
+      s.cellsX = 0;
+      s.cellsY = 0;
       s.overlayKey = ''; // the restored overlayTex has no storage yet
       s.dirty = true;
     };
@@ -524,7 +539,9 @@ export function AsciiAuraLayerGL({
         if (cellsX !== s.cellsX || cellsY !== s.cellsY) {
           s.cellsX = cellsX;
           s.cellsY = cellsY;
-          for (const [tex, fbo] of [[g.stateTexA, g.fboA], [g.stateTexB, g.fboB]] as const) {
+          for (const [tex, opacityTex, fbo] of [
+            [g.stateTexA, g.opacityTexA, g.fboA], [g.stateTexB, g.opacityTexB, g.fboB],
+          ] as const) {
             gl.bindTexture(gl.TEXTURE_2D, tex);
             gl.texImage2D(
               gl.TEXTURE_2D, 0, gl.RGBA8,
@@ -532,6 +549,12 @@ export function AsciiAuraLayerGL({
             );
             gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+            if (opacityTex) {
+              gl.bindTexture(gl.TEXTURE_2D, opacityTex);
+              gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG8, cellsX, cellsY, 0, gl.RG, gl.UNSIGNED_BYTE, null);
+              gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, opacityTex, 0);
+              gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+            }
           }
           gl.bindFramebuffer(gl.FRAMEBUFFER, null);
           s.resetHistory = true;
@@ -1266,6 +1289,8 @@ export function AsciiAuraLayerGL({
       const readTex = g.writeA ? g.stateTexB : g.stateTexA;
       const writeFbo = g.writeA ? g.fboA : g.fboB;
       const writtenTex = g.writeA ? g.stateTexA : g.stateTexB;
+      const readOpacity = g.writeA ? g.opacityTexB : g.opacityTexA;
+      const writtenOpacity = g.writeA ? g.opacityTexA : g.opacityTexB;
       gl.bindFramebuffer(gl.FRAMEBUFFER, writeFbo);
       gl.viewport(0, 0, s.cellsX, s.cellsY);
       gl.useProgram(g.progA);
@@ -1275,6 +1300,12 @@ export function AsciiAuraLayerGL({
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, readTex);
       gl.uniform1i(g.aPrevState, 1);
+      gl.uniform1i(g.aPointOpacityTrails, readOpacity ? 1 : 0);
+      gl.uniform1i(g.aPrevOpacityHistory, readOpacity ? 2 : 1);
+      if (readOpacity) {
+        gl.activeTexture(gl.TEXTURE2);
+        gl.bindTexture(gl.TEXTURE_2D, readOpacity);
+      }
       gl.uniform1i(g.aRecordCount, count);
       gl.uniform3f(g.aViewport, sc.viewport.x, sc.viewport.y, sc.viewport.zoom);
       gl.uniform1f(g.aCellCssPx, s.deviceCellPx / s.dpr);
@@ -1312,6 +1343,12 @@ export function AsciiAuraLayerGL({
       gl.activeTexture(gl.TEXTURE3);
       gl.bindTexture(gl.TEXTURE_2D, g.overlayTex);
       gl.uniform1i(g.bOverlay, 3);
+      gl.uniform1i(g.bPointOpacityTrails, writtenOpacity ? 1 : 0);
+      gl.uniform1i(g.bOpacityHistory, writtenOpacity ? 4 : 0);
+      if (writtenOpacity) {
+        gl.activeTexture(gl.TEXTURE4);
+        gl.bindTexture(gl.TEXTURE_2D, writtenOpacity);
+      }
       gl.uniform4fv(g.bStatusColors, s.statusColorData);
       gl.uniform4fv(g.bPalette, s.paletteData);
       gl.uniform1i(g.bPaletteCount, s.paletteCount);
@@ -1452,6 +1489,8 @@ export function AsciiAuraLayerGL({
         g.gl.deleteTexture(g.overlayTex);
         g.gl.deleteTexture(g.stateTexA);
         g.gl.deleteTexture(g.stateTexB);
+        if (g.opacityTexA) g.gl.deleteTexture(g.opacityTexA);
+        if (g.opacityTexB) g.gl.deleteTexture(g.opacityTexB);
         g.gl.deleteFramebuffer(g.fboA);
         g.gl.deleteFramebuffer(g.fboB);
       }

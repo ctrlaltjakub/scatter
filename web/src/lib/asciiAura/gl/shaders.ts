@@ -10,6 +10,8 @@
  *   target stage → time-based cooling vs the previous frame's texel.
  *   Output texel: R = integer stage byte, G = stage fraction byte,
  *   B = winner record index (255 = none), A = winner alpha.
+ *   Point-orb scenes also write cooled steady proximity to a second RG8
+ *   target. Ordinary node scenes do not allocate or enable this attachment.
  *
  *   Pass B (composite) — one fragment per DEVICE PIXEL onto the
  *   canvas. Maps the pixel to its cell, reads the cell-state texel,
@@ -116,8 +118,11 @@ uniform float uCellCssPx;       // cell pitch in CSS px (deviceCellPx / dpr)
 uniform float uDtMs;            // ms since the previous pass-A frame
 uniform float uCoolRate;        // displayed ramp stages cooled per second
 uniform int uResetHistory;      // 1 → ignore uPrevState (resize/zoom/restore)
+uniform bool uPointOpacityTrails;
+uniform sampler2D uPrevOpacityHistory; // optional point-orb proximity, stage + fraction
 
-out vec4 outState;
+layout(location = 0) out vec4 outState;
+layout(location = 1) out vec2 outOpacityHistory;
 
 const int MAX_RECORDS = ${MAX_RECORDS};
 const float FOCUS_BOOST = ${fmt(FOCUS_BOOST)};
@@ -324,6 +329,18 @@ void main() {
     (winner >= 0 ? float(winner) : 255.0) / 255.0,
     alpha
   );
+
+  outOpacityHistory = vec2(0.0);
+  if (uPointOpacityTrails) {
+    // Track steady proximity, not ripple density: recoloring must not paint
+    // bright rings. Keep full stage/fraction precision at every refresh rate.
+    float target = (winner >= 0 ? recordLotteryDensity(winner, worldPos) : 0.0)
+      * float(STAGES - 1);
+    vec2 previous = uResetHistory == 0 ? texelFetch(uPrevOpacityHistory, cell, 0).rg : vec2(0.0);
+    float prior = previous.r * 255.0 + previous.g;
+    float cooled = max(target, prior - uDtMs * 0.001 * uCoolRate);
+    outOpacityHistory = vec2(floor(cooled) / 255.0, fract(cooled));
+  }
 }
 `;
 
@@ -341,6 +358,8 @@ uniform vec4 uPalette[${MAX_PALETTE}]; // baseline palette, rgba 0-1
 uniform float uAlphaBoost; // theme adjustment shared by all glyph/label kinds
 uniform float uOpacity; // global/background user multiplier
 uniform float uLabelOpacity; // follows uOpacity unless the independent control is enabled
+uniform bool uPointOpacityTrails;
+uniform sampler2D uOpacityHistory;
 uniform int uPaletteCount;
 uniform vec4 uNeutral;          // parsed --scatter-base rgba
 uniform float uDeviceCellPx;
@@ -407,7 +426,14 @@ void main() {
     int winner = int(st.b * 255.0 + 0.5);
     uint h = cellHash(col, row);
     if (statusG == 0) {
-      if (winner != ${WINNER_NONE}) {
+      if (uPointOpacityTrails) {
+        vec2 history = texelFetch(uOpacityHistory, ivec2(col, row), 0).rg;
+        float proximity = clamp((history.r * 255.0 + history.g) / ${fmt(STAGES - 1)}, 0.0, 1.0);
+        // Point-aura area percentile is (distance / radius)^2. Its cooled
+        // proximity persists after the orb moves on, including ownerless cells.
+        float distanceFraction = 1.0 - proximity;
+        scatteredOpacity = proximity > 0.0 ? auraOpacityTier(h, distanceFraction * distanceFraction) : 0.5;
+      } else if (winner != ${WINNER_NONE}) {
         vec4 rect = texelFetch(uRecords, ivec2(winner * 4, 0), 0);
         vec4 owner = texelFetch(uRecords, ivec2(winner * 4 + 1, 0), 0);
         // Collapse ghosts have no steady radius; use their original footprint.
@@ -552,7 +578,7 @@ void main() {
   float inkAlpha = min(1.0, color.a + uAlphaBoost);
   float opacity = statusG != 0 ? uLabelOpacity : uOpacity;
   // Apply the random tiers after the slider's saturation, so even at 200%
-  // the 75% and 50% cells retain their contrast. Atlas antialiasing stays intact.
+  // the half-opacity cells retain their contrast. Atlas antialiasing stays intact.
   float a = glyphA * clamp(inkAlpha * opacity, 0.0, 1.0) * scatteredOpacity;
   outColor = vec4(color.rgb * a, a); // premultiplied over the white host bg
 }

@@ -78,6 +78,19 @@ describe('chat ray shader integration', () => {
 });
 
 describe('overlay opacity modes', () => {
+  test('point-orb opacity trails cool steady proximity without inheriting recolor ripples', () => {
+    const history = PASS_A_FRAGMENT_SRC.slice(PASS_A_FRAGMENT_SRC.indexOf('if (uPointOpacityTrails)'));
+    expect(history).toContain('recordLotteryDensity(winner, worldPos)');
+    expect(history).not.toContain('recordDensity(winner, worldPos)');
+    expect(history).toContain('uResetHistory == 0 ? texelFetch(uPrevOpacityHistory, cell, 0).rg');
+    expect(history).toContain('prior - uDtMs * 0.001 * uCoolRate');
+    expect(history).toContain('floor(cooled) / 255.0, fract(cooled)');
+    const scatter = PASS_B_FRAGMENT_SRC.indexOf('if (uPointOpacityTrails)');
+    expect(scatter).toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf('if (statusG == 0)'));
+    expect(scatter).toBeLessThan(PASS_B_FRAGMENT_SRC.indexOf('else if (winner !='));
+    expect(PASS_B_FRAGMENT_SRC).toContain('auraOpacityTier(h, distanceFraction * distanceFraction)');
+  });
+
   test('applies the theme boost once after all opacity overrides, capped before glyph coverage', () => {
     const floor = PASS_B_FRAGMENT_SRC.indexOf(`color.a = max(${OVERLAY_MIN_ALPHA.toFixed(2)}, color.a);`);
     const boost = 'float inkAlpha = min(1.0, color.a + uAlphaBoost);';

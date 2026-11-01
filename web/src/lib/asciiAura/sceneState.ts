@@ -149,6 +149,9 @@ export interface AuraSceneState {
   /** Optional scene-specific cooldown speed. The ordinary graph scene omits
    *  this and uses the renderer's established 20 stages/second default. */
   coolStagesPerSecond?: number;
+  /** Startup point-orb scenes retain opacity proximity through the same
+   * cooldown as glyph density. Ordinary node scenes allocate no extra history. */
+  pointOpacityTrails?: boolean;
 }
 
 export interface AuraScene {

@@ -140,6 +140,7 @@ export function createRestorationAuraController({
     anyUngrouped: false,
     paletteVersion: 1,
     coolStagesPerSecond: RESTORATION_COOL_STAGES_PER_SEC,
+    pointOpacityTrails: true,
   };
 
   const scene: AuraScene = {
