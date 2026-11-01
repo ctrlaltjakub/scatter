@@ -18,6 +18,20 @@ function declarations(root: postcss.Root, selector: string) {
 }
 
 describe('shared text-link presentation', () => {
+  it('keeps the stronger resting underline consistent in nodes, overview, and editors', () => {
+    for (const selector of [
+      '.ref-chip.unexplored',
+      '.ref-chip.zoom-disabled.unexplored:hover',
+      '.text-editor-article .editor-l1-title',
+      '.text-editor-article .editor-l2-name',
+      '.text-editor-article .editor-term',
+    ]) {
+      expect(declarations(globalCss, selector)['text-decoration-color'], selector)
+        .toBe('color-mix(in oklab, var(--overlay1) 80%, transparent)');
+      expect(declarations(globalCss, selector)['text-decoration-thickness'], selector).toBeUndefined();
+    }
+  });
+
   it('styles native text anchors without taking over buttons, icons, or linked-card layouts', () => {
     const host = document.createElement('div');
     host.innerHTML = '<a href="https://example.org">Text</a><a href="/">Internal</a><a>Placeholder</a>'
