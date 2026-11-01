@@ -18,7 +18,7 @@ import { useReadingStore } from '@/store/useReadingStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useDisplayBody } from '@/store/useRewriteStore';
 import { useNodeStatusStore } from '@/store/useNodeStatusStore';
-import { termPreviewFor } from '@/lib/termPreviewCore';
+import { bulletDescriptionPreview, termPreviewFor } from '@/lib/termPreviewCore';
 import { termPreviewProcess } from '@/lib/termPreviews';
 import { termLabel } from '@/lib/termLabel';
 import { GROUP_LABEL_ZOOM_THRESHOLD } from '@/lib/asciiAura/groupLabels';
@@ -57,6 +57,7 @@ interface RelationTarget {
   parentId?: string;
   term?: string;
   versionCreatedAt?: number;
+  sourceField?: string;
   element: HTMLElement;
   pointer: { x: number; y: number } | null;
   anchor: RectSnapshot;
@@ -111,7 +112,7 @@ function resolveTarget(
 ): RelationTarget | null {
   // Expansion belongs to the bullet, not the focused node. Fully expanded
   // bullets and opening prose remain hoverable even in unfocused cards.
-  if (element.closest('.zoom-disabled, .sc-ab-measure, [aria-hidden="true"], .sc-ab-item[aria-expanded="false"], .sc-collapsible-li:not(.is-pinned)')) return null;
+  if (element.closest('.zoom-disabled, .sc-ab-measure, [aria-hidden="true"]')) return null;
   const directChildId = element.dataset.relationChildId;
   const arrowId = element.dataset.relationArrowId;
   const project = useGraphStore.getState().project;
@@ -119,11 +120,21 @@ function resolveTarget(
   const parentId = element.dataset.referenceParentId;
   const term = element.dataset.referenceTerm;
   const versionCreatedAt = Number(element.closest<HTMLElement>('[data-preview-version]')?.dataset.previewVersion) || undefined;
+  const sourceField = element.closest<HTMLElement>('[data-sc-source-field]')?.dataset.scSourceField;
   if ((!childId || !project?.nodes[childId]) && (!parentId || !term || !project?.nodes[parentId])) return null;
+  if (element.closest('.sc-ab-item[aria-expanded="false"], .sc-collapsible-li:not(.is-pinned)')) {
+    const parent = parentId ? project?.nodes[parentId] : undefined;
+    const version = versionCreatedAt ? parent?.versions.find(v => v.createdAt === versionCreatedAt)
+      : parent?.versions[parent.currentVersionIndex];
+    // A collapsed subchapter can reveal its own description without needing
+    // expansion or a paid request. Other collapsed text retains its behavior.
+    if (!sourceField?.match(/^b:\d+:c:\d+:name$/) || !term
+      || !bulletDescriptionPreview(version, term, sourceField)) return null;
+  }
   return {
-    key: parentId && term ? `term:${parentId}:${versionCreatedAt ?? ''}:${term}` : directChildId ? `child:${childId}` : `arrow:${arrowId}`,
+    key: parentId && term ? `term:${parentId}:${versionCreatedAt ?? ''}:${sourceField ?? ''}:${term}` : directChildId ? `child:${childId}` : `arrow:${arrowId}`,
     childId,
-    parentId, term, versionCreatedAt,
+    parentId, term, versionCreatedAt, sourceField,
     element,
     pointer,
     anchor: anchorFor(element, pointer),
@@ -260,7 +271,10 @@ function RelationPreviewCard({ target }: { target: RelationTarget }) {
   const version = node?.versions[versionIndex];
   const displayBody = useDisplayBody(linkedChildId ?? '', versionIndex, version?.body ?? '');
   const opening = openingParagraphPreview(displayBody, true);
-  const explanation = autoPreviews && !node && target.term ? termPreviewFor(parentVersion, target.term) : undefined;
+  const hasChild = !!node;
+  const explanation = useMemo(() => autoPreviews && !hasChild && target.term
+    ? termPreviewFor(parentVersion, target.term, target.sourceField) : undefined,
+  [autoPreviews, hasChild, parentVersion, target.term, target.sourceField]);
   const compact = node ? !!node.generating && !opening : autoPreviews && !explanation && explaining;
   const full = !node && !!explanation;
   const text = node ? opening || (compact ? 'Generating' : version?.header?.trim() || '')

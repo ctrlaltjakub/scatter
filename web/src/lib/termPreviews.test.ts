@@ -51,7 +51,43 @@ const chatVersion = (createdAt: number) => useGraphStore.getState().project!.nod
 describe('term preview data', () => {
   it('includes whole encyclopedia titles, deduplicates case, excludes code and link literals', () => {
     expect(previewTerms(version('**[[Cache]]** uses [[cache]]. `[[literal]]` [link [[ignored]]](https://example.com)\n\n- **[[Memory]]** management\n  - [[Page]] faults: A [[page]] may be missing.')))
-      .toEqual(['cache', 'Memory', 'page', 'Memory management', 'Page faults']);
+      .toEqual(['cache', 'Memory management', 'page']);
+  });
+  it('uses the bullet description instead of a cached or generated second explanation', () => {
+    const v = version('- Scales, Modes, and Intervals\n  - **[[Intervals]]**: Distance measured in **cents** or [[semitones]] between two pitch points.⟦3⟧');
+    v.termPreviews = { fingerprint: termPreviewFingerprint(v), entries: { intervals: 'An older generated explanation.' } };
+    expect(previewTerms(v)).toEqual(['Scales, Modes, and Intervals', 'semitones']);
+    expect(termPreviewFor(v, 'Intervals', 'b:0:c:0:name')).toBe('Distance measured in **cents** or semitones between two pitch points.');
+    expect(termPreviewFor(v, 'INTERVALS')).toBe('Distance measured in **cents** or semitones between two pitch points.');
+    expect(termPreviewFor({ ...v, body: v.body.replace('Distance measured', 'A difference measured') }, 'Intervals'))
+      .toBe('A difference measured in **cents** or semitones between two pitch points.');
+  });
+  it('uses each occurrence’s description for repeated names without generating either', () => {
+    const v = version('- Music\n  - Intervals: Distance between pitches.\n- Mathematics\n  - Intervals: Sets of numbers between bounds.');
+    expect(previewTerms(v)).toEqual(['Music', 'Mathematics']);
+    expect(termPreviewFor(v, 'Intervals', 'b:0:c:0:name')).toBe('Distance between pitches.');
+    expect(termPreviewFor(v, 'Intervals', 'b:1:c:0:name')).toBe('Sets of numbers between bounds.');
+    expect(termPreviewFor(v, 'Intervals')).toBeUndefined();
+    expect(termPreviewFor(v, 'Other term', 'b:0:c:0:name')).toBeUndefined();
+    // An ambiguous occurrence in ordinary prose still needs its own preview.
+    expect(previewTerms({ ...v, body: 'Compare [[Intervals]].\n\n' + v.body })).toContain('Intervals');
+  });
+  it('does not infer a description for an empty bullet or for non-encyclopedic content', () => {
+    const v = version('- Music\n  - Intervals\n  - Scales: ⟦1⟧');
+    expect(previewTerms(v)).toEqual(['Music', 'Intervals', 'Scales']);
+    expect(termPreviewFor(v, 'Intervals')).toBeUndefined();
+    for (const contentType of ['chat', 'answer', 'explain'] as const) {
+      const other = { ...v, contentType, body: '- Music\n  - [[Intervals]]: Distance between pitches.' };
+      expect(previewTerms(other)).toEqual(['Intervals']);
+      expect(termPreviewFor(other, 'Intervals')).toBeUndefined();
+    }
+  });
+  it.each(LANGUAGES)('reuses $name descriptions without rewriting punctuation, scripts or emphasis', ({ id, sample }) => {
+    const names: Record<string, string> = { ar: 'الفواصل', zh: '音程', ja: '音程', ko: '음정', hi: 'अंतराल', pl: 'Odległości', de: 'Intervalle' };
+    const name = names[id] ?? id;
+    const v = { ...version(`- Section\n  - **[[${name}]]**: **${sample}**`), language: id };
+    expect(previewTerms(v)).toEqual(['Section']);
+    expect(termPreviewFor(v, name, 'b:0:c:0:name')).toBe(`**${sample}**`);
   });
   it.each(['chat', 'answer', 'explain'] as const)('extracts marked terms without inventing whole-title terms in %s prose', (contentType) => {
     expect(previewTerms({ ...version('- Title: [[cache]]'), contentType })).toEqual(['cache']);
@@ -201,6 +237,32 @@ describe('background preview lifecycle', () => {
     useChatRuntimeStore.setState({ views: {}, drafts: {} });
   });
   afterEach(() => { useGraphStore.setState({ project: null, activeProjectId: null }); });
+  it('never requests described names on generation, retry, or refocus, and does not add undo history', async () => {
+    seed('- Intervals\n  - Intervals: Distance measured in cents or semitones between two pitch points.');
+    const stop = watchFocusedTermPreviews();
+    try {
+      await generateTermPreviews('n', 10);
+      await generateTermPreviews('n', 10, true);
+      useGraphStore.getState().setSelection([]);
+      useGraphStore.getState().setSelection(['n']);
+      expect(complete).not.toHaveBeenCalled();
+      expect(current().termPreviews).toBeUndefined();
+      expect(termPreviewFor(current(), 'Intervals')).toContain('Distance measured');
+      expect(useNodeStatusStore.getState().processes.n).toBeUndefined();
+      expect(useGraphStore.temporal.getState().pastStates).toHaveLength(0);
+    } finally { stop(); }
+  });
+  it('only sends the remaining terms and reuses existing description previews after Redo terms', async () => {
+    seed('- Music\n  - **Intervals**: Distance measured in [[cents]] between pitches.');
+    await generateTermPreviews('n', 10);
+    expect(JSON.parse(complete.mock.calls[0]![0].user).terms.map((entry: { term: string }) => entry.term)).toEqual(['Music', 'cents']);
+    complete.mockImplementationOnce(async () => '{"terms":["Intervals","cents"]}');
+    await redoTermMarking('n');
+    expect(termPreviewFor(current(), 'Intervals')).toBe('Distance measured in cents between pitches.');
+    for (const [request] of complete.mock.calls) {
+      if (request.user.includes('"responseReminder"')) expect(JSON.parse(request.user).terms.map((entry: { term: string }) => entry.term)).not.toContain('Intervals');
+    }
+  });
   it('recovers a copy whose source term marking failed and shares the result without new undo steps', async () => {
     const project = seedChat(), ref = { turnId: 'second', versionCreatedAt: 12 };
     useGraphStore.getState().updateNode('n', updateChatAnswer(project.nodes.n!, ref, { body: 'A cache is useful.' }));

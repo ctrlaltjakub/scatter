@@ -16,7 +16,7 @@ async function fixture(page: Page, selected: boolean, height: number, count = 6)
     ? route.continue() : route.abort());
   await page.goto('/sandbox');
   await page.locator('[data-node-id]').first().waitFor();
-  await page.evaluate(({ body, height }) => {
+  await page.evaluate(({ body, selected, height }) => {
     const win = window as any;
     win.webpackChunk_N_E.push([[`bullet-click-${Date.now()}`], {}, (require: any) => {
       win.testExport = (name: string) => {
@@ -31,18 +31,13 @@ async function fixture(page: Page, selected: boolean, height: number, count = 6)
         width: 650, bodyMaxHeight: height }], currentVersionIndex: 0 };
     const project = graph.getState().project;
     graph.getState().setProject({ ...project, nodes: { [node.id]: node }, rootNodeId: 'other', arrows: {}, groups: {},
-      selection: [], viewport: { x: 520, y: 50, zoom: 1 } });
+      selection: selected ? [node.id] : [], viewport: { x: 520, y: 50, zoom: 1 } });
     graph.setState({ activeProjectId: project.id });
     graph.getState().requestPanTo(null);
-  }, { body: `An introduction to how a network shares information. Each section describes a different part of the process.\n\n${sections(count)}`, height });
+  }, { body: `An introduction to how a network shares information. Each section describes a different part of the process.\n\n${sections(count)}`, selected, height });
   await page.locator('[data-node-id="bullet-fixture"] .node-body').waitFor();
   await page.evaluate(() => document.fonts.ready);
-  // Exercise focus on an already mounted node. Mounting a preselected fixture
-  // batches the scrollbar's first measurement before its parent body ref is
-  // attached, so it has no prior thumb position for the motion assertion.
-  if (selected) await page.evaluate(() => (window as any).testExport('useGraphStore').getState().setSelection(['bullet-fixture']));
   await page.waitForTimeout(700);
-  if (selected) await expect(page.locator('[data-node-id="bullet-fixture"] .node-scrollbar-bar')).toBeVisible();
 }
 
 type MotionFrame = { time: number; top: number; height: number; width: number; targetTop: number; targetHeight: number };
@@ -151,41 +146,4 @@ test('fully visible bullets still become active by click and keyboard without ch
   expect(await node.locator('.node-body').evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
   await page.waitForTimeout(400);
   await page.screenshot({ path: info.outputPath('fully-visible-active.png') });
-});
-
-test('collapsed titles expand and focus first; only expanded terms create nodes', async ({ page }, info) => {
-  await fixture(page, false, 320);
-  const node = page.locator('[data-node-id="bullet-fixture"]');
-  const bullet = node.locator('[data-sc-anchor="b-2"]');
-  await expect(bullet).toHaveAttribute('aria-expanded', 'false');
-  await expect(bullet.locator('.ref-chip, [role="button"], [tabindex="0"]')).toHaveCount(0);
-  await bullet.locator('.sc-ab-title-text').click();
-  await expect(bullet).toHaveAttribute('aria-expanded', 'true');
-  await expect(node).toHaveClass(/selected/);
-  await expect(page.locator('[data-node-id]')).toHaveCount(1);
-  await page.screenshot({ path: info.outputPath('expanded-by-title.png') });
-  // The sandbox uses the real renderer/canvas click path but creates a local
-  // placeholder child, so this test never sends a paid generation request.
-  await bullet.locator('.sc-ab-title-text .ref-chip').click();
-  await expect(page.locator('[data-node-id]')).toHaveCount(2);
-  expect(await page.evaluate(() => Object.values((window as any).testExport('useGraphStore').getState().project.arrows)
-    .some((arrow: any) => arrow.fromNodeId === 'bullet-fixture' && arrow.label === 'Section 3'))).toBe(true);
-});
-
-test('inline child names expand the parent without spawning, including keyboard expansion', async ({ page }) => {
-  await fixture(page, true, 620);
-  const node = page.locator('[data-node-id="bullet-fixture"]');
-  const bullet = node.locator('.sc-ab-item[aria-expanded="false"]').filter({ has: page.locator('.sc-ab-inline-name') }).first();
-  const anchor = await bullet.getAttribute('data-sc-anchor');
-  expect(anchor).toBeTruthy();
-  await bullet.locator('.sc-ab-inline-name').first().click();
-  const expanded = node.locator(`[data-sc-anchor="${anchor}"]`);
-  await expect(expanded).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.locator('[data-node-id]')).toHaveCount(1);
-  const next = node.locator('.sc-ab-item[aria-expanded="false"]').first();
-  const nextAnchor = await next.getAttribute('data-sc-anchor');
-  await next.focus();
-  await page.keyboard.press('Enter');
-  await expect(node.locator(`[data-sc-anchor="${nextAnchor}"]`)).toHaveAttribute('aria-expanded', 'true');
-  await expect(page.locator('[data-node-id]')).toHaveCount(1);
 });

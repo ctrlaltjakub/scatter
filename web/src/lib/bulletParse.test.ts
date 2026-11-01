@@ -1,17 +1,5 @@
 import { describe, expect, test } from 'vitest';
 import { parseBody, sanitizeBody, isValidStructure, separatorColonIndex, bulletsToPlainText, stabilizeParsed } from './bulletParse';
-import { LANGUAGES } from './languages';
-
-describe('two-sentence bullet descriptions', () => {
-  test.each(LANGUAGES)('keeps the continuation inside its child in $name, including copy round trips', ({ sample }) => {
-    const body = `${sample}\n\n- First\n  - **API**: **${sample}**\n    [[${sample}]]\n  - Other: API v2.5 — déjà vu.\n- Second\n  - One: ${sample}\n  - Two: ${sample}`;
-    const parsed = parseBody(body)!;
-    expect(isValidStructure(body)).toBe(true);
-    expect(parsed.bullets.map(b => b.children.length)).toEqual([2, 2]);
-    expect(parsed.bullets[0]!.children[0]!.desc).toBe(`**${sample}** [[${sample}]]`);
-    expect(parseBody(bulletsToPlainText(parsed))!.bullets[0]!.children[0]!.desc).toBe(`**${sample}** ${sample}`);
-  });
-});
 
 describe('isValidStructure — ≥2 L1 bullets each with ≥2 L2 children', () => {
   test('accepts a well-formed two-level body', () => {

@@ -129,6 +129,7 @@ function Harness({
   collapsible = false,
   screenSized = false,
   citation = false,
+  sourceField,
 }: {
   selectedText?: boolean;
   splitSelection?: boolean;
@@ -139,11 +140,12 @@ function Harness({
   collapsible?: boolean;
   screenSized?: boolean;
   citation?: boolean;
+  sourceField?: string;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   return (
     <div ref={containerRef}>
-      <div data-preview-version={versionCreatedAt}
+      <div data-preview-version={versionCreatedAt} data-sc-source-field={sourceField}
         className={collapsible ? `sc-collapsible-li${expanded ? ' is-pinned' : ''}` : expanded !== undefined ? 'sc-ab-item' : undefined}
         aria-expanded={expanded}
         {...(viewer ? { 'data-sc-reading-node-id': 'parent' } : {})}>
@@ -258,6 +260,33 @@ describe('RelationHoverPreview', () => {
     expect(screen.getByRole('tooltip')).toHaveAccessibleName(
       /Current opening paragraph with useful context/,
     );
+  });
+
+  it('shows a collapsed bullet name’s own description and keeps repeated names distinct', () => {
+    const v: NodeVersion = { header: 'Memory', body: '- Hardware\n  - Cache: A **small memory** near the processor.\n- Web\n  - Cache: A **saved response** for later requests.',
+      createdAt: 4, generatedBy: 'root', contentType: 'encyclopedic' };
+    useGraphStore.getState().updateNode('parent', { versions: [v], currentVersionIndex: 0 });
+    const { rerender } = render(<Harness unexplored expanded={false} sourceField="b:0:c:0:name" />);
+    fireEvent.pointerOver(screen.getByTestId('relation'), { clientX: 320, clientY: 210 });
+    act(() => vi.advanceTimersByTime(120));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('A small memory near the processor.');
+    expect(screen.getByRole('tooltip').querySelector('strong')).toHaveTextContent('small memory');
+    rerender(<Harness unexplored expanded={false} sourceField="b:1:c:0:name" />);
+    fireEvent.focusIn(screen.getByTestId('relation'));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('A saved response for later requests.');
+    act(() => useSettingsStore.setState({ autoTermPreviews: false }));
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('uses the hovered version’s description and preserves linked-child opening previews', () => {
+    const v: NodeVersion = { header: 'Memory', body: '- Memory\n  - Cache: The original description.', createdAt: 4, generatedBy: 'root' };
+    useGraphStore.getState().updateNode('parent', { versions: [v, { ...v, body: v.body.replace('original', 'new'), createdAt: 5 }], currentVersionIndex: 1 });
+    render(<Harness unexplored sourceField="b:0:c:0:name" versionCreatedAt={4} />);
+    fireEvent.focusIn(screen.getByTestId('relation'));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('The original description.');
+    act(() => useGraphStore.getState().addArrow({ id: 'cache-child', kind: 'auto', fromNodeId: 'parent', toNodeId: 'child',
+      label: 'cache', sourceAnswer: { turnId: 'turn', versionCreatedAt: 4 } }));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Current opening paragraph');
   });
 
   it('shows a complete bold explanation with no fade for an unexplored term', () => {

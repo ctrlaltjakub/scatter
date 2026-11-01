@@ -9,6 +9,7 @@ import { markedTerms, stripTermMarkers } from './termMarking';
 import { stringHash as hashPrompt } from './stringHash';
 import { semanticHeaderText } from './nodeHeaderText';
 import { termPreviewUser } from './termPreviewPrompt';
+import { openingParagraphPreview } from './relationPreview';
 
 export const TERM_PREVIEW_BATCH_SIZE = 24;
 export const termPreviewKey = (term: string) => term.trim().replace(/\s+/g, ' ').toLowerCase();
@@ -60,18 +61,54 @@ export function reusableTermPreviews(version: NodeVersion, candidates: readonly 
     ...(exhaustedTerms.size ? { exhaustedTerms: [...exhaustedTerms] } : {}) } : undefined;
 }
 
-export function previewTerms(version: NodeVersion): string[] {
-  if (version.media || version.contentType === 'media') return [];
-  const terms = markedTerms(version.body);
-  // Encyclopedia chapter/subchapter titles are whole clickable terms even if
-  // the model marked only part of the title (or no part at all).
+function encyclopediaPreviews(version: NodeVersion) {
   const encyclopedic = version.contentType === 'encyclopedic' || (!version.contentType
     && !['chat', 'explain', 'interactive', 'media'].includes(version.generatedBy));
-  if (encyclopedic) for (const bullet of parseBody(version.body)?.bullets ?? []) {
+  if (!encyclopedic || version.media) return;
+  const parsed = parseBody(version.body);
+  if (!parsed) return;
+  const descriptions = new Map<string, string | undefined>();
+  const fields = new Map<string, { key: string; description: string }>();
+  parsed.bullets.forEach((bullet, i) => bullet.children.forEach((child, j) => {
+    const key = termPreviewKey(wholeTerm(child.name));
+    const description = openingParagraphPreview(child.desc, true);
+    if (!key) return;
+    fields.set(`b:${i}:c:${j}:name`, { key, description });
+    // Reuse a description in other occurrences only when its meaning is
+    // unambiguous. Repeated names still have their own field-specific preview.
+    descriptions.set(key, !descriptions.has(key) || descriptions.get(key) === description
+      ? description || undefined : undefined);
+  }));
+  return { parsed, descriptions, fields };
+}
+
+/** Derived from the displayed version, never a second generated explanation.
+ * Field identity distinguishes equal names under different chapter headings. */
+export function bulletDescriptionPreview(version: NodeVersion | undefined, term: string, sourceField?: string): string | undefined {
+  if (!version) return;
+  const index = encyclopediaPreviews(version);
+  const key = termPreviewKey(term);
+  const field = sourceField ? index?.fields.get(sourceField) : undefined;
+  if (field) return field.key === key ? field.description || undefined : undefined;
+  return index?.descriptions.get(key);
+}
+
+export function previewTerms(version: NodeVersion): string[] {
+  if (version.media || version.contentType === 'media') return [];
+  const index = encyclopediaPreviews(version);
+  if (!index) return [...new Map(markedTerms(version.body).map(term => [termPreviewKey(term), term])).values()];
+  const terms = markedTerms(index.parsed.freeText);
+  // Names are whole clickable terms, not the partial markers inside them.
+  // Described names already have a preview; only other visible terms need AI.
+  for (const [i, bullet] of index.parsed.bullets.entries()) {
     terms.push(wholeTerm(bullet.title));
-    for (const child of bullet.children) terms.push(wholeTerm(child.name));
+    for (const [j, child] of bullet.children.entries()) {
+      if (!index.fields.get(`b:${i}:c:${j}:name`)?.description) terms.push(wholeTerm(child.name));
+      terms.push(...markedTerms(child.desc));
+    }
   }
-  return [...new Map(terms.filter(Boolean).map(term => [termPreviewKey(term), term])).values()];
+  return [...new Map(terms.filter(term => term && !index.descriptions.get(termPreviewKey(term)))
+    .map(term => [termPreviewKey(term), term])).values()];
 }
 
 export interface TermPreviewIssue { reason: string; previousParts?: string[] }
@@ -159,7 +196,9 @@ export function parseTermPreviews(raw: string, terms: string[]): Record<string, 
   return inspectTermPreviews(raw, terms).entries;
 }
 
-export function termPreviewFor(version: NodeVersion | undefined, term: string): string | undefined {
+export function termPreviewFor(version: NodeVersion | undefined, term: string, sourceField?: string): string | undefined {
+  const description = bulletDescriptionPreview(version, term, sourceField);
+  if (description) return description;
   if (!version || version.termPreviews?.fingerprint !== termPreviewFingerprint(version)) return;
   const entries = version.termPreviews.entries;
   const key = termPreviewKey(term);

@@ -5,7 +5,7 @@ import { effectivePrompt, substitute } from './promptDefaults';
 import { chatFormattingPrompt } from './chatFormatting';
 import { termSelectionPrompt } from './termSelectionPrompt';
 import { applyTermSelection, markedTerms, stripTermMarkers } from './termMarking';
-import { previewRequest, inspectTermPreviews } from './termPreviewCore';
+import { previewRequest, previewTerms, inspectTermPreviews } from './termPreviewCore';
 import { GenerationResponseError, parseResponseJson, validateEncyclopedicOutput } from './generationValidation';
 import { parseFactCheckFinding } from './factCheckCore';
 import { languageInfo, languageDirection } from './languages';
@@ -61,7 +61,7 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
       // count: there is deliberately no language-specific punctuation guess.
     } });
   const variants: [string, string, TaskVariant, 'outline' | 'prose' | 'table' | 'fragment'][] = [
-    ['encyclopedic', 'Encyclopedic generation / regeneration', { kind: 'root', topic: prompt('diagnosticEncyclopedic') }, 'outline'],
+    ['encyclopedic', 'Encyclopedic generation / regeneration', { kind: 'root', topic: 'Triangle perimeter' }, 'outline'],
     ['term-node', 'Node from a term', { kind: 'term-click', term: 'equilateral triangle' }, 'outline'],
     ['follow-up', 'Encyclopedic follow-up', { kind: 'follow-up', question: 'Explore polygon perimeter.' }, 'outline'],
     ['selected-follow-up', 'Follow-up on selected text', { kind: 'follow-up', question: 'What other units are used?', selectedText: 'same unit' }, 'outline'],
@@ -84,8 +84,6 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
         ? { ...message, content: message.content + '\n\n' + languagePrompt } : message),
     validate: text => {
       if (shape === 'outline') validateEncyclopedicOutput(text);
-      if (id === 'encyclopedic') assertDiagnostic(/^  - [^\n]+:[^\n]+\r?\n {4}\S/m.test(text),
-        'The outline is missing the requested second sentence on an indented continuation line within a bullet. Check the encyclopedic system prompt and bullet descriptions check, or choose a model that follows the format.');
       if (shape === 'prose') prose(text);
       if (shape === 'table') table(text);
       if (id === 'fact-rewrite') assertDiagnostic(text.includes('12') && text.includes('⟪E1⟫'), 'The correction lost the fact or evidence marker.');
@@ -114,12 +112,15 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
     assertDiagnostic(body && markedTerms(body).length > 0, 'Term selection returned invalid JSON or no usable terms. Check the secondary model, then retry Redo terms on the affected answer.');
     assertDiagnostic(body && stripTermMarkers(body) === stripTermMarkers(DIAGNOSTIC_TEXT), 'Term marking changed the source text instead of only marking terms.');
   });
-  const previewTerms = ['perimeter', 'equilateral triangle', 'J. R. R. Tolkien'];
-  const preview = previewRequest({ header: 'Geometry and literature',
-    body: DIAGNOSTIC_TEXT + '\n\nJ. R. R. Tolkien was an author known for The Hobbit and The Lord of the Rings.',
-    language: language.id, createdAt: 1, generatedBy: 'root', contentType: 'encyclopedic' }, previewTerms);
+  const previewVersion = { header: 'Geometry and literature',
+    body: 'The [[perimeter]] measures the boundary of an [[equilateral triangle]]. [[J. R. R. Tolkien]] wrote The Hobbit.\n\n- Geometry\n  - Geometry: The study of shapes, sizes and positions.',
+    language: language.id, createdAt: 1, generatedBy: 'root' as const, contentType: 'encyclopedic' as const };
+  // Match production: the existing Geometry description supplies its preview
+  // locally; the paid check covers only terms that still need an explanation.
+  const requestedPreviewTerms = previewTerms(previewVersion);
+  const preview = previewRequest(previewVersion, requestedPreviewTerms);
   secondary('previews', 'Term previews', preview.system, preview.user, preview.maxOutputTokens, text => {
-    const { issues } = inspectTermPreviews(text, previewTerms);
+    const { issues } = inspectTermPreviews(text, requestedPreviewTerms);
     assertDiagnostic(!Object.keys(issues).length, Object.entries(issues).map(([term, issue]) => `${term}: ${issue.reason}`).join(' '));
   });
   secondary('group-title', 'Group name', prompt('groupName') + '\n\n' + languagePrompt, JSON.stringify({ headers: ['Triangles', 'Circles', 'Polygon perimeter'] }), 256,

@@ -11,7 +11,6 @@
  */
 import { describe, it, expect } from 'vitest';
 import { locateSection, extractSectionFromLLM } from './generate';
-import { LANGUAGES } from './languages';
 
 const SAMPLE = [
   'Lactic fermentation converts [[glucose]] to [[lactic acid]] without oxygen.',
@@ -204,17 +203,6 @@ describe('extractSectionFromLLM — bullet target (L2-only)', () => {
   // The bullet target's expected output is ONLY L2 children — the L1
   // line stays outside the markers per user spec.
   const NEW_L2 = '  - A: x\n  - B: y\n  - C: z (new)';
-
-  it.each(LANGUAGES)('preserves second sentences in $name during section expansion and streaming', ({ sample }) => {
-    const children = `  - A: **${sample}**\n    [[${sample}]]\n  - B: ${sample}`;
-    const body = `Opening.\n- Section\n${children}\n- Next section\n  - Other: Kept.`;
-    const range = locateSection(body, T)!;
-    expect(body.slice(range.start, range.end)).toBe(children);
-    expect(extractSectionFromLLM(body, T)).toBe(children);
-    const partial = `  - A: ${sample}\n    ${sample.slice(0, 5)}`;
-    expect(extractSectionFromLLM(partial, T)).toBe(partial);
-    expect(extractSectionFromLLM(`${children}\nOutside commentary.`, T)).toBe(children);
-  });
 
   it('returns L2 children verbatim when LLM is well-behaved', () => {
     expect(extractSectionFromLLM(NEW_L2, T)).toBe(NEW_L2);

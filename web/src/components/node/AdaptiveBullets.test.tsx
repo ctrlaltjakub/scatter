@@ -7,12 +7,11 @@ import { parseBody } from '@/lib/bulletParse';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useActiveIdxStore } from '@/store/useActiveIdxStore';
 import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
-import type { Arrow, FactCheckUnit, ScatterNode } from '@/store/types';
+import type { Arrow, ScatterNode } from '@/store/types';
 import { useRewriteStore } from '@/store/useRewriteStore';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { applyTermSelection } from '@/lib/termMarking';
 import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
-import { LANGUAGES } from '@/lib/languages';
 
 beforeAll(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -192,10 +191,9 @@ describe('AdaptiveBullets', () => {
     expect(container.querySelector('[data-fact-unit="bullet:0:0"]')).toHaveClass(
       'fact-check-unit', 'fact-contradicted',
     );
-    expect(container.querySelector('[data-fact-unit="opening:0"]')).toHaveAttribute('data-tip', 'Review evidence');
-    const firstBullet = container.querySelector('.sc-ab-root > .sc-ab-list > .sc-ab-item')!;
-    expect(firstBullet).toHaveAttribute('aria-expanded', 'false');
-    expect(firstBullet.querySelector('[data-fact-unit]')).not.toHaveAttribute('data-tip');
+    for (const unit of container.querySelectorAll('[data-fact-unit]')) {
+      expect(unit).toHaveAttribute('data-tip', 'Review evidence');
+    }
 
     const glucose = [...container.querySelectorAll<HTMLElement>('.ref-chip')]
       .find((chip) => chip.textContent === 'glucose')!;
@@ -204,10 +202,6 @@ describe('AdaptiveBullets', () => {
     expect(useCitationPanelStore.getState().activeFactUnitId).toBe('opening:0');
 
     fireEvent.click(container.querySelector('[data-fact-unit="bullet:0:0"]')!);
-    expect(firstBullet).toHaveAttribute('aria-expanded', 'true');
-    expect(useCitationPanelStore.getState().activeFactUnitId).toBe('opening:0');
-    expect(firstBullet.querySelector('[data-fact-unit]')).toHaveAttribute('data-tip', 'Review evidence');
-    fireEvent.click(firstBullet.querySelector('[data-fact-unit="bullet:0:0"]')!);
     expect(useCitationPanelStore.getState().activeFactUnitId).toBe('bullet:0:0');
   });
 
@@ -388,34 +382,13 @@ describe('AdaptiveBullets', () => {
   it('clicking a ref-chip does NOT activate the surrounding bullet', async () => {
     const fn = vi.fn();
     const { container } = render(
-      <AdaptiveBullets body={'Opening.\n\n- Alpha\n  - Detail: [[first]] explanation.\n- Beta\n  - Detail: Second explanation.'} parentNodeId="p1" onReferenceClick={fn} />,
+      <AdaptiveBullets body={REALISTIC} parentNodeId="p1" onReferenceClick={fn} />,
     );
     const refChip = container.querySelector<HTMLElement>('.sc-ab-root > .sc-ab-list > .sc-ab-item .ref-chip');
     expect(refChip).not.toBeNull();
     await userEvent.click(refChip!);
     expect(fn).toHaveBeenCalled();
     expect(container.querySelectorAll('.sc-ab-root > .sc-ab-list > .sc-ab-item.is-active').length).toBe(0);
-  });
-
-  it.each(['title', 'child', 'Enter', ' '])('expands first via %s, then allows terms to spawn without losing activation', async (input) => {
-    const fn = vi.fn(), focus = vi.fn();
-    const { container } = render(<div onClick={focus}>
-      <AdaptiveBullets body={REALISTIC} parentNodeId="p1" onReferenceClick={fn} />
-    </div>);
-    const bullet = container.querySelector<HTMLElement>('.sc-ab-root > .sc-ab-list > .sc-ab-item')!;
-    expect(bullet).toHaveAttribute('aria-expanded', 'false');
-    expect(bullet.querySelector('.ref-chip')).toBeNull();
-    if (input === 'Enter' || input === ' ') fireEvent.keyDown(bullet, { key: input });
-    else {
-      await userEvent.click(bullet.querySelector(input === 'title' ? '.sc-ab-title-text' : '.sc-ab-inline-name')!);
-      expect(focus).toHaveBeenCalledOnce();
-    }
-    expect(fn).not.toHaveBeenCalled();
-    expect(bullet).toHaveAttribute('aria-expanded', 'true');
-    const term = bullet.querySelector<HTMLElement>('.sc-ab-title-text .ref-chip')!;
-    fireEvent.click(term, { ctrlKey: true });
-    expect(fn).toHaveBeenCalledWith('Process', { withModifier: true });
-    expect(bullet).toHaveClass('is-active');
   });
 
   it.each(['click', 'Enter', ' '])('activates a fully visible bullet with %s', (input) => {
@@ -850,20 +823,17 @@ Third sentence wraps it up.
   });
 });
 
-describe('AdaptiveBullets — terms activate only in fully expanded bullets', () => {
+describe('AdaptiveBullets — whole-title / whole-name terms (always clickable)', () => {
   const bullet = {
     title: 'The [[Krebs cycle]] in cells',
     children: [{ name: 'Glycolysis', desc: 'the [[first]] step' }],
   };
 
-  it('collapsed bullet (mode 0): the title is plain text with no nested activation target', () => {
-    const onClick = vi.fn();
-    const { container } = render(<div>{renderBulletInner(bullet, 0, 'n0', onClick)}</div>);
-    const title = container.querySelector('.sc-ab-title-text')!;
-    expect(title.textContent).toBe('The Krebs cycle in cells');
-    expect(container.querySelector('.ref-chip, [role="button"], [tabindex], a, button')).toBeNull();
-    fireEvent.click(title);
-    expect(onClick).not.toHaveBeenCalled();
+  it('collapsed bullet (mode 0): the whole title is STILL a clickable whole-term chip', () => {
+    const { container } = render(<div>{renderBulletInner(bullet, 0, 'n0', vi.fn())}</div>);
+    const titleChips = container.querySelectorAll('.sc-ab-title-text .ref-chip');
+    expect(titleChips.length).toBe(1);
+    expect(titleChips[0]!.textContent).toBe('The Krebs cycle in cells'); // whole title, markers ignored
   });
 
   it('fully-open bullet: the title and each child name are whole-term chips', () => {
@@ -876,52 +846,29 @@ describe('AdaptiveBullets — terms activate only in fully expanded bullets', ()
     expect(nameChip!.textContent).toBe('Glycolysis');
   });
 
-  it('inline mode: title and child names are plain text', () => {
+  it('inline mode: the title and inline child names are whole-term chips too', () => {
     const b = { title: 'Topic', children: [{ name: 'Alpha', desc: 'a' }, { name: 'Beta', desc: 'b' }] };
     const { container } = render(<div>{renderBulletInner(b, 1, 'n0', vi.fn())}</div>);
-    expect(container.querySelector('.sc-ab-title-text')!.textContent).toBe('Topic');
-    expect(container.querySelector('.sc-ab-inline')!.textContent).toContain('Alpha');
-    expect(container.querySelector('.ref-chip, [role="button"], [tabindex]')).toBeNull();
+    expect(container.querySelector('.sc-ab-title-text .ref-chip')!.textContent).toBe('Topic');
+    const inlineChips = container.querySelectorAll('.sc-ab-inline .ref-chip');
+    expect(inlineChips.length).toBe(2);
+    expect(inlineChips[0]!.textContent).toBe('Alpha');
   });
 
-  it('partially-open descriptions, terms, citations and fact reviews cannot intercept expansion', () => {
+  it('partially-open described name is a whole-term chip', () => {
     const b = {
       title: 'T',
       children: [
-        { name: 'A', desc: '**[[x]]** ⟦1⟧ ⦅2⦆' },
+        { name: 'A', desc: 'x' },
         { name: 'B', desc: 'y' },
         { name: 'C', desc: 'z' },
       ],
     };
     // maxMode = 4; m=2 → 1 described + 2 inline (partially open, not focused)
-    const onRef = vi.fn(), activate = vi.fn();
-    const review = { units: new Map<string, FactCheckUnit>([0, 1].map(index => [`bullet:0:${index}`, {
-      id: `bullet:0:${index}`, order: index, stage: 'bullets', kind: 'sub-bullet',
-      text: 'A description.', bulletIndex: 0, childIndex: index, state: 'pending',
-    }])),
-      activeUnitId: null, activate };
-    const { container } = render(<div>{renderBulletInner(b, 2, 'n0', onRef, undefined, 0, undefined, review)}</div>);
-    expect(container.querySelector('.sc-ab-described .sc-ab-name')!.textContent).toBe('A');
-    expect(container.querySelector('.sc-ab-desc strong')!.textContent).toBe('x');
-    expect(container.querySelector('.sc-ab-desc')!.textContent).toContain('[1] (2)');
-    expect(container.querySelector('.ref-chip, [role="button"], [tabindex], a, button')).toBeNull();
-    for (const element of container.querySelectorAll('.sc-ab-name, .sc-ab-desc, .cite-marker, .fact-check-unit')) fireEvent.click(element);
-    expect(onRef).not.toHaveBeenCalled();
-    expect(activate).not.toHaveBeenCalled();
-  });
-
-  it.each(LANGUAGES)('preserves $name text and emphasis through collapse and expansion', ({ sample }) => {
-    const b = parseBody(`- **[[${sample}]]**\n  - *[[API]]*: **[[${sample}]]**\n    ${sample}\n  - Other: API v2.5 — déjà vu.`)!.bullets[0]!;
-    const onClick = vi.fn();
-    const { container, rerender } = render(<div>{renderBulletInner(b, 2, 'n0', onClick)}</div>);
-    const before = container.textContent;
-    expect(container.querySelector('.ref-chip')).toBeNull();
-    expect(container.querySelector('.sc-ab-desc strong')?.textContent).toBe(sample);
-    rerender(<div>{renderBulletInner(b, maxMode(b), 'n0', onClick)}</div>);
-    expect(container.textContent).toContain(sample);
-    expect(before).toContain(`${sample} ${sample}`);
-    fireEvent.click(container.querySelector('.sc-ab-desc .ref-chip')!);
-    expect(onClick).toHaveBeenCalledWith(sample, { withModifier: false });
+    const { container } = render(<div>{renderBulletInner(b, 2, 'n0', vi.fn())}</div>);
+    const nameChip = container.querySelector('.sc-ab-described .sc-ab-name .ref-chip');
+    expect(nameChip).not.toBeNull();
+    expect(nameChip!.textContent).toBe('A');
   });
 
   it('a bold whole title renders bold inside the chip with a clean term', () => {
