@@ -154,7 +154,7 @@ test('independent labels remain visible with a hidden background and restore the
   await expect.poll(() => uniform(page, 'uLabelOpacity')).toBe(1.25);
 });
 
-test('the GPU shader uses a central 10/50/40 mix, halves ambient dots and preserves labels', async ({ page }) => {
+test('the GPU shader concentrates a 5/10/85 mix near nodes and orbs, halves ambient dots and preserves labels', async ({ page }) => {
   const results = await page.evaluate(() => {
     const get = (window as any).opacityExport;
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
@@ -199,15 +199,24 @@ test('the GPU shader uses a central 10/50/40 mix, halves ambient dots and preser
       const draw = () => { gl.drawArrays(gl.TRIANGLES, 0, 3); gl.readPixels(0, 0, 512, 512, gl.RGBA, gl.UNSIGNED_BYTE, pixels); };
       draw(); const first = pixels.slice(); draw();
       const counts: Record<number, number> = {}; let innerSum=0, innerCount=0, outerSum=0, outerCount=0;
+      let innerFull=0, innerBright=0, outerBright=0;
       for (let row=0; row<512; row++) for (let col=0; col<512; col++) {
         const d = Math.hypot(Math.max(x-col-0.5,0,col+0.5-x-width),Math.max(y-row-0.5,0,row+0.5-y-height));
         if (d <= 0 || d >= radius) continue;
+        const perimeter = 2 * (width + height);
+        const area = (perimeter*d + Math.PI*d*d) / (perimeter*radius + Math.PI*radius*radius);
         const a = pixels[((511-row)*512+col)*4+3]!;
         counts[a] = (counts[a] ?? 0) + 1;
-        if (d < radius/3) { innerSum+=a;innerCount++; }
-        if (d > radius*2/3) { outerSum+=a;outerCount++; }
+        if (area < 0.25) {
+          innerSum+=a; innerCount++;
+          if (a === 204) innerFull++;
+          if (a > 102) innerBright++;
+        }
+        if (area > 0.75) { outerSum+=a; outerCount++; if (a > 102) outerBright++; }
       }
-      output.push({name,counts,inner:innerSum/innerCount,outer:outerSum/outerCount,stable:pixels.every((a,i)=>a===first[i])});
+      output.push({name,counts,inner:innerSum/innerCount,outer:outerSum/outerCount,
+        innerFullShare:innerFull/counts[204]!,innerBrightShare:innerBright/(counts[204]!+counts[153]!),
+        outerBrightShare:outerBright/outerCount,stable:pixels.every((a,i)=>a===first[i])});
     }
     // No winner and stage zero: ambient dots are all half opacity, not a
     // lottery. Labels over the same cells must still bypass that reduction.
@@ -236,10 +245,13 @@ test('the GPU shader uses a central 10/50/40 mix, halves ambient dots and preser
   for (const result of results) {
     expect(Object.keys(result.counts).map(Number).sort((a,b)=>a-b)).toEqual([102,153,204]);
     const total = Object.values(result.counts).reduce((a,b)=>a+b,0);
-    expect(result.counts[102]!/total).toBeCloseTo(0.4,2);
-    expect(result.counts[153]!/total).toBeCloseTo(0.5,2);
-    expect(result.counts[204]!/total).toBeCloseTo(0.1,2);
+    expect(result.counts[102]!/total).toBeCloseTo(0.85,2);
+    expect(result.counts[153]!/total).toBeCloseTo(0.1,2);
+    expect(result.counts[204]!/total).toBeCloseTo(0.05,2);
     expect(result.inner).toBeGreaterThan(result.outer + 30);
+    expect(result.innerFullShare).toBeGreaterThan(0.93);
+    expect(result.innerBrightShare).toBeGreaterThan(0.75);
+    expect(result.outerBrightShare).toBeLessThan(0.01);
     expect(result.stable).toBe(true);
   }
 });

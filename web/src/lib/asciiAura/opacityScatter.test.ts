@@ -11,7 +11,7 @@ describe('stable aura opacity scatter', () => {
   it.each([
     ['unfocused', 640, 900, 200], ['focused', 640, 900, 300],
     ['wide', 1600, 120, 300], ['restoration orb', 0, 0, 300],
-  ] as const)('keeps 10/50/40 overall with exponential concentration near the origin: %s', (_name, w, h, r) => {
+  ] as const)('keeps 5/10/85 overall with strong exponential concentration near the origin: %s', (_name, w, h, r) => {
     const counts = { 1: 0, 0.75: 0, 0.5: 0 };
     const inner: number[] = [], outer: number[] = [];
     for (let y = -r; y < h + r; y += 3) for (let x = -r; x < w + r; x += 3) {
@@ -24,18 +24,20 @@ describe('stable aura opacity scatter', () => {
       if (area > 0.75) outer.push(tier);
     }
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    expect(counts[1] / total).toBeCloseTo(0.1, 2);
-    expect(counts[0.75] / total).toBeCloseTo(0.5, 2);
-    expect(counts[0.5] / total).toBeCloseTo(0.4, 2);
+    expect(counts[1] / total).toBeCloseTo(0.05, 2);
+    expect(counts[0.75] / total).toBeCloseTo(0.1, 2);
+    expect(counts[0.5] / total).toBeCloseTo(0.85, 2);
     const mean = (values: number[]) => values.reduce((a, b) => a + b, 0) / values.length;
-    expect(mean(inner) - mean(outer)).toBeGreaterThan(0.16);
-    // The previous linear bias put only 40% of full-opacity cells in the
-    // inner quarter. The exponential curve concentrates more than 60% there.
-    expect(inner.filter(tier => tier === 1).length / counts[1]).toBeGreaterThan(0.6);
-    expect(outer.filter(tier => tier === 1).length / counts[1]).toBeLessThan(0.05);
-    // All three tiers remain scattered throughout, not solid concentric rings.
+    expect(mean(inner) - mean(outer)).toBeGreaterThan(0.15);
+    // Test the spatial concentration, not just the overall mix: the previous
+    // gentler falloff left many brighter cells at the aura's outer edge.
+    expect(inner.filter(tier => tier === 1).length / counts[1]).toBeGreaterThan(0.93);
+    expect(outer.filter(tier => tier === 1).length / counts[1]).toBeLessThan(0.001);
+    const bright = counts[1] + counts[0.75];
+    expect(inner.filter(tier => tier > 0.5).length / bright).toBeGreaterThan(0.75);
+    expect(outer.filter(tier => tier > 0.5).length / outer.length).toBeLessThan(0.01);
+    // Bright cells are scattered among dim ones, not a solid inner band.
     expect(new Set(inner).size).toBe(3);
-    expect(new Set(outer).size).toBe(3);
   });
 
   it('is deterministic and every cell becomes no brighter farther from the node', () => {
