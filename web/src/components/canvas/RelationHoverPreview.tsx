@@ -110,8 +110,8 @@ function resolveTarget(
   element: HTMLElement,
   pointer: { x: number; y: number } | null,
 ): RelationTarget | null {
-  // Expansion belongs to the bullet, not the focused node. Fully expanded
-  // bullets and opening prose remain hoverable even in unfocused cards.
+  // Terms remain previewable in collapsed adaptive bullets, including their
+  // level-1 titles. Expansion changes click behavior, not preview availability.
   if (element.closest('.zoom-disabled, .sc-ab-measure, [aria-hidden="true"]')) return null;
   const directChildId = element.dataset.relationChildId;
   const arrowId = element.dataset.relationArrowId;
@@ -122,7 +122,7 @@ function resolveTarget(
   const versionCreatedAt = Number(element.closest<HTMLElement>('[data-preview-version]')?.dataset.previewVersion) || undefined;
   const sourceField = element.closest<HTMLElement>('[data-sc-source-field]')?.dataset.scSourceField;
   if ((!childId || !project?.nodes[childId]) && (!parentId || !term || !project?.nodes[parentId])) return null;
-  if (element.closest('.sc-ab-item[aria-expanded="false"], .sc-collapsible-li:not(.is-pinned)')) {
+  if (element.closest('.sc-collapsible-li:not(.is-pinned)')) {
     const parent = parentId ? project?.nodes[parentId] : undefined;
     const version = versionCreatedAt ? parent?.versions.find(v => v.createdAt === versionCreatedAt)
       : parent?.versions[parent.currentVersionIndex];
@@ -283,6 +283,8 @@ function RelationPreviewCard({ target }: { target: RelationTarget }) {
   const typography = useReadingTypography(language, text);
   const plain = termLabel(text).text;
   const accessibleText = /[.!?]$/u.test(plain) ? plain : `${plain}.`;
+  const clickAction = target.element.closest('.sc-ab-item[aria-expanded="false"]')
+    ? 'expand this bullet' : node ? 'open this node' : 'explore this term';
   const cardRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
@@ -327,7 +329,7 @@ function RelationPreviewCard({ target }: { target: RelationTarget }) {
       className={`relation-hover-preview${compact ? ' is-compact' : ''}${full ? ' is-explanation' : ''}`}
       role="tooltip"
       lang={languageInfo(language).locale} dir={languageDirection(language)}
-      aria-label={`${accessibleText} Click the highlighted text to ${node ? 'open this node' : 'explore this term'}.`}
+      aria-label={`${accessibleText} Click the highlighted text to ${clickAction}.`}
       style={{
         ...typography,
         left: position?.left ?? 0,

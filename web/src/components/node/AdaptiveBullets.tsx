@@ -82,6 +82,9 @@ function factKeyDown(
   presentation: FactReviewPresentation | undefined,
 ): void {
   if (!presentation || (event.key !== 'Enter' && event.key !== ' ')) return;
+  // A collapsed term bubbles its activation to the bullet's expansion
+  // handler, just as its mouse click does; evidence review must not steal it.
+  if ((event.target as HTMLElement).closest('.ref-chip')) return;
   event.preventDefault();
   event.stopPropagation();
   presentation.activate(unitId);
@@ -557,10 +560,9 @@ function arrEq(a: number[], b: number[]): boolean {
  * visible cascade list and the hidden measurement lists so wrapping
  * behaviour stays identical.
  *
- * Level-1 titles and level-2 names become WHOLE clickable terms — but only when
- * the bullet is FULLY open (`m >= maxMode`, i.e. all children shown with
- * descriptions, same as `aria-expanded`). Collapsed / partially-open titles and
- * names render as plain text. Either way the AI's partial `[[ ]]` markings
+ * Level-1 titles and level-2 names are WHOLE previewable terms in every mode.
+ * A collapsed / partially-open bullet owns their first click (expansion);
+ * fully open bullets allow normal term navigation. The AI's partial `[[ ]]` markings
  * inside a title/name are stripped (ignored) — titles never surface partial
  * chips. Descriptions and the opening paragraph keep their normal word-level
  * chips.
@@ -580,7 +582,7 @@ export function renderBulletInner(
   const describedCount = m >= max ? N : Math.max(0, m - 1);
   const described = b.children.slice(0, describedCount);
   const inline = b.children.slice(describedCount);
-  // A whole title/name rendered as one clickable term, ALWAYS (collapsed,
+  // A whole title/name rendered as one previewable term, ALWAYS (collapsed,
   // inline, or fully open). `term` is the clean (marker- and bold-stripped)
   // text; the visible label keeps inline bold. The AI's partial `[[ ]]`
   // markings inside a title/name are stripped so titles never surface partial
@@ -1995,7 +1997,8 @@ export function AdaptiveBullets({
     // selection before the click fires, so ordinary clicks still pass.
     if (!window.getSelection()?.isCollapsed) return;
     const t = e.target as HTMLElement;
-    if (t.closest('.ref-chip, .cite-marker, a, button')) return;
+    if (t.closest('.cite-marker, a, button')) return;
+    if (t.closest('.ref-chip') && (modes[i] ?? 0) >= maxMode(bullets[i]!)) return;
     // Intentionally NOT stopping propagation: the click bubbles up to
     // NodeView's onClick, which handles "focus this node" (selection
     // + minimum-pan). Bubbling means we only need to maintain the

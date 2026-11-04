@@ -444,6 +444,7 @@ test('independent labels remain visible with a hidden background and restore the
 test('the GPU shader uses only 5% full and 95% half opacity near nodes and orbs, halves ambient dots and preserves labels', async ({ page }) => {
   const results = await page.evaluate(() => {
     const get = (window as any).opacityExport;
+    const opacityTier = get('auraOpacityTier'), areaFraction = get('auraAreaFraction');
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 512;
     const gl = canvas.getContext('webgl2', { premultipliedAlpha: true })!;
     if (!gl) throw new Error('WebGL2 is required');
@@ -482,6 +483,16 @@ test('the GPU shader uses only 5% full and 95% half opacity near nodes and orbs,
     ] as const) {
       const x = (512 - width) / 2, y = (512 - height) / 2;
       texture(1, 'uRecords', 4, 1, new Float32Array([x,y,width,height,radius,focused,0.8,0,1,1,1,0,0,0,0,0]));
+      // The compositor now reads the tier cached by pass A. Seed it with the
+      // independent TS reference here; ascii-cell-opacity.spec compares the
+      // real two-pass GPU pipeline against the frozen pre-optimization one.
+      for (let row=0; row<512; row++) for (let col=0; col<512; col++) {
+        let hash = (Math.imul(col,374761393)+Math.imul(row,668265263))>>>0;
+        hash = Math.imul(hash^(hash>>>13),1274126177)>>>0; hash = (hash^(hash>>>16))>>>0;
+        const d = Math.hypot(Math.max(x-col-.5,0,col+.5-x-width),Math.max(y-row-.5,0,row+.5-y-height));
+        state[(row*512+col)*4] = opacityTier(hash,areaFraction(d,width,height,radius))===1?16:0;
+      }
+      texture(0,'uCellState',512,512,state);
       const pixels = new Uint8Array(state.length);
       const draw = () => { gl.drawArrays(gl.TRIANGLES, 0, 3); gl.readPixels(0, 0, 512, 512, gl.RGBA, gl.UNSIGNED_BYTE, pixels); };
       draw(); const first = pixels.slice(); draw();
@@ -506,7 +517,7 @@ test('the GPU shader uses only 5% full and 95% half opacity near nodes and orbs,
     }
     // No winner and stage zero: ambient dots are all half opacity, not a
     // lottery. Labels over the same cells must still bypass that reduction.
-    for (let i=0; i<state.length; i+=4) state[i+2]=255;
+    for (let i=0; i<state.length; i+=4) {state[i]=0;state[i+2]=255;}
     texture(0,'uCellState',512,512,state);
     gl.drawArrays(gl.TRIANGLES,0,3);
     const ambient = new Uint8Array(state.length);

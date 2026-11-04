@@ -209,13 +209,18 @@ function ReferenceChipView({
       data-relation-child-id={childId ?? undefined}
       onMouseDown={(e) => { e.stopPropagation(); }}
       onClick={(e) => {
+        if (disabledByZoom()) { e.stopPropagation(); return; }
+        // A collapsed encyclopedic bullet owns the first activation. Keep
+        // the chip (and its preview), but let that click expand/focus the
+        // bullet instead of spawning or navigating to a related node.
+        if (e.currentTarget.closest('.sc-ab-item[aria-expanded="false"]')) return;
         e.stopPropagation();
-        if (disabledByZoom()) return;
         onClick(term, { withModifier: e.ctrlKey || e.metaKey });
       }}
       onKeyDown={(e) => {
-        if (disabledByZoom()) return;
         if (e.key === 'Enter' || e.key === ' ') {
+          if (disabledByZoom()) { e.preventDefault(); e.stopPropagation(); return; }
+          if (e.currentTarget.closest('.sc-ab-item[aria-expanded="false"]')) return;
           e.preventDefault();
           e.stopPropagation();
           onClick(term, { withModifier: e.ctrlKey || e.metaKey });

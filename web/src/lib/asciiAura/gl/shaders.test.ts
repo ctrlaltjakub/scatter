@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { EXPLAIN_QUESTION_MAX_STAGE, EXPLAIN_QUESTION_MIN_STAGE, EXPLAIN_QUESTION_SAMPLE_EVERY, KIND_CHAT_AURA } from './recordPacking';
 import { boldRayGlyphIndex } from './atlasLayout';
+import { CELL_STAGE_MASK, CELL_FULL_OPACITY_BIT } from './coolingEncode';
+import { RAMP } from '../ramp';
 import {
   EXPLAIN_QUESTION_UNFOCUSED_ALPHA_BOOST,
   OVERLAY_MIN_ALPHA,
@@ -62,7 +64,7 @@ describe('chat ray shader integration', () => {
     expect(densityFunctions).not.toContain('chatRay');
     expect(densityFunctions).not.toContain('isChatRay');
     expect(densityFunctions).toContain('return clamp(steady + bonus, 0.0, 1.0);');
-    expect(PASS_A_FRAGMENT_SRC).toContain('prevStage = prev.r * 255.0 + prev.g;');
+    expect(PASS_A_FRAGMENT_SRC).toContain(`prevStage = float(int(prev.r * 255.0 + 0.5) & ${CELL_STAGE_MASK}) + prev.g;`);
     expect(PASS_A_FRAGMENT_SRC).not.toContain('chatWinner');
     expect(PASS_A_FRAGMENT_SRC).toContain('&& isChatRayAtCell(texelFetch(uRecords, ivec2(i * 4, 0), 0))');
     expect(PASS_A_FRAGMENT_SRC).toContain('if (winner < 0 && total > 0.0)');
@@ -88,7 +90,7 @@ describe('overlay opacity modes', () => {
     expect(history).toContain('floor(cooled) / 255.0, fract(cooled)');
     const scatter = PASS_B_FRAGMENT_SRC.indexOf('if (uPointOpacityTrails)');
     expect(scatter).toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf('if (statusG == 0)'));
-    expect(scatter).toBeLessThan(PASS_B_FRAGMENT_SRC.indexOf('else if (winner !='));
+    expect(scatter).toBeLessThan(PASS_B_FRAGMENT_SRC.indexOf('if (stage == 0)'));
     expect(PASS_B_FRAGMENT_SRC).toContain('auraOpacityTier(h, distanceFraction * distanceFraction)');
   });
 
@@ -101,7 +103,7 @@ describe('overlay opacity modes', () => {
     expect(PASS_B_FRAGMENT_SRC).not.toContain('pointCoreHeat');
     const core = PASS_B_FRAGMENT_SRC.indexOf('pointCore = proximity > 0.0');
     expect(core).toBeGreaterThan(PASS_B_FRAGMENT_SRC.indexOf('if (statusG == 0)'));
-    expect(core).toBeLessThan(PASS_B_FRAGMENT_SRC.indexOf('else if (winner !='));
+    expect(core).toBeLessThan(PASS_B_FRAGMENT_SRC.indexOf('if (stage == 0)'));
     expect(PASS_B_FRAGMENT_SRC).toContain(`distanceFraction * radius * uViewport.z <= ${POINT_ORB_CORE_RADIUS_PX}.0`);
     expect(PASS_B_FRAGMENT_SRC).toContain('pointCore ? clamp(opacity, 0.0, 1.0) : fieldAlpha');
   });
@@ -132,12 +134,20 @@ describe('overlay opacity modes', () => {
     const scatter = PASS_B_FRAGMENT_SRC.slice(PASS_B_FRAGMENT_SRC.indexOf('float scatteredOpacity = 1.0;'),
       PASS_B_FRAGMENT_SRC.indexOf('if (stage == 0)'));
     expect(scatter).toContain('if (statusG == 0)');
-    expect(scatter).toContain('auraOpacityTier(h, auraAreaFraction(length(outside), rect.zw, radius))');
-    expect(scatter).toContain('else if (stage > 0)');
-    expect(scatter).toContain('scatteredOpacity = 0.5;');
-    expect(scatter.indexOf('scatteredOpacity = 0.5;')).toBeGreaterThan(scatter.indexOf('else if (stage > 0)'));
+    expect(scatter).toContain(`scatteredOpacity = (packedStage & ${CELL_FULL_OPACITY_BIT}) != 0 ? 1.0 : 0.5;`);
     expect(scatter).not.toContain('owner.y'); // both focused and unfocused, including restoration orbs
-    expect(PASS_A_FRAGMENT_SRC).not.toContain('auraOpacityTier'); // no layout/ownership/cooling changes
+    expect(PASS_A_FRAGMENT_SRC).toContain('auraOpacityTier(h, auraAreaFraction(length(outside), rect.zw, radius))');
+    expect(PASS_A_FRAGMENT_SRC).toContain('else if (stageInt > 0.0)');
+    expect(PASS_A_FRAGMENT_SRC).toContain('if (!uPointOpacityTrails)');
+  });
+
+  test('caches ordinary cell opacity without allocating another texture or corrupting stage history', () => {
+    expect(RAMP.length - 1).toBeLessThanOrEqual(CELL_STAGE_MASK);
+    expect(CELL_FULL_OPACITY_BIT & CELL_STAGE_MASK).toBe(0);
+    expect(PASS_A_FRAGMENT_SRC).toContain(`stageInt + (scatteredOpacity > 0.5 ? ${CELL_FULL_OPACITY_BIT}.0 : 0.0)`);
+    expect(PASS_B_FRAGMENT_SRC).toContain(`int stage = packedStage & ${CELL_STAGE_MASK};`);
+    expect(PASS_B_FRAGMENT_SRC).toContain(`int stage = int(st.r * 255.0 + 0.5) & ${CELL_STAGE_MASK};`);
+    expect(PASS_B_FRAGMENT_SRC).not.toContain('auraOpacityTier(h, auraAreaFraction(');
   });
 
   test('lets shape-only labels inherit aura opacity while status text keeps its floor', () => {

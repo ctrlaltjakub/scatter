@@ -201,6 +201,13 @@ describe('AdaptiveBullets', () => {
     expect(onReferenceClick).toHaveBeenCalledWith('glucose', { withModifier: false });
     expect(useCitationPanelStore.getState().activeFactUnitId).toBe('opening:0');
 
+    const bullet = container.querySelector('.sc-ab-root > .sc-ab-list > .sc-ab-item')!;
+    expect(bullet).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.keyDown(bullet.querySelector('[data-fact-unit="bullet:0:0"] .ref-chip')!, { key: 'Enter' });
+    expect(bullet).toHaveAttribute('aria-expanded', 'true');
+    expect(onReferenceClick).toHaveBeenCalledTimes(1);
+    expect(useCitationPanelStore.getState().activeFactUnitId).toBe('opening:0');
+
     fireEvent.click(container.querySelector('[data-fact-unit="bullet:0:0"]')!);
     expect(useCitationPanelStore.getState().activeFactUnitId).toBe('bullet:0:0');
   });
@@ -379,16 +386,31 @@ describe('AdaptiveBullets', () => {
     expect(items[0]!.classList.contains('is-active')).toBe(true);
   });
 
-  it('clicking a ref-chip does NOT activate the surrounding bullet', async () => {
+  it('clicking a ref-chip in a fully expanded bullet does NOT activate the surrounding bullet', async () => {
     const fn = vi.fn();
     const { container } = render(
-      <AdaptiveBullets body={REALISTIC} parentNodeId="p1" onReferenceClick={fn} />,
+      <AdaptiveBullets body={'Opening.\n\n- Process\n  - Substrate: [[glucose]] from carbohydrates'} parentNodeId="p1" onReferenceClick={fn} />,
     );
     const refChip = container.querySelector<HTMLElement>('.sc-ab-root > .sc-ab-list > .sc-ab-item .ref-chip');
     expect(refChip).not.toBeNull();
     await userEvent.click(refChip!);
     expect(fn).toHaveBeenCalled();
     expect(container.querySelectorAll('.sc-ab-root > .sc-ab-list > .sc-ab-item.is-active').length).toBe(0);
+  });
+
+  it.each(['click', 'ctrl-click', 'Enter', ' '])('expands a collapsed bullet on a term %s, then permits term navigation', (input) => {
+    const fn = vi.fn();
+    const { container } = render(<AdaptiveBullets body={REALISTIC} parentNodeId="p1" onReferenceClick={fn} />);
+    const item = container.querySelector<HTMLElement>('.sc-ab-root > .sc-ab-list > .sc-ab-item[aria-expanded="false"]')!;
+    expect(item).not.toBeNull();
+    const chip = item.querySelector<HTMLElement>('.ref-chip')!;
+    if (input.endsWith('click')) fireEvent.click(chip, { ctrlKey: input === 'ctrl-click' });
+    else fireEvent.keyDown(chip, { key: input });
+    expect(fn).not.toHaveBeenCalled();
+    expect(item).toHaveClass('is-active');
+    expect(item).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(item.querySelector('.ref-chip')!);
+    expect(fn).toHaveBeenCalledTimes(1);
   });
 
   it.each(['click', 'Enter', ' '])('activates a fully visible bullet with %s', (input) => {

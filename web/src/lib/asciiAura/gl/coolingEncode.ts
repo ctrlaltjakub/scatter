@@ -9,7 +9,8 @@
  * exactly as fast as a 60 Hz one).
  *
  * The displayed stage persists between frames in a ping-pong RGBA8
- * cell-state texture: R holds the integer stage (0–8), G holds the
+ * cell-state texture: R's low nibble holds the integer stage (0–8),
+ * its next bit caches the ordinary aura's full/half opacity tier. G holds the
  * fractional part quantized to 1/255 (≈ 0.2 ms of decay — can never
  * stall). These functions are the spec the pass-A GLSL mirrors, and
  * what the unit tests pin against the legacy coolStage chain.
@@ -17,6 +18,11 @@
 
 /** 1 stage per 50 ms — the legacy urgent-cadence cooling speed. */
 export const COOL_STAGES_PER_SEC = 20;
+
+/** Spare bits cache cell-level appearance without another texture or pass.
+ * Always mask them out before reading a stage, especially cooling history. */
+export const CELL_STAGE_MASK = 15;
+export const CELL_FULL_OPACITY_BIT = 16;
 
 /**
  * Advance a cell's displayed stage toward `target` over `dtMs`.
@@ -33,17 +39,16 @@ export function coolDisplayedStage(
   return cooled < target ? target : cooled;
 }
 
-/** Encode a (possibly fractional) stage into the R and G bytes of an
- *  RGBA8 texel: R = integer part, G = fraction × 255 (rounded). */
-export function encodeStageBytes(stage: number): [r: number, g: number] {
+/** Encode a stage and optional opacity tier in the existing R/G bytes. */
+export function encodeStageBytes(stage: number, fullOpacity = false): [r: number, g: number] {
   const i = Math.floor(stage);
   let frac = Math.round((stage - i) * 255);
   let r = i;
   if (frac > 255) { frac = 0; r = i + 1; } // rounding carried over
-  return [r, frac];
+  return [r | (fullOpacity ? CELL_FULL_OPACITY_BIT : 0), frac];
 }
 
 /** Inverse of encodeStageBytes. */
 export function decodeStageBytes(r: number, g: number): number {
-  return r + g / 255;
+  return (r & CELL_STAGE_MASK) + g / 255;
 }

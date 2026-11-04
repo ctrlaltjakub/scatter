@@ -8,7 +8,7 @@
  *   loop the aura/ghost records (data texture), rect-SDF distance →
  *   steady density + wave bonus → weighted seeded arbitration →
  *   target stage → time-based cooling vs the previous frame's texel.
- *   Output texel: R = integer stage byte, G = stage fraction byte,
+ *   Output texel: R = stage + cached opacity bit, G = stage fraction byte,
  *   B = winner record index (255 = none), A = winner alpha.
  *   Point-orb scenes also write cooled steady proximity to a second RG8
  *   target. Ordinary node scenes do not allocate or enable this attachment.
@@ -62,6 +62,7 @@ import {
 } from './recordPacking';
 import { MAX_PALETTE } from './paletteGL';
 import { boldRayGlyphIndex } from './atlasLayout';
+import { CELL_STAGE_MASK, CELL_FULL_OPACITY_BIT } from './coolingEncode';
 
 /** Winner-index byte value meaning "no winning record". */
 export const WINNER_NONE = 255;
@@ -146,6 +147,7 @@ const float WAVE_RECEDE_K = ${fmt(WAVE_RECEDE)};
 
 ${HASH_GLSL}
 ${CHAT_RAY_GLSL}
+${OPACITY_SCATTER_GLSL}
 
 bool isChatRayAtCell(vec4 rect) {
   vec4 screenRect = vec4(rect.xy * uViewport.z + uViewport.xy, rect.zw * uViewport.z);
@@ -323,7 +325,7 @@ void main() {
   float prevStage = 0.0;
   if (uResetHistory == 0) {
     vec4 prev = texelFetch(uPrevState, cell, 0);
-    prevStage = prev.r * 255.0 + prev.g;
+    prevStage = float(int(prev.r * 255.0 + 0.5) & ${CELL_STAGE_MASK}) + prev.g;
   }
   float t = float(targetStage);
   float displayed = t >= prevStage
@@ -336,8 +338,25 @@ void main() {
   }
 
   float stageInt = floor(displayed);
+  // This lottery depends on the cell, not the pixels that form its glyph.
+  // Cache its binary result in a spare stage-byte bit: no extra attachment,
+  // allocation, draw call or change to cooling precision. The orb path keeps
+  // its existing fractional-proximity history and compositor unchanged.
+  float scatteredOpacity = 0.5;
+  if (!uPointOpacityTrails) {
+    if (winner >= 0 && winner < ${WINNER_NONE}) {
+      vec4 rect = texelFetch(uRecords, ivec2(winner * 4, 0), 0);
+      vec4 owner = texelFetch(uRecords, ivec2(winner * 4 + 1, 0), 0);
+      float radius = owner.x > 0.0 ? owner.x
+        : texelFetch(uRecords, ivec2(winner * 4 + 3, 0), 0).y;
+      vec2 outside = max(max(rect.xy - worldPos, worldPos - rect.xy - rect.zw), vec2(0.0));
+      scatteredOpacity = auraOpacityTier(h, auraAreaFraction(length(outside), rect.zw, radius));
+    } else if (stageInt > 0.0) {
+      scatteredOpacity = auraOpacityTier(h, 1.0);
+    }
+  }
   outState = vec4(
-    stageInt / 255.0,
+    (stageInt + (scatteredOpacity > 0.5 ? ${fmt(CELL_FULL_OPACITY_BIT)} : 0.0)) / 255.0,
     displayed - stageInt,
     (winner >= 0 ? float(winner) : 255.0) / 255.0,
     alpha
@@ -436,7 +455,8 @@ void main() {
   bool pointCore = false;
   {
     vec4 st = texelFetch(uCellState, ivec2(col, row), 0);
-    int stage = int(st.r * 255.0 + 0.5);
+    int packedStage = int(st.r * 255.0 + 0.5);
+    int stage = packedStage & ${CELL_STAGE_MASK};
     int winner = int(st.b * 255.0 + 0.5);
     uint h = cellHash(col, row);
     if (statusG == 0) {
@@ -454,21 +474,10 @@ void main() {
           ? texelFetch(uRecords, ivec2(winner * 4 + 1, 0), 0).x : ${fmt(AURA_RADIUS_FOCUSED)};
         pointCore = proximity > 0.0
           && distanceFraction * radius * uViewport.z <= ${fmt(POINT_ORB_CORE_RADIUS_PX)};
-      } else if (winner != ${WINNER_NONE}) {
-        vec4 rect = texelFetch(uRecords, ivec2(winner * 4, 0), 0);
-        vec4 owner = texelFetch(uRecords, ivec2(winner * 4 + 1, 0), 0);
-        // Collapse ghosts have no steady radius; use their original footprint.
-        float radius = owner.x > 0.0 ? owner.x
-          : texelFetch(uRecords, ivec2(winner * 4 + 3, 0), 0).y;
-        vec2 worldPos = ((vec2(col, row) + 0.5) * uCellCssPx - uViewport.xy) / uViewport.z;
-        vec2 outside = max(max(rect.xy - worldPos, worldPos - rect.xy - rect.zw), vec2(0.0));
-        scatteredOpacity = auraOpacityTier(h, auraAreaFraction(length(outside), rect.zw, radius));
-      } else if (stage > 0) {
-        // A vanished aura's cooling trail is still an aura effect, not text.
-        scatteredOpacity = auraOpacityTier(h, 1.0);
       } else {
-        // Plain ambient dots outside all auras are uniformly half opacity.
-        scatteredOpacity = 0.5;
+        // Ordinary aura/ghost/dot tiers were computed once per cell in A.
+        // Functional overlays bypass them exactly as before.
+        scatteredOpacity = (packedStage & ${CELL_FULL_OPACITY_BIT}) != 0 ? 1.0 : 0.5;
       }
     }
     if (stage == 0) {
@@ -514,7 +523,7 @@ void main() {
   // the status/arrow-label overlay below keeps final priority.
   {
     vec4 st = texelFetch(uCellState, ivec2(col, row), 0);
-    int stage = int(st.r * 255.0 + 0.5);
+    int stage = int(st.r * 255.0 + 0.5) & ${CELL_STAGE_MASK};
     int effectiveStage = max(0, stage - demote);
     int winner = int(st.b * 255.0 + 0.5);
     if (winner != ${WINNER_NONE}) {

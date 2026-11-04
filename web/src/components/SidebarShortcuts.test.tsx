@@ -71,6 +71,16 @@ describe('contextual shortcut hints', () => {
     fireEvent.mouseOver(screen.getByText('Chat content'));
     expect(screen.getByText('force zoom')).toBeVisible();
   });
+  it('does not offer collapsed exploration when clicking the term will expand its bullet', () => {
+    const { rerender } = render(<><div className="sc-ab-item" aria-expanded={false}>
+      <span className="ref-chip unexplored">Collapsed term</span></div><SidebarShortcuts /></>);
+    fireEvent.mouseOver(screen.getByText('Collapsed term'));
+    expect(screen.queryByText('explore collapsed')).toBeNull();
+    rerender(<><div className="sc-ab-item" aria-expanded>
+      <span className="ref-chip unexplored">Collapsed term</span></div><SidebarShortcuts /></>);
+    fireEvent.mouseOver(screen.getByText('Collapsed term'));
+    expect(screen.getByText('explore collapsed')).toBeVisible();
+  });
   it('describes the actual Escape action for the reading ruler and marquee', () => {
     render(<SidebarShortcuts />);
     act(() => useReadingStore.getState().begin('n', 0, 0, null));

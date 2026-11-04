@@ -13,7 +13,7 @@ const onFocus = vi.fn();
 const onDrag = vi.fn();
 const onChip = vi.fn();
 const onExpand = vi.fn();
-function Harness() {
+function Harness({ expanded = false }: { expanded?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useNodeSelectionDismiss(ref);
   const { handlers } = useNodeMultiSelection(ref);
@@ -22,7 +22,7 @@ function Harness() {
     {Object.values(project.nodes).map((node) => <div key={node.id} className="node" data-node-id={node.id}
       onClick={onFocus} onPointerDown={onDrag}>
       <span>{node.id}</span>
-      <ul><li role="button" className="sc-ab-item" onClick={onExpand} tabIndex={0} aria-expanded={false}>
+      <ul><li role="button" className="sc-ab-item" onClick={onExpand} tabIndex={0} aria-expanded={expanded}>
         <span>Bullet in {node.id}</span>
         <ReferenceChip term={`Term in ${node.id}`} parentNodeId={node.id} onClick={onChip}>
           <strong>Term in {node.id}</strong>
@@ -99,8 +99,8 @@ describe('node multi-selection gestures', () => {
     expect(selection()).toEqual(['b', 'c']);
     expect(useGraphStore.getState().selectedGroupId).toBe(groupId);
   });
-  it.each(['ctrlKey', 'metaKey'] as const)('preserves %s term activation, including nested bold text', modifier => {
-    render(<Harness />);
+  it.each(['ctrlKey', 'metaKey'] as const)('preserves %s term activation in expanded bullets, including nested bold text', modifier => {
+    render(<Harness expanded />);
     const term = screen.getByText('Term in a');
     fireEvent.pointerDown(term, { button: 0, [modifier]: true });
     fireEvent.click(term, { [modifier]: true });
@@ -110,6 +110,16 @@ describe('node multi-selection gestures', () => {
     expect(onExpand).not.toHaveBeenCalled();
     fireEvent.click(screen.getByText('b'));
     expect(onFocus).toHaveBeenCalled();
+  });
+  it.each(['ctrlKey', 'metaKey'] as const)('expands collapsed terms with %s without spawning or toggling multi-selection', modifier => {
+    render(<Harness />);
+    const term = screen.getByText('Term in a');
+    fireEvent.pointerDown(term, { button: 0, [modifier]: true });
+    fireEvent.click(term, { [modifier]: true });
+    expect(onExpand).toHaveBeenCalledTimes(1);
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    expect(onChip).not.toHaveBeenCalled();
+    expect(selection()).toEqual([]);
   });
   it.each(['ctrlKey', 'metaKey'] as const)('keeps %s on ordinary bullet text available for multi-selection', modifier => {
     render(<Harness />);

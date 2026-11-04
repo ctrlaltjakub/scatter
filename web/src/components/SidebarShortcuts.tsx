@@ -97,7 +97,8 @@ export function SidebarShortcuts() {
     let disposed = false;
     const onOver = (e: MouseEvent) => {
       const t = e.target as Element | null;
-      const isChip = !!t?.closest?.('.ref-chip.unexplored');
+      const isChip = !!t?.closest?.('.ref-chip.unexplored')
+        && !t?.closest?.('.sc-ab-item[aria-expanded="false"]');
       setChipHoveredRaw((prev) => (prev === isChip ? prev : isChip));
       setNodeHovered(!!t?.closest?.('.node[data-node-id]') && !t?.closest?.('button, a, input, textarea, select, [role="button"], [contenteditable="true"], [data-image-selection-surface], .node-resize, .node-followup-bar'));
       setOverScrollable(!!t?.closest?.('.node.selected, .chat-scroll, .side-panel, .citations-panel'));

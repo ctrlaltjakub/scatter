@@ -15,6 +15,7 @@ import {
   coolDisplayedStage,
   encodeStageBytes,
   decodeStageBytes,
+  CELL_FULL_OPACITY_BIT,
 } from './coolingEncode';
 
 describe('coolDisplayedStage', () => {
@@ -69,6 +70,16 @@ describe('stage byte encoding (RGBA8 R + G channels)', () => {
       expect(g).toBeLessThanOrEqual(255);
       expect(Number.isInteger(r)).toBe(true);
       expect(Number.isInteger(g)).toBe(true);
+    }
+  });
+
+  test('a cached full-opacity bit never changes the decoded cooling stage or its precision', () => {
+    for (let stage = 0; stage <= 8; stage += 0.125) {
+      const plain = encodeStageBytes(stage);
+      const full = encodeStageBytes(stage, true);
+      expect(full[0]).toBe(plain[0] | CELL_FULL_OPACITY_BIT);
+      expect(full[1]).toBe(plain[1]);
+      expect(decodeStageBytes(...full)).toBe(decodeStageBytes(...plain));
     }
   });
 });

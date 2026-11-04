@@ -1,9 +1,10 @@
 import { beforeEach, describe, it, expect, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ReferenceChip } from './ReferenceChip';
 import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import { NodeContentInteractionProvider } from './NodeContentInteractionContext';
+import { LANGUAGES } from '@/lib/languages';
 
 describe('ReferenceChip', () => {
   beforeEach(() => useLiveViewportStore.getState().clear());
@@ -59,5 +60,38 @@ describe('ReferenceChip', () => {
     expect(chip).toHaveAttribute('tabindex', '0');
     await userEvent.click(chip);
     expect(fn).toHaveBeenCalledWith('resonance', { withModifier: false });
+  });
+
+  it.each(LANGUAGES)('keeps $name term text and lets the collapsed bullet own activation', ({ sample }) => {
+    const spawn = vi.fn(), expand = vi.fn();
+    const { container, rerender } = render(<div className="sc-ab-item" aria-expanded={false} onClick={expand} onKeyDown={expand}>
+      <ReferenceChip term={sample} parentNodeId="p1" onClick={spawn} />
+    </div>);
+    const chip = container.querySelector<HTMLElement>('.ref-chip')!;
+    for (const key of ['Enter',' ']) fireEvent.keyDown(chip, {key});
+    fireEvent.click(chip, {ctrlKey:true});
+    fireEvent.click(chip, {metaKey:true});
+    expect(spawn).not.toHaveBeenCalled();
+    expect(expand).toHaveBeenCalledTimes(4);
+    expect(chip.dataset.referenceTerm).toBe(sample);
+    rerender(<div className="sc-ab-item" aria-expanded onClick={expand} onKeyDown={expand}>
+      <ReferenceChip term={sample} parentNodeId="p1" onClick={spawn} />
+    </div>);
+    fireEvent.click(chip, {ctrlKey:true});
+    expect(spawn).toHaveBeenCalledWith(sample,{withModifier:true});
+    expect(expand).toHaveBeenCalledTimes(4);
+  });
+
+  it('does not expand hidden bullets from term activation below the overview threshold', () => {
+    const spawn = vi.fn(), expand = vi.fn();
+    render(<div className="sc-ab-item" aria-expanded={false} onClick={expand} onKeyDown={expand}>
+      <ReferenceChip term="Hidden term" parentNodeId="p1" onClick={spawn} />
+    </div>);
+    act(() => useLiveViewportStore.getState().setZoom(.2));
+    const chip = screen.getByText('Hidden term');
+    fireEvent.click(chip);
+    fireEvent.keyDown(chip, {key:'Enter'});
+    expect(spawn).not.toHaveBeenCalled();
+    expect(expand).not.toHaveBeenCalled();
   });
 });

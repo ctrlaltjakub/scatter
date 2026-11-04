@@ -278,6 +278,27 @@ describe('RelationHoverPreview', () => {
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
+  it('shows a collapsed level-1 title’s cached preview and respects the automatic-preview setting', () => {
+    const version: NodeVersion = { header: 'Memory', body: '- Cache\n  - Storage: Saves previously retrieved data.',
+      createdAt: 4, generatedBy: 'root', contentType: 'encyclopedic' };
+    version.termPreviews = { fingerprint: termPreviewFingerprint(version), entries: { cache: 'A **temporary store** for faster access.' } };
+    useGraphStore.getState().updateNode('parent', { versions: [version], currentVersionIndex: 0 });
+    render(<Harness unexplored expanded={false} sourceField="b:0:title" />);
+    fireEvent.pointerOver(screen.getByTestId('relation'), { clientX: 320, clientY: 210 });
+    act(() => vi.advanceTimersByTime(120));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('A temporary store for faster access.');
+    expect(screen.getByRole('tooltip').querySelector('strong')).toHaveTextContent('temporary store');
+    act(() => useSettingsStore.setState({ autoTermPreviews: false }));
+    expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('shows linked-child previews over collapsed level-1 titles even with automatic previews off', () => {
+    useSettingsStore.setState({ autoTermPreviews: false });
+    render(<Harness expanded={false} sourceField="b:0:title" />);
+    fireEvent.focusIn(screen.getByTestId('relation'));
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Current opening paragraph');
+  });
+
   it('uses the hovered version’s description and preserves linked-child opening previews', () => {
     const v: NodeVersion = { header: 'Memory', body: '- Memory\n  - Cache: The original description.', createdAt: 4, generatedBy: 'root' };
     useGraphStore.getState().updateNode('parent', { versions: [v, { ...v, body: v.body.replace('original', 'new'), createdAt: 5 }], currentVersionIndex: 1 });
@@ -637,24 +658,25 @@ describe('RelationHoverPreview', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent('Current opening');
   });
 
-  it.each([false, true])('requires fully expanded bullets (Markdown: %s)', (collapsible) => {
+  it.each([false, true])('allows collapsed adaptive previews but keeps legacy Markdown expansion behavior (Markdown: %s)', (collapsible) => {
     const { rerender } = render(<Harness expanded={false} collapsible={collapsible} />);
     fireEvent.pointerOver(screen.getByTestId('relation'));
     fireEvent.focusIn(screen.getByTestId('relation'));
     act(() => vi.advanceTimersByTime(120));
-    expect(screen.queryByRole('tooltip')).toBeNull();
+    if (collapsible) expect(screen.queryByRole('tooltip')).toBeNull();
+    else expect(screen.getByRole('tooltip')).toHaveTextContent('Current opening');
     rerender(<Harness expanded collapsible={collapsible} />);
     fireEvent.pointerOver(screen.getByTestId('relation'));
     act(() => vi.advanceTimersByTime(120));
     expect(screen.getByRole('tooltip')).toHaveTextContent('Current opening');
   });
 
-  it('hides an open preview when its bullet collapses without pointer movement', async () => {
+  it('keeps an open preview when its adaptive bullet collapses without pointer movement', async () => {
     const { rerender } = render(<Harness expanded />);
     fireEvent.focusIn(screen.getByTestId('relation'));
     expect(screen.getByRole('tooltip')).toBeTruthy();
     await act(async () => { rerender(<Harness expanded={false} />); });
-    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(screen.getByRole('tooltip')).toHaveTextContent('Current opening');
   });
 
   it('shows previews in an unfocused node without changing selection', () => {
