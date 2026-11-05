@@ -643,8 +643,10 @@ function NodeViewImpl(p: Props) {
     if (d.moved) {
       p.onDragEnd({ unpinnedByShake: !!d.unpinnedByShake });
       // Eat the synthetic click that follows so the wrapper's onClick
-      // doesn't focus this node just because the user dragged it.
-      justDraggedRef.current = true;
+      // doesn't focus this node just because the user dragged it. A touch
+      // drag ends without a click, so a flag set for it would swallow the
+      // next, unrelated tap.
+      justDraggedRef.current = e.pointerType !== 'touch';
       setDragTop('linger');
       if (dragTopTimer.current) clearTimeout(dragTopTimer.current);
       dragTopTimer.current = setTimeout(() => setDragTop(null), DRAG_TOP_LINGER_MS);
@@ -909,8 +911,8 @@ function NodeViewImpl(p: Props) {
     // also has it pinned via the toolbar — that's persistent).
     p.onDragEnd();
     // Suppress the wrapper-onClick that follows so finishing a resize
-    // doesn't accidentally focus the node.
-    justDraggedRef.current = true;
+    // doesn't accidentally focus the node. Touch input ends without a click.
+    justDraggedRef.current = e.pointerType !== 'touch';
   };
 
   const classes = [
