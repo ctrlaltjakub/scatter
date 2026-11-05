@@ -5,8 +5,6 @@ import { AnimatedCollapse } from './AnimatedCollapse';
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false })));
-  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(0), 16));
-  vi.stubGlobal('cancelAnimationFrame', clearTimeout);
 });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -15,10 +13,16 @@ describe('animated settings disclosures', () => {
     const body = <button>Nested control</button>;
     const { container, rerender } = render(<AnimatedCollapse open={false}>{body}</AnimatedCollapse>);
     expect(container).toBeEmptyDOMElement();
+    const observer = new MutationObserver(() => {});
+    observer.observe(container, { subtree: true, attributeFilter: ['data-expanded'], attributeOldValue: true });
     rerender(<AnimatedCollapse open>{body}</AnimatedCollapse>);
-    expect(container.firstChild).toHaveAttribute('data-expanded', 'false');
-    act(() => vi.advanceTimersByTime(32));
+    const changes = observer.takeRecords().map((record) => record.oldValue);
+    observer.disconnect();
+    // Inserted collapsed, then expanded before the first paint: the transition
+    // starts with the click instead of after extra animation frames.
+    expect(changes).toEqual(['false']);
     expect(container.firstChild).toHaveAttribute('data-expanded', 'true');
+    expect(container.firstChild).toHaveAttribute('data-animating', 'true');
     act(() => vi.advanceTimersByTime(180));
     expect(container.firstChild).toHaveAttribute('data-animating', 'false');
     rerender(<AnimatedCollapse open={false}>{body}</AnimatedCollapse>);
