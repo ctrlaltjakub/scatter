@@ -435,7 +435,7 @@ function ChatSettings() {
         placeholder="For example: keep answers concise, explain unfamiliar ideas, and use concrete examples…"
       />
       <SettingsToggle title="Information chunking by default" checked={defaultChunking} onChange={setDefaultChunking}
-        description={<>Ask for <strong>one idea per sentence</strong>, clear line breaks, <strong>bold key ideas</strong>, and headings or bullets when useful. This sets the starting mode for <strong>new chats only</strong>. Each chat’s panel can change it for new and regenerated answers.</>} />
+        description={<>Chat answers are generated with <strong>one idea per sentence</strong>, the <strong>key parts of every sentence in bold</strong>, and <strong>each sentence on its own line</strong>. When off, sentences flow as ordinary paragraphs. This sets the starting mode for <strong>new chats only</strong>. Each chat’s panel can change it for new and regenerated answers.</>} />
     </SettingsSection>
   );
 }
