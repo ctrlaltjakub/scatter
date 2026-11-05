@@ -13,28 +13,38 @@ function Harness() {
 }
 
 describe('disabled click cursor feedback', () => {
+  const flashing = () => document.querySelectorAll('.sc-pressing, .sc-disabled-pressing').length;
+
   beforeEach(() => {
     vi.useFakeTimers();
-    document.documentElement.classList.remove('sc-pressing', 'sc-disabled-pressing');
   });
 
   afterEach(() => {
     cleanup();
-    document.documentElement.classList.remove('sc-pressing', 'sc-disabled-pressing');
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it('marks only the pressed element, so a press never restyles the whole document', () => {
+    render(<Harness />);
+    const child = screen.getByTestId('disabled-child');
+    fireEvent.pointerDown(child);
+    expect(child).toHaveClass('sc-disabled-pressing');
+    expect(document.documentElement).not.toHaveClass('sc-pressing', 'sc-disabled-pressing');
+    expect(document.body).not.toHaveClass('sc-pressing', 'sc-disabled-pressing');
   });
 
   it('briefly shows the disabled cursor when an aria-disabled control is pressed', () => {
     render(<Harness />);
 
-    fireEvent.pointerDown(screen.getByTestId('disabled-child'));
+    const child = screen.getByTestId('disabled-child');
+    fireEvent.pointerDown(child);
 
-    expect(document.documentElement).toHaveClass('sc-disabled-pressing');
-    expect(document.documentElement).not.toHaveClass('sc-pressing');
+    expect(child).toHaveClass('sc-disabled-pressing');
+    expect(child).not.toHaveClass('sc-pressing');
 
     act(() => { vi.advanceTimersByTime(150); });
-    expect(document.documentElement).not.toHaveClass('sc-disabled-pressing');
+    expect(flashing()).toBe(0);
   });
 
   it.each(['pointer', 'default', 'text', 'grab'])('recognizes the %s fallback after an image-set cursor', fallback => {
@@ -44,9 +54,9 @@ describe('disabled click cursor feedback', () => {
       cursor: `image-set(url("data:image/png;base64,a") 1x, url("data:image/png;base64,b") 2x) 3 3, ${fallback}`,
     } as CSSStyleDeclaration);
     fireEvent.pointerDown(screen.getByTestId('cursor-control'));
-    expect(document.documentElement.classList.contains('sc-pressing')).toBe(['pointer', 'default'].includes(fallback));
+    expect(screen.getByTestId('cursor-control').classList.contains('sc-pressing')).toBe(['pointer', 'default'].includes(fallback));
     act(() => { vi.advanceTimersByTime(150); });
-    expect(document.documentElement).not.toHaveClass('sc-pressing');
+    expect(flashing()).toBe(0);
   });
 
   it('works from its serialized sandbox source and clears feedback after a quick click', () => {
@@ -56,21 +66,21 @@ describe('disabled click cursor feedback', () => {
     vi.spyOn(window, 'getComputedStyle').mockReturnValue({ cursor: 'pointer' } as CSSStyleDeclaration);
     fireEvent.pointerDown(screen.getByTestId('checkbox'));
     fireEvent.pointerUp(screen.getByTestId('checkbox'));
-    expect(document.documentElement).toHaveClass('sc-pressing');
+    expect(screen.getByTestId('checkbox')).toHaveClass('sc-pressing');
     act(() => { vi.advanceTimersByTime(150); });
-    expect(document.documentElement).not.toHaveClass('sc-pressing');
+    expect(flashing()).toBe(0);
     dispose();
     fireEvent.pointerDown(screen.getByTestId('checkbox'));
-    expect(document.documentElement).not.toHaveClass('sc-pressing');
+    expect(flashing()).toBe(0);
   });
 
   it('clears a flash on window blur', () => {
     render(<Harness />);
     const control = screen.getByTestId('disabled-child');
     fireEvent.pointerDown(control);
-    expect(document.documentElement).toHaveClass('sc-disabled-pressing');
+    expect(control).toHaveClass('sc-disabled-pressing');
     fireEvent(window, new Event('blur'));
-    expect(document.documentElement).not.toHaveClass('sc-disabled-pressing');
+    expect(flashing()).toBe(0);
   });
 
   it('reads the actual cursor after clearing an earlier flash on a rapid second press', () => {
@@ -78,9 +88,9 @@ describe('disabled click cursor feedback', () => {
     render(<input data-testid="text-input" />);
     fireEvent.pointerDown(screen.getByTestId('disabled-child'));
     vi.spyOn(window, 'getComputedStyle').mockImplementation(() => ({
-      cursor: document.documentElement.classList.contains('sc-disabled-pressing') ? 'not-allowed' : 'text',
+      cursor: flashing() > 0 ? 'not-allowed' : 'text',
     } as CSSStyleDeclaration));
     fireEvent.pointerDown(screen.getByTestId('text-input'));
-    expect(document.documentElement).not.toHaveClass('sc-pressing', 'sc-disabled-pressing');
+    expect(flashing()).toBe(0);
   });
 });

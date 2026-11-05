@@ -371,8 +371,8 @@ button,a,[role=button],[role=slider],select,input[type=range],input[type=checkbo
 input:not([type=range]):not([type=checkbox]):not([type=radio]),textarea,[contenteditable=true]{cursor:var(--sc-cursor-text,text)}
 [draggable=true],[data-sc-draggable]{cursor:var(--sc-cursor-move,move)}
 :disabled,[aria-disabled=true]{cursor:var(--sc-cursor-click,pointer)!important}
-html.sc-pressing,html.sc-pressing *{cursor:var(--sc-cursor-press,pointer)!important}
-html.sc-disabled-pressing,html.sc-disabled-pressing *{cursor:var(--sc-cursor-ban,not-allowed)!important}
+html .sc-pressing,html .sc-pressing *{cursor:var(--sc-cursor-press,pointer)!important}
+html .sc-disabled-pressing,html .sc-disabled-pressing *{cursor:var(--sc-cursor-ban,not-allowed)!important}
 </style>`;
   if (/<head(?:\s[^>]*)?>/i.test(html)) {
     return html.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}\n${injected}`);

@@ -233,7 +233,7 @@ describe('app sidebar sizing contract', () => {
   it('shows the blocked cursor only during an attempted disabled press', () => {
     expect(ruleBody(':disabled, [disabled], [aria-disabled="true"]'))
       .toMatch(/cursor:\s*var\(--cur-click\)\s*!important\s*;/);
-    expect(ruleBody('html.sc-disabled-pressing, html.sc-disabled-pressing *'))
+    expect(ruleBody('html .sc-disabled-pressing, html .sc-disabled-pressing *'))
       .toMatch(/cursor:\s*var\(--cur-ban\)\s*!important\s*;/);
   });
 

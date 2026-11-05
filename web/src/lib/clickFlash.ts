@@ -15,8 +15,8 @@ import { installClickFlash } from './clickFlashRuntime';
  * `default` / `pointer`, while text (`text`), pan (`grab`), move (`move`), and
  * resize (`*-resize`) do not — so those never flash.
  *
- * Implemented by toggling `sc-pressing` on <html>; the CSS rule
- * `html.sc-pressing * { cursor: var(--cur-press) !important }` does the rest.
+ * Implemented by toggling `sc-pressing` on the pressed element; the CSS rule
+ * `html .sc-pressing * { cursor: var(--cur-press) !important }` does the rest.
  * Install ONCE at the app root so it covers canvas, sidebar and modals alike.
  */
 export function useClickFlash(): void {

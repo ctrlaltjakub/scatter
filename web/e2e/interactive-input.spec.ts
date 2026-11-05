@@ -174,7 +174,8 @@ test('embedded controls show the same brief pointer-press feedback as app contro
     const expected = getComputedStyle(sample).cursor; sample.remove();
     win.addEventListener('pointerdown', (event: PointerEvent) => {
       const target = event.target as Element;
-      win.pressEvents.push({ classes: el.className, target: target.id || target.parentElement?.id,
+      win.pressEvents.push({ classes: ['sc-pressing', 'sc-disabled-pressing'].filter((name) => target.classList.contains(name)).join(' '),
+        target: target.id || target.parentElement?.id,
         matchesPressCursor: getComputedStyle(target).cursor === expected });
     });
   });
@@ -189,7 +190,7 @@ test('embedded controls show the same brief pointer-press feedback as app contro
     { target: 'name', classes: '', matchesPressCursor: false },
     { target: 'disabled', classes: 'sc-disabled-pressing', matchesPressCursor: false },
   ]);
-  await expect(frame.locator('html')).not.toHaveClass(/sc-(disabled-)?pressing/);
+  await expect(frame.locator('.sc-pressing, .sc-disabled-pressing')).toHaveCount(0);
 });
 
 test('main app and expanded viewer retain clicks and recover focus after switching tabs', async ({ page, context }, info) => {

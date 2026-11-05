@@ -461,13 +461,15 @@ textarea,
   cursor: var(--cur-text);
 }
 /* Press feedback: while the pointer is held down on something clickable, the
-   click-flash (lib/clickFlash.ts) puts `sc-pressing` on <html> for ~150ms and
-   the mouse-pointer-click glyph briefly shows. !important beats the per-element
-   cursor rules for the flash's lifetime. */
-html.sc-pressing, html.sc-pressing * {
+   click-flash (lib/clickFlash.ts) puts `sc-pressing` on the pressed element for
+   ~150ms and the mouse-pointer-click glyph briefly shows. !important beats the
+   per-element cursor rules for the flash's lifetime. The class stays off <html>:
+   a class there that a descendant rule depends on restyles the whole document,
+   which delayed the pressed frame (and :active effects) in Chromium. */
+html .sc-pressing, html .sc-pressing * {
   cursor: var(--cur-press) !important;
 }
-html.sc-disabled-pressing, html.sc-disabled-pressing * {
+html .sc-disabled-pressing, html .sc-disabled-pressing * {
   cursor: var(--cur-ban) !important;
 }
 

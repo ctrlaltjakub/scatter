@@ -7,10 +7,14 @@ export function installClickFlash(
   const win = doc.defaultView!;
   const schedule = timers?.setTimeout ?? win.setTimeout.bind(win);
   const cancel = timers?.clearTimeout ?? win.clearTimeout.bind(win);
-  const root = doc.documentElement;
+  // The class goes on the pressed element, not on <html>: toggling a class on
+  // <html> that a descendant rule depends on restyles the whole document, which
+  // in large projects delayed the press frame (and :active effects) in Chromium.
+  let pressed: Element | null = null;
   let timer: number | null = null;
   const clear = () => {
-    root.classList.remove('sc-pressing', 'sc-disabled-pressing');
+    pressed?.classList.remove('sc-pressing', 'sc-disabled-pressing');
+    pressed = null;
     if (timer !== null) cancel(timer);
     timer = null;
   };
@@ -24,7 +28,8 @@ export function installClickFlash(
     const cursor = win.getComputedStyle(target).cursor;
     const fallback = cursor.slice(cursor.lastIndexOf(',') + 1).trim();
     if (!disabled && fallback !== 'pointer' && fallback !== 'default') return;
-    root.classList.add(disabled ? 'sc-disabled-pressing' : 'sc-pressing');
+    pressed = target;
+    target.classList.add(disabled ? 'sc-disabled-pressing' : 'sc-pressing');
     timer = schedule(clear, 150);
   };
   doc.addEventListener('pointerdown', onPointerDown, true);
