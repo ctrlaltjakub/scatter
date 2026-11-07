@@ -9,13 +9,10 @@ import type {
 } from './types';
 import { normalizeProviderError, ProviderError } from './errors';
 import { documentedOpenAIImagePricing } from '@/lib/imagePricing';
+import { OPENROUTER_ATTRIBUTION_HEADERS } from './openrouterAttribution';
 
 const OPENAI_BASE = 'https://api.openai.com/v1';
 const OPENROUTER_BASE = 'https://openrouter.ai/api/v1';
-const OPENROUTER_HEADERS: Record<string, string> = {
-  'HTTP-Referer': 'https://scatter.local',
-  'X-Title': 'Scatter',
-};
 
 export function isDedicatedImageModelId(id: string): boolean {
   return /(?:^|\/)(?:gpt-(?:image|[\w.]+-image)|chatgpt-image-latest|gemini-[\d.]+-(?:pro-|flash(?:-lite)?-)?image|dall-?e)(?:$|-)/i.test(id);
@@ -307,7 +304,7 @@ export const openrouterImageAdapter: ImageAdapter = {
   async listModels(apiKey, baseUrl) {
     const base = baseUrl ?? OPENROUTER_BASE;
     const response = await fetch(`${base}/images/models`, {
-      headers: { Authorization: `Bearer ${apiKey}`, ...OPENROUTER_HEADERS },
+      headers: { Authorization: `Bearer ${apiKey}`, ...OPENROUTER_ATTRIBUTION_HEADERS },
     });
     if (!response.ok) {
       throw normalizeProviderError(response.status, await response.text().catch(() => ''));
@@ -321,7 +318,7 @@ export const openrouterImageAdapter: ImageAdapter = {
     const base = baseUrl ?? OPENROUTER_BASE;
     const encodedModel = model.split('/').map(encodeURIComponent).join('/');
     const response = await fetch(`${base}/images/models/${encodedModel}/endpoints`, {
-      headers: { Authorization: `Bearer ${apiKey}`, ...OPENROUTER_HEADERS },
+      headers: { Authorization: `Bearer ${apiKey}`, ...OPENROUTER_ATTRIBUTION_HEADERS },
     });
     if (!response.ok) {
       throw normalizeProviderError(response.status, await response.text().catch(() => ''));
@@ -329,7 +326,7 @@ export const openrouterImageAdapter: ImageAdapter = {
     return parseOpenRouterImagePricing(await response.json());
   },
   generate: (apiKey, opts, baseUrl) =>
-    postImage(`${baseUrl ?? OPENROUTER_BASE}/images`, apiKey, opts, OPENROUTER_HEADERS),
+    postImage(`${baseUrl ?? OPENROUTER_BASE}/images`, apiKey, opts, OPENROUTER_ATTRIBUTION_HEADERS),
   async edit(apiKey, opts, baseUrl) {
     const references = await Promise.all([opts.image, ...(opts.referenceImages ?? [])].map(async (image) => {
       const bytes = new Uint8Array(await image.arrayBuffer());
@@ -344,7 +341,7 @@ export const openrouterImageAdapter: ImageAdapter = {
       `${baseUrl ?? OPENROUTER_BASE}/images`,
       apiKey,
       opts,
-      OPENROUTER_HEADERS,
+      OPENROUTER_ATTRIBUTION_HEADERS,
       {
         input_references: references,
         ...(opts.inputFidelity ? { input_fidelity: opts.inputFidelity } : {}),

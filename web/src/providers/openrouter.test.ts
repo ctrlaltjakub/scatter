@@ -53,7 +53,7 @@ describe('openrouterAdapter', () => {
     }]);
     expect(body.tool_choice).toBeUndefined();
     expect(body.max_tool_calls).toBe(1);
-    expect((init.headers as Record<string, string>)['X-Title']).toBe('Scatter');
+    expect(init.headers).toMatchObject({ 'HTTP-Referer': 'https://scatter.study', 'X-Title': 'Scatter' });
   });
 
   it('switches every subsequent request to cheapest-provider ordering immediately', async () => {

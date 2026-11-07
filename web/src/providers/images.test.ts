@@ -145,6 +145,7 @@ describe('image provider adapters', () => {
     });
     const [url, init] = vi.mocked(fetch).mock.calls[0]!;
     expect(url).toBe('https://openrouter.ai/api/v1/images');
+    expect(init?.headers).toMatchObject({ 'HTTP-Referer': 'https://scatter.study', 'X-Title': 'Scatter' });
     expect(JSON.parse((init as RequestInit).body as string)).toMatchObject({
       model: 'google/gemini-3-pro-image-preview', resolution: '2K', aspect_ratio: '3:2',
     });
@@ -189,6 +190,7 @@ describe('image provider adapters', () => {
     });
     const [url, init] = vi.mocked(fetch).mock.calls[0]!;
     expect(url).toBe('https://openrouter.ai/api/v1/images');
+    expect(init?.headers).toMatchObject({ 'HTTP-Referer': 'https://scatter.study', 'X-Title': 'Scatter' });
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body).toMatchObject({
       model: 'google/gemini-3-pro-image-preview', prompt: 'add labels',

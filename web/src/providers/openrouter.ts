@@ -3,6 +3,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { normalizeProviderError } from './errors';
 import { listModelsCompat, streamChatCompat } from './openai';
 import { effectiveReasoningEffort } from '@/lib/modelReasoning';
+import { OPENROUTER_ATTRIBUTION_HEADERS } from './openrouterAttribution';
 
 type Effort = StreamChatOpts['reasoningEffort'];
 
@@ -23,14 +24,6 @@ function effortForSearch(opts: StreamChatOpts): Effort {
  * required when Scatter's search toggle is on.
  */
 const DEFAULT_BASE = 'https://openrouter.ai/api/v1';
-
-// Optional identification headers — OpenRouter ranks apps that send these.
-// 'HTTP-Referer' is a custom OpenRouter header (not the browser-forbidden
-// 'Referer'), so setting it from the browser is allowed.
-const ID_HEADERS: Record<string, string> = {
-  'HTTP-Referer': 'https://scatter.local',
-  'X-Title': 'Scatter',
-};
 
 function finiteNumber(value: unknown): number | undefined {
   const parsed = typeof value === 'number'
@@ -84,7 +77,7 @@ export async function listOpenRouterTextEndpoints(
 ): Promise<TextModelEndpoint[]> {
   const encodedModel = model.split('/').map(encodeURIComponent).join('/');
   const response = await fetch(`${baseUrl}/models/${encodedModel}/endpoints`, {
-    headers: { Authorization: `Bearer ${apiKey}`, ...ID_HEADERS },
+    headers: { Authorization: `Bearer ${apiKey}`, ...OPENROUTER_ATTRIBUTION_HEADERS },
   });
   if (!response.ok) {
     throw normalizeProviderError(
@@ -158,14 +151,14 @@ function bodyFor(opts: StreamChatOpts): Record<string, unknown> {
 }
 
 export const openrouterAdapter: TextAdapter = {
-  listModels: (apiKey, baseUrl) => listModelsCompat(apiKey, baseUrl ?? DEFAULT_BASE, ID_HEADERS),
+  listModels: (apiKey, baseUrl) => listModelsCompat(apiKey, baseUrl ?? DEFAULT_BASE, OPENROUTER_ATTRIBUTION_HEADERS),
   async *streamChat(apiKey, opts, baseUrl): AsyncIterable<ChatChunk> {
     if (opts.modelInfo) opts = { ...opts, reasoningEffort: effectiveReasoningEffort('openrouter', opts.model, opts.reasoningEffort, opts.modelInfo) };
     const base = baseUrl ?? DEFAULT_BASE;
     const wantsOff = !opts.webSearch && opts.reasoningEffort === 'off';
     let yielded = false;
     try {
-      for await (const chunk of streamChatCompat(apiKey, opts, base, { headers: ID_HEADERS, body: bodyFor(opts) })) {
+      for await (const chunk of streamChatCompat(apiKey, opts, base, { headers: OPENROUTER_ATTRIBUTION_HEADERS, body: bodyFor(opts) })) {
         yielded = true;
         yield chunk;
       }
@@ -178,7 +171,7 @@ export const openrouterAdapter: TextAdapter = {
       if (wantsOff && !yielded && /cannot be disabled|mandatory/i.test((e as Error).message)) {
         const retryBody = bodyFor(opts);
         yield* streamChatCompat(apiKey, opts, base, {
-          headers: ID_HEADERS,
+          headers: OPENROUTER_ATTRIBUTION_HEADERS,
           body: { ...retryBody, reasoning: { exclude: true, effort: effortForSearch({ ...opts, reasoningEffort: 'low' }) } },
         });
         return;
