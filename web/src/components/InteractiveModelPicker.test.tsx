@@ -1,8 +1,15 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { InteractiveModelPicker } from './InteractiveModelPicker';
 import { useModelCatalogStore } from '@/store/useModelCatalogStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
+
+// Picker changes schedule a debounced save. This DOM test has no browser
+// filesystem; keep that delayed write out of this and the next test.
+vi.mock('@/opfs/settingsIO', async (original) => ({
+  ...await original<typeof import('@/opfs/settingsIO')>(),
+  saveSettings: vi.fn(async () => {}),
+}));
 
 describe('InteractiveModelPicker', () => {
   beforeEach(() => {
