@@ -114,9 +114,18 @@ describe('Minimap — hover shows node header via data-tip', () => {
 
   it('does not update the tip while dragging the camera', () => {
     const { canvas } = renderMinimap();
-    fireEvent.pointerDown(canvas, { pointerId: 1, clientX: 60, clientY: 5 });
-    fireEvent.pointerMove(canvas, OVER_NODE);
+    fireEvent.pointerDown(canvas, { pointerId: 1, button: 0, clientX: 60, clientY: 5 });
+    fireEvent.pointerMove(canvas, { pointerId: 1, ...OVER_NODE });
     expect(canvas.getAttribute('data-tip')).toBe(DEFAULT_TIP);
     fireEvent.pointerUp(canvas, { pointerId: 1, ...OVER_NODE });
+  });
+
+  it('releases a cancelled touch drag so the next gesture can take the camera', () => {
+    const { canvas } = renderMinimap();
+    fireEvent.pointerDown(canvas, { pointerId: 3, button: 0, pointerType: 'touch', ...OVER_EMPTY });
+    fireEvent.pointerCancel(canvas, { pointerId: 3 });
+    useGraphStore.getState().requestPanTo('n0');
+    fireEvent.pointerDown(canvas, { pointerId: 4, button: 0, pointerType: 'touch', ...OVER_NODE });
+    expect(useGraphStore.getState().panTo).toBeNull();
   });
 });

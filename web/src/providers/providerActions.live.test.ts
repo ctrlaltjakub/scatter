@@ -120,11 +120,11 @@ it.skipIf(!['openai', 'anthropic', 'ollama', 'lm-studio'].includes(preset ?? '')
         ['expand-whole', { kind: 'elaborate', previousBody: text }, 'outline'],
         ['expand-section', { kind: 'expand-part', markedBody: text.replace('- Calculation\n  - Addition: Add the lengths of all three sides.\n  - Units: Use the same unit for every side.', '<<<EXPAND>>>- Calculation\n  - Addition: Add the lengths of all three sides.\n  - Units: Use the same unit for every side.<<<END>>>') }, 'outline'],
         ['expand-explain', { kind: 'expand-part', mode: 'explain', markedBody: '<<<EXPAND>>>Perimeter is distance around a shape.<<<END>>>' }, 'prose'],
-        ['pop-bullet-into-node', { kind: 'pop-rework', title: 'Calculating perimeter', bulletBody: '- Addition: Add all sides.\n- Units: Use consistent units.' }, 'outline'],
         ['repair-node-structure', { kind: 'restructure', previousBody: text.replaceAll('  - ', '- ') }, 'outline'],
         ['modify-selected-text', { kind: 'modify-selection', markedBody: 'Perimeter is <<<SELECTED>>>distance around a shape<<<END_SELECTED>>>.', selectedText: 'distance around a shape', instruction: 'Use a more precise definition.', mode: 'explain' }, 'fragment'],
         ['detached-answer-chunked', { kind: 'answer', instruction: 'Compare perimeter and area in a two-row Markdown table.', informationChunking: true }, 'markdown'],
         ['detached-answer-normal', { kind: 'answer', instruction: 'Compare perimeter and area in a two-row Markdown table.', informationChunking: false }, 'markdown'],
+        ['fact-evidence-rewrite-markdown', { kind: 'fact-rewrite', previousBody: '| Triangle | Perimeter |\n| --- | --- |\n| 3, 4, 5 cm | 11 cm |', evidenceReport: 'Correct the perimeter to 12 cm and keep the table.', sourceCatalog: '⟪E1⟫: 3+4+5 = 12.', answerChunking: false }, 'markdown'],
         ['fact-evidence-rewrite', { kind: 'fact-rewrite', previousBody: 'A triangle with sides 3, 4 and 5 cm has perimeter 11 cm.', evidenceReport: 'Contradicted: adding these sides gives 12 cm.', sourceCatalog: '⟪E1⟫: Adding all three side lengths gives 12 cm.', freeText: true }, 'prose'],
       ];
       for (const [name, variant, shape] of variants) await run(name, async () => {
@@ -132,7 +132,7 @@ it.skipIf(!['openai', 'anthropic', 'ollama', 'lm-studio'].includes(preset ?? '')
         if (shape === 'outline') { const parsed = parseBody(output.body); expect(parsed?.bullets.length).toBeGreaterThanOrEqual(name === 'expand-section' ? 1 : 2); expect(parsed?.bullets.every(b => b.children.length >= 2)).toBe(true); }
         if (shape === 'prose') expect(output.body).not.toMatch(/^\s*(?:#{1,6} |[-*] )/m);
         if (shape === 'markdown') expect(output.body).toContain('|');
-        if (name === 'fact-evidence-rewrite') { expect(output.body).toContain('12'); expect(output.body).toContain('⟪E1⟫'); }
+        if (name.startsWith('fact-evidence-rewrite')) { expect(output.body).toContain('12'); expect(output.body).toContain('⟪E1⟫'); }
         return output;
       });
       for (const chunking of [false, true]) await run(`chat-${chunking ? 'chunked' : 'normal'}`, () => collect({ messages: [

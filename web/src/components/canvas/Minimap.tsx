@@ -72,7 +72,7 @@ interface Rect { x: number; y: number; w: number; h: number; id: string }
 function MinimapCanvas() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const draggingRef = useRef(false);
+  const dragPointer = useRef<number | null>(null);
   // Latest layout geometry from the last draw, reused by pointer→world mapping.
   const geomRef = useRef({ minX: 0, minY: 0, scale: 1, offX: 0, offY: 0, cw: 1, ch: 1 });
   // Node rects from the last draw (draw order), for pointer hover hit-testing.
@@ -296,6 +296,16 @@ function MinimapCanvas() {
     if (commit) useGraphStore.getState().setViewport(next);
   };
 
+  const endDrag = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (dragPointer.current !== e.pointerId) return;
+    dragPointer.current = null;
+    // Cancellation/lost capture has no reliable final coordinate. Keep the
+    // live camera reached by the last move rather than jumping to (0, 0).
+    const { x, y, zoom } = useLiveViewportStore.getState();
+    useGraphStore.getState().setViewport({ x, y, zoom });
+    setHovered(null);
+  };
+
   return (
     <div className="sidebar-minimap" ref={wrapRef} onPointerDown={(e) => e.stopPropagation()}>
       <canvas
@@ -303,27 +313,33 @@ function MinimapCanvas() {
         className="sidebar-minimap-canvas"
         data-tip={DEFAULT_TIP}
         onPointerDown={(e) => {
+          if (dragPointer.current !== null || e.button !== 0) return;
           e.stopPropagation();
           // Taking the camera by minimap-hand cancels any follow tween /
           // generation autopan — same rule as drag-pan and zoomCameraBy.
           // (Nothing re-issues the request: generate.ts pans once, at spawn.)
           useGraphStore.getState().requestPanTo(null);
-          draggingRef.current = true;
+          dragPointer.current = e.pointerId;
           canvasRef.current?.setPointerCapture(e.pointerId);
           panTo(e, false);
         }}
         onPointerMove={(e) => {
-          if (draggingRef.current) { e.stopPropagation(); panTo(e, false); return; }
+          if (dragPointer.current !== null) {
+            if (dragPointer.current === e.pointerId) { e.stopPropagation(); panTo(e, false); }
+            return;
+          }
           setHovered(hoveredNodeAt(e));
         }}
         onPointerUp={(e) => {
-          if (!draggingRef.current) return;
+          if (dragPointer.current !== e.pointerId) return;
           e.stopPropagation();
-          draggingRef.current = false;
+          dragPointer.current = null;
           canvasRef.current?.releasePointerCapture(e.pointerId);
           panTo(e, true);
           setHovered(hoveredNodeAt(e));
         }}
+        onPointerCancel={endDrag}
+        onLostPointerCapture={endDrag}
         onPointerLeave={() => setHovered(null)}
       />
     </div>

@@ -22,6 +22,7 @@ interface Props {
   /** 'toolbar' styles the trigger as a standalone glass pill (top-right);
    *  'sidebar' (default) is the inline bordered section. */
   variant?: 'sidebar' | 'toolbar';
+  onManageModels?: () => void;
   onReasoningOpenChange?: (open: boolean) => void;
 }
 
@@ -33,7 +34,7 @@ interface Props {
  * active one. The same switch is bound to Ctrl/⌘+M (cycle) in the global
  * keydown handler.
  */
-export function SidebarModelPicker({ placement = 'up', variant = 'sidebar', onReasoningOpenChange }: Props = {}) {
+export function SidebarModelPicker({ placement = 'up', variant = 'sidebar', onReasoningOpenChange, onManageModels }: Props = {}) {
   const providers = useSettingsStore((s) => s.providers);
   const mainModelOrder = useSettingsStore((s) => s.mainModelOrder);
   const activeModelRef = useSettingsStore((s) => s.activeModelRef);
@@ -83,9 +84,14 @@ export function SidebarModelPicker({ placement = 'up', variant = 'sidebar', onRe
   if (models.length === 0) return null;
 
   const activeLabel = activeModelRef?.model ? modelDisplayName(activeModelRef.model) : 'Pick a model';
+  const visibleModels = models.filter(ref => {
+    const provider = providers.find(p => p.id === ref.providerId);
+    return provider && (showAll || (ref.providerId === activeModelRef?.providerId && ref.model === activeModelRef.model)
+      || mainModelCompatible(provider.preset, ref.model, catalog[provider.id]?.find(info => info.id === ref.model), provider.webSearchEndpoint, provider.serverSearch));
+  });
   // Contiguous provider sections preserve the user's cross-provider order.
   const groups: Array<ProviderAccount & { orderedModels: string[] }> = [];
-  for (const ref of models) {
+  for (const ref of visibleModels) {
     const previous = groups[groups.length - 1];
     if (previous?.id === ref.providerId) previous.orderedModels.push(ref.model);
     else {
@@ -143,8 +149,7 @@ export function SidebarModelPicker({ placement = 'up', variant = 'sidebar', onRe
           {groups.map((p, index) => (
             <div key={`${p.id}:${index}`} className="sc-modelpicker-group">
               <div className="sc-modelpicker-group-head">{providerAccountLabel(p)}</div>
-              {p.orderedModels.filter((m) => showAll || mainModelCompatible(p.preset, m, catalog[p.id]?.find((info) => info.id === m), p.webSearchEndpoint, p.serverSearch)
-                || (activeModelRef?.providerId === p.id && activeModelRef.model === m)).map((m) => {
+              {p.orderedModels.map((m) => {
                 const isActive = activeModelRef?.providerId === p.id && activeModelRef.model === m;
                 const compatible = mainModelCompatible(p.preset, m, catalog[p.id]?.find((info) => info.id === m), p.webSearchEndpoint, p.serverSearch);
                 return (
@@ -163,6 +168,11 @@ export function SidebarModelPicker({ placement = 'up', variant = 'sidebar', onRe
               })}
             </div>
           ))}
+          {visibleModels.length === 1 && onManageModels && <p className="sc-modelpicker-hint">
+            Add more main models in <button type="button" onClick={() => {
+              setOpen(false); onManageModels();
+            }}>Models and generation</button>.
+          </p>}
         </div>
       )}
     </div>

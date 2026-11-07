@@ -1,4 +1,5 @@
 'use client';
+import type { SettingsPageId } from '@/components/settings/settingsNavigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, Download, X, ChevronLeft, ChevronRight, Sparkles, Maximize2, Settings } from 'lucide-react';
 import { generateRoot, oneShotCompletion } from '@/lib/generate';
@@ -63,7 +64,7 @@ function cleanRecommendation(raw: string | null): string {
     .trim();
 }
 
-export function WelcomeScreenB({ onOpenSettings, settingsOpen = false }: { onOpenSettings?: () => void; settingsOpen?: boolean }) {
+export function WelcomeScreenB({ onOpenSettings, settingsOpen = false }: { onOpenSettings?: (page?: SettingsPageId) => void; settingsOpen?: boolean }) {
   const [mode, setMode] = useState<StartMode>('chat');
   const [topic, setTopic] = useState('');
   const [chatPrompt, setChatPrompt] = useState('');
@@ -345,7 +346,7 @@ export function WelcomeScreenB({ onOpenSettings, settingsOpen = false }: { onOpe
         >
           <X size={18} />
         </button>
-        <button type="button" className="welcome-close welcome-settings" onClick={onOpenSettings}
+        <button type="button" className="welcome-close welcome-settings" onClick={() => onOpenSettings?.()}
           title="Settings" aria-label="Open settings" disabled={starting}>
           <Settings size={18} />
         </button>
@@ -405,7 +406,7 @@ export function WelcomeScreenB({ onOpenSettings, settingsOpen = false }: { onOpe
           {/* Same model switcher + web-search toggle as the side panel, on the
               right at the same level as Recommend. Opens downward (near the top). */}
           {mode !== 'image' && <div className="topic-modelpicker">
-            <SidebarModelPicker placement="down" />
+            <SidebarModelPicker placement="down" onManageModels={onOpenSettings && (() => onOpenSettings('models'))} />
           </div>}
         </div>
 

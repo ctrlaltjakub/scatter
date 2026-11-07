@@ -27,6 +27,13 @@ beforeEach(() => {
 });
 
 describe('Add node from an image selection', () => {
+  it('ends the shared menu with media, then interactive nodes', () => {
+    render(<AddNodeMenu nodeId="image" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Add node' }));
+    const choices = document.querySelectorAll('#add-node-image button');
+    expect([...choices].slice(-2).map(button => button.textContent?.trim())).toEqual(['Image or video', 'Interactive node']);
+  });
+
   it('updates the label live, including while the menu is open', () => {
     render(<AddNodeMenu nodeId="image" />);
     fireEvent.click(screen.getByRole('button', { name: 'Add node' }));

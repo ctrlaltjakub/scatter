@@ -54,7 +54,6 @@ vi.mock('./SelectionToolbar', () => ({ SelectionToolbar: () => null }));
 vi.mock('./CanvasToolbar', () => ({ CanvasToolbar: () => null }));
 vi.mock('./NodeSidePanel', () => ({ PANEL_W: 288, PANEL_GAP: 12, NodeSidePanel: () => null }));
 vi.mock('./NodeCitationsPanel', () => ({ NodeCitationsPanel: () => null }));
-vi.mock('@/components/dev/PixelRuler', () => ({ PixelRuler: () => null }));
 
 const noop = () => {};
 

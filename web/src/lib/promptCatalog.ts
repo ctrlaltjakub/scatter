@@ -386,21 +386,6 @@ Expand the marked explanation with substantially more concrete information while
 
 Output ONLY the replacement prose for the marked section. Do not include the markers or repeat text outside them. Keep it as plain prose with the bold-emphasis style required by the system prompt: NO bullets, NO headings, NO tables, NO blockquotes, and NO code fences. Preserve any existing ⟦number⟧ citation tokens exactly on unchanged sentences; never invent citation tokens. Complete every sentence and add no preamble or closing commentary.`,
   },
-  taskPopRework: {
-    group: "Editing and expansion",
-    label: "Task: pop selected (rework into a child node)",
-    description: "Turns a **selected bullet** into a child node.",
-    help: "Placeholders: {title} (the popped bullet / new node header), {bulletBody} (its sub-points as a flat list)",
-    text: `The user pulled the section "{title}" out of a larger node to explore it on its own. Here are its existing sub-points:
-
-{bulletBody}
-
-Write a fresh node about "{title}":
-- Start with a 2-3 sentence opening paragraph that frames "{title}" — compact, dense, no preamble, no bullets.
-- Then reorganize the sub-points above into a two-level bulleted list: GROUP them into AT LEAST 2 thematic groups. Each group becomes a level-1 bullet whose short noun-phrase title you invent; the original sub-points become its level-2 children (keep the \`name: description\` colon convention).
-- Keep ALL of the original sub-points — don't drop any and don't invent unrelated new ones. You may lightly reword for fit, but preserve their meaning. If there are too few sub-points to form 2 groups, keep them as level-2 children under one or two sensible level-1 groups.
-- Follow all the normal formatting rules (importance ordering, no filler).`,
-  },
   taskRestructure: {
     group: "Editing and expansion",
     label: "Task: fix bullet structure (auto-regeneration)",

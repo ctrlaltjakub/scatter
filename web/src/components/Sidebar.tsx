@@ -307,7 +307,7 @@ export function Sidebar({ collapsed, peeking, onToggle, onOpenSettings, onPeekLo
           with its row order inverted: model/search above navigation. */}
       {!hidden && (
         <div className="sidebar-control-panel">
-          <SidebarModelPicker placement="up" variant="toolbar" onReasoningOpenChange={onPeekLockChange} />
+          <SidebarModelPicker onManageModels={() => onOpenSettings('models')} placement="up" variant="toolbar" onReasoningOpenChange={onPeekLockChange} />
           <SourceControls />
           <div className="sidebar-footer">
             <NavActions onOpenSettings={() => onOpenSettings()} />

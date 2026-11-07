@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import type { FactCheckReport, ScatterNode } from '@/store/types';
+import { factCheckAvailability, startFactCheck } from './factCheck';
 import { rewriteNodeWithEvidence } from './generate';
 
 const fake = vi.hoisted(() => ({
@@ -27,7 +28,7 @@ vi.mock('@/providers/registry', async (importOriginal) => {
         } else {
           expect(opts.webSearch).toBe(false);
           yield {
-            delta: 'The corrected claim is supported⟪E1⟫.\n\n- Evidence\n  - Finding: The source supports it⟪E1⟫.',
+            delta: prompt.includes('| Shape |') ? '| Shape | Perimeter |\n| --- | --- |\n| Triangle | 12 cm⟪E1⟫ |' : 'The corrected claim is supported⟪E1⟫.\n\n- Evidence\n  - Finding: The source supports it⟪E1⟫.',
             done: false,
           };
         }
@@ -124,6 +125,31 @@ afterEach(() => {
 });
 
 describe('rewrite with evidence', () => {
+  it.each(['encyclopedic', 'explain', 'answer'] as const)('never starts an evidence job for an empty %s, even without a placeholder flag', async contentType => {
+    const node = useGraphStore.getState().project!.nodes.n1!;
+    const blank = { ...node.versions[0]!, body: '  \n ', contentType, markdownNote: contentType === 'answer', factCheck: undefined };
+    useGraphStore.getState().updateNode(node.id, { versions: [blank] });
+    expect(factCheckAvailability(blank)).toMatchObject({ available: false, reason: expect.stringMatching(/add text/i) });
+    await startFactCheck(node.id);
+    expect(useGraphStore.getState().project!.nodes.n1!.versions[0]?.factCheck).toBeUndefined();
+    expect(fake.messages).toEqual([]);
+  });
+
+  it.each([true, false])('preserves the detached Markdown format, language and source version (note: %s)', async markdownNote => {
+    const node = useGraphStore.getState().project!.nodes.n1!;
+    const original = { ...node.versions[0]!, contentType: 'answer' as const, markdownNote, language: 'ar' as const,
+      body: '| Shape | Perimeter |\n| --- | --- |\n| Triangle | 11 cm |',
+      chat: { turnId: 'turn', title: 'Shapes', question: '', informationChunking: false, contextPath: [], state: 'complete' as const } };
+    useGraphStore.getState().updateNode(node.id, { versions: [original] });
+    await rewriteNodeWithEvidence(node.id, report);
+    const versions = useGraphStore.getState().project!.nodes.n1!.versions;
+    expect(versions[0]).toEqual(original);
+    expect(versions[1]).toMatchObject({ markdownNote, contentType: 'answer', language: 'ar', chat: { turnId: 'turn' },
+      sources: [{ url: 'https://evidence.example/source' }] });
+    expect(versions[1]?.body).toContain('12 cm⟦1⟧');
+    expect(versions[1]?.factCheck).toBeUndefined();
+    expect(fake.messages[0]).toContain('Markdown learning answer');
+  });
   it('creates one unchecked version, performs no search, excludes ancestors, and converts evidence tokens to sources', async () => {
     await rewriteNodeWithEvidence('n1', report);
     const node = useGraphStore.getState().project!.nodes.n1!;

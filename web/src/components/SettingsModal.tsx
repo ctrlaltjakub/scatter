@@ -1433,8 +1433,6 @@ function DataTab({ onClose }: { onClose: () => void }) {
 function DevTab({ onClose }: { onClose: () => void }) {
   const activeProject = useGraphStore((s) => s.project);
   const setForceWelcomeA = useSettingsStore((s) => s.setForceWelcomeA);
-  const pixelRulerMode = useSettingsStore((s) => s.pixelRulerMode);
-  const setPixelRulerMode = useSettingsStore((s) => s.setPixelRulerMode);
   const simulateWebglFailure = useSettingsStore((s) => s.simulateWebglFailure);
   const setSimulateWebglFailure = useSettingsStore((s) => s.setSimulateWebglFailure);
 
@@ -1531,28 +1529,6 @@ function DevTab({ onClose }: { onClose: () => void }) {
           <p className="field-help" style={{ marginBottom: 16 }}>
             Reopens <strong>onboarding</strong> with your saved provider, key, and model.
             Choose <strong>Return to app</strong> to return to the canvas.
-          </p>
-
-          <div className="field-row">
-            <label className="field-label">Pixel ruler</label>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {(['off', 'viewport', 'canvas'] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  className={pixelRulerMode === m ? 'btn btn-primary' : 'btn btn-secondary'}
-                  onClick={() => setPixelRulerMode(m)}
-                  style={{ padding: '0 12px', height: 30, fontSize: 12, textTransform: 'capitalize' }}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
-          </div>
-          <p className="field-help">
-            Draws a grid with <strong>100 px major lines</strong> and 10 px minor lines.
-            <strong> Viewport</strong> measures browser-window pixels, independent of canvas zoom.
-            <strong> Canvas</strong> measures canvas pixels and moves with the project.
           </p>
 
           <div className="field-row">

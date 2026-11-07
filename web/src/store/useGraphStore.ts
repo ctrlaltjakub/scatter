@@ -231,20 +231,8 @@ interface GraphState {
   setNodePositions: (positions: { id: string; x: number; y: number }[]) => void;
   addArrow: (arrow: Arrow) => void;
   /** Add a node and its connecting arrow in a SINGLE store mutation, so a
-   *  spawn (or pop) lands as exactly ONE undo entry instead of two. */
+   *  spawn lands as exactly ONE undo entry instead of two. */
   addNodeWithArrow: (node: ScatterNode, arrow: Arrow, references?: Arrow[]) => void;
-  /** "Pop selected": atomically rewrite the parent's current-version body
-   *  (the popped bullet already removed → `newParentBody`), add the new
-   *  child node + connecting `arrow`, and select the child — all in ONE
-   *  store mutation so the whole extraction is a single undo entry. The
-   *  caller (generate.ts) computes the body split, child shape, and
-   *  position; the store just commits them together. */
-  popBulletToChild: (
-    parentId: string,
-    newParentBody: string,
-    child: ScatterNode,
-    arrow: Arrow,
-  ) => void;
   deleteNodeCascade: (id: string) => void;
   /** Bulk actions are one semantic undo step, regardless of selection size. */
   deleteNodesCascade: (ids: readonly string[]) => void;
@@ -421,29 +409,6 @@ export const useGraphStore = create<GraphState>()(
             ...s.project,
             nodes: { ...s.project.nodes, [node.id]: node },
             arrows: { ...s.project.arrows, [arrow.id]: arrow, ...Object.fromEntries(references.map((reference) => [reference.id, reference])) },
-            updatedAt: Date.now(),
-          },
-        };
-      }),
-      popBulletToChild: (parentId, newParentBody, child, arrow) => set((s) => {
-        if (!s.project) return s;
-        const parent = s.project.nodes[parentId];
-        if (!parent) return s;
-        const pv = parent.versions[parent.currentVersionIndex];
-        if (!pv) return s;
-        useNodeBirthStore.getState().begin(s.project.id, child.id, parentId);
-        const versions = [...parent.versions];
-        versions[parent.currentVersionIndex] = { ...pv, body: newParentBody };
-        return {
-          project: {
-            ...s.project,
-            nodes: {
-              ...s.project.nodes,
-              [parentId]: { ...parent, versions },
-              [child.id]: child,
-            },
-            arrows: { ...s.project.arrows, [arrow.id]: arrow },
-            selection: [child.id],
             updatedAt: Date.now(),
           },
         };

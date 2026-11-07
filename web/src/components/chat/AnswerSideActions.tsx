@@ -1,6 +1,6 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, FileText, ListRestart, SearchCheck, Square, Trash } from 'lucide-react';
+import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, FileText, ListRestart, SearchCheck, SpellCheck, Square, Trash } from 'lucide-react';
 import type { ScatterNode } from '@/store/types';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { factCheckTaskKey, useFactCheckTaskStore } from '@/store/useFactCheckTaskStore';
@@ -10,7 +10,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { useModelCatalogStore } from '@/store/useModelCatalogStore';
 import { useNodeStatusStore } from '@/store/useNodeStatusStore';
 import { useChatRuntimeStore } from '@/store/useChatRuntimeStore';
-import { redoTermMarking, cancelNodeGeneration } from '@/lib/generate';
+import { redoTermMarking, cancelNodeGeneration, rewriteNodeWithEvidence } from '@/lib/generate';
 import { AddNodeMenu } from '@/components/canvas/AddNodeMenu';
 import { ChatPanelGroup } from './ChatPanelControls';
 import { VersionCounter } from '@/components/VersionCounter';
@@ -35,15 +35,19 @@ export function AnswerSideActions({ node }: { node: ScatterNode }) {
   useSettingsStore((state) => state.activeModelRef);
   useSettingsStore((state) => state.providers);
   useModelCatalogStore((state) => state.catalog);
-  const showing = useCitationPanelStore((state) => state.nodeId === node.id && state.mode === 'fact-check');
+  const showing = useCitationPanelStore((state) => state.nodeId === node.id && state.mode === 'fact-check' && state.factVersionCreatedAt === version.createdAt);
   const checking = useFactCheckTaskStore((state) => !!state.tasks[factCheckTaskKey(node.id, version.createdAt)]?.running);
   const marking = useNodeStatusStore((state) => state.processes[node.id]?.[`chat-terms-${version.createdAt}`]?.clearedAt === null);
   const runtimeTermError = useChatRuntimeStore((state) => state.views[node.id]?.termErrors?.[version.createdAt]);
   const termError = answerEnrichmentError(version) ?? runtimeTermError;
   const report = version.factCheck?.pending ?? version.factCheck?.complete;
   const canResume = useMemo(() => canResumeFactCheck(version), [version]);
-  const available = factCheckAvailability();
+  const available = factCheckAvailability(version);
+  const canCheck = available.available && !displayedGenerating;
+  const complete = version.factCheck?.complete;
+  const canRewrite = !!complete && !checking && !version.factCheck?.pending && !node.generating && !!version.body.trim();
   const check = (mode: 'new' | 'continue' | 'again') => {
+    if (!canCheck) return;
     setError('');
     void startFactCheck(node.id, mode).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : 'Fact check could not start.'));
   };
@@ -115,14 +119,19 @@ export function AnswerSideActions({ node }: { node: ScatterNode }) {
       {report && <span className="side-disclosure-chevron">{showing ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>}
     </button>}
     <AnimatedCollapse open={!!showing && !!report}><div className="side-disclosure-content">
-      <button type="button" className="side-action" disabled={!checking && !available.available}
+      <button type="button" className="side-action" disabled={!checking && !canCheck}
         onClick={() => checking ? stopFactCheck(node.id, version.createdAt) : check(canResume ? 'continue' : 'again')}>
         <span className="side-action-icon">{checking ? <Square size={15} /> : <CheckCheck size={15} />}</span>
         {checking ? 'Stop checking' : canResume ? 'Continue check' : 'Check again'}
       </button>
+      <button type="button" className="side-action" disabled={!canRewrite}
+        data-tip="Create a corrected new version using this evidence without searching again"
+        onClick={() => { if (canRewrite) void rewriteNodeWithEvidence(node.id, complete); }}>
+        <span className="side-action-icon"><SpellCheck size={15} /></span>Rewrite with evidence
+      </button>
     </div></AnimatedCollapse>
     <AnswerImageActions node={node} />
-    {!report && <button type="button" className="side-action" disabled={!available.available}
+    {!report && <button type="button" className="side-action" disabled={!canCheck}
       data-tip={available.reason ?? 'Check this answer against web sources'} onClick={() => check('new')}>
       <span className="side-action-icon"><Check size={15} /></span>Fact-check
     </button>}

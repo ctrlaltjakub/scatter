@@ -92,7 +92,7 @@ describe('model diagnostics', () => {
     useSettingsStore.setState({ ...DEFAULT_SETTINGS });
     const jobs = diagnosticPlan(settings(), 'main');
     for (const id of ['encyclopedic', 'term-node', 'follow-up', 'selected-follow-up', 'explain', 'modify', 'modify-explain',
-      'elaborate', 'expand-section', 'expand-explain', 'pop-bullet', 'structure-repair', 'selection-edit', 'answer', 'answer-chunking', 'fact-rewrite', 'chat-true', 'chat-false']) {
+      'elaborate', 'expand-section', 'expand-explain', 'structure-repair', 'selection-edit', 'answer', 'answer-chunking', 'fact-rewrite', 'fact-rewrite-markdown', 'chat-true', 'chat-false']) {
       expect(jobs.find(job => job.test.id === id)?.test.messages[0]?.content, id).toContain(DEFAULT_PROMPTS.proseLineBoundaries);
     }
   });

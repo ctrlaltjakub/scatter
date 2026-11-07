@@ -29,11 +29,6 @@ export type TaskVariant =
    *  section by adding new concrete information while preserving the
    *  unmarked portions of the body verbatim. */
   | { kind: 'expand-part'; markedBody: string; mode?: 'encyclopedic' | 'explain' }
-  /** "Pop selected": write a fresh node for a bullet extracted into its own
-   *  child — opening paragraph + the sub-points regrouped into ≥2 named
-   *  groups. `title` = the bullet's title (also the node header); `bulletBody`
-   *  = the extracted sub-points as a flat markdown list. */
-  | { kind: 'pop-rework'; title: string; bulletBody: string }
   /** Internal corrective pass: the previous output broke the two-level bullet
    *  structure (fewer than 2 level-1 bullets each with ≥2 level-2 children).
    *  Re-asks the model to rewrite `previousBody` into the correct structure,
@@ -55,6 +50,8 @@ export type TaskVariant =
     evidenceReport: string;
     sourceCatalog: string;
     freeText?: boolean;
+    /** Set for Markdown notes and detached answers, even when chunking is off. */
+    answerChunking?: boolean;
   };
 
 export interface ChatMessage {
@@ -144,11 +141,6 @@ function buildTaskBlock(variant: TaskVariant, custom: Partial<CustomPrompts> | u
       return substitute(effectivePrompt(variant.mode === 'explain' ? 'taskExpandExplain' : 'taskExpandPart', custom), {
         markedBody: variant.markedBody,
       });
-    case 'pop-rework':
-      return substitute(effectivePrompt('taskPopRework', custom), {
-        title: variant.title,
-        bulletBody: variant.bulletBody,
-      });
     case 'restructure':
       return substitute(effectivePrompt('taskRestructure', custom), {
         previousBody: variant.previousBody,
@@ -183,9 +175,12 @@ export function buildMessages(input: {
     const lines = effectivePrompt('proseLineBoundaries', custom);
     return !lines || system.includes(lines) ? system : `${system}\n\n${lines}`;
   };
+  const answerSystem = (chunking: boolean) => proseSystem(substitute(effectivePrompt('answerBase', custom), {
+    formatting: chatFormattingPrompt(chunking, useSettingsStore.getState().normalChatInstructions ?? '', custom, true),
+  }));
   if (input.variant.kind === 'answer' || (input.variant.kind === 'modify-selection' && input.variant.mode === 'answer')) {
     return [
-      { role: 'system', content: proseSystem(substitute(effectivePrompt('answerBase', custom), { formatting: chatFormattingPrompt(!!input.variant.informationChunking, useSettingsStore.getState().normalChatInstructions ?? '', custom, true) })) },
+      { role: 'system', content: answerSystem(!!input.variant.informationChunking) },
       { role: 'user', content: buildContextBlock(input.context, custom) + buildTaskBlock(input.variant, custom) },
     ];
   }
@@ -203,7 +198,7 @@ export function buildMessages(input: {
     return [
       {
         role: 'system',
-        content: proseSystem(input.variant.freeText
+        content: input.variant.answerChunking !== undefined ? answerSystem(input.variant.answerChunking) : proseSystem(input.variant.freeText
           ? effectivePrompt('explainBase', custom)
           : substitute(effectivePrompt('base', custom), {
             maxLevel1: String(input.maxLevel1 ?? DEFAULT_MAX_L1_BULLETS),

@@ -12,7 +12,6 @@ const canvasToolbarSource = readFileSync(join(here, 'canvas', 'CanvasToolbar.tsx
 const settingsSource = readFileSync(join(here, 'SettingsModal.tsx'), 'utf8');
 const settingsCss = readFileSync(join(here, '..', 'app', 'settings.css'), 'utf8');
 const nodeBodySource = readFileSync(join(here, 'node', 'NodeBody.tsx'), 'utf8');
-const pixelRulerSource = readFileSync(join(here, 'dev', 'PixelRuler.tsx'), 'utf8');
 const pageSource = readFileSync(join(here, '..', 'app', 'page.tsx'), 'utf8');
 
 function ruleBody(selector: string): string {
@@ -125,8 +124,6 @@ describe('app sidebar sizing contract', () => {
 
   it('raises every application 10px text rule to at least 11px', () => {
     expect(css).not.toMatch(/font-size:\s*10px\s*;/);
-    expect(pixelRulerSource).not.toMatch(/fontSize:\s*10,/);
-    expect(pixelRulerSource.match(/fontSize:\s*11,/g)).toHaveLength(2);
   });
 
   it('gives the New Project and New Group controls centered 24px targets', () => {

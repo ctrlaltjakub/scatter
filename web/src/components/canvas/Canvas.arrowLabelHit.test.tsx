@@ -35,7 +35,6 @@ vi.mock('./NodeSidePanel', () => ({
   ),
 }));
 vi.mock('./NodeCitationsPanel', () => ({ NodeCitationsPanel: () => null }));
-vi.mock('@/components/dev/PixelRuler', () => ({ PixelRuler: () => null }));
 
 const noop = () => {};
 

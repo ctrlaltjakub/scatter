@@ -67,7 +67,7 @@ import {
   semanticHeaderText,
 } from './nodeHeaderText';
 import { newId } from './ids';
-import { isValidStructure, separatorColonIndex, stripChips } from './bulletParse';
+import { isValidStructure, stripChips } from './bulletParse';
 import { EmbeddedImageText } from './embeddedImageText';
 import { unchipHeaders } from './parser';
 import { makeBulletCommitGate, type CommitGate } from './streamCommitGate';
@@ -648,7 +648,7 @@ async function streamChunks(opts: {
  *  corrective pass runs at most once (it is the loop guard). modify / elaborate
  *  / expand-part are excluded — they're edits, not fresh generations. */
 const STRUCTURE_CHECK_KINDS = new Set<TaskVariant['kind']>([
-  'root', 'term-click', 'follow-up', 'pop-rework',
+  'root', 'term-click', 'follow-up',
 ]);
 
 // ───────────────────────────────────────────────────────────────────
@@ -658,7 +658,7 @@ const STRUCTURE_CHECK_KINDS = new Set<TaskVariant['kind']>([
 /** Spawn kinds that, after producing a plain body, get a pass-2 chip-marking
  *  step in `streamIntoVersion`. (The rewrite paths run it explicitly.) */
 const CHIP_PASS_KINDS = new Set<TaskVariant['kind']>([
-  'root', 'term-click', 'follow-up', 'pop-rework', 'explain',
+  'root', 'term-click', 'follow-up', 'explain',
 ]);
 
 /** Term selection is shared with chat: the model returns names, and local
@@ -2779,7 +2779,7 @@ export async function rewriteNodeWithEvidence(
   const node = project?.nodes[nodeId];
   if (!project || !node || !report.complete) return;
   const cur = node.versions[node.currentVersionIndex];
-  if (!cur || cur.createdAt !== report.versionCreatedAt) return;
+  if (!cur?.body.trim() || node.generating || cur.createdAt !== report.versionCreatedAt) return;
 
   const byUrl = new Map<string, NodeSource>();
   for (const unit of report.units) {
@@ -2816,6 +2816,7 @@ export async function rewriteNodeWithEvidence(
       evidenceReport,
       sourceCatalog,
       freeText: isExplainContentType(contentType),
+      answerChunking: contentType === 'answer' ? !!cur.chat?.informationChunking : undefined,
     },
     parentIdForContext: null,
     newVersionMeta: {
@@ -3155,121 +3156,6 @@ export function locateSection(body: string, target: ExpandPartTarget): { start: 
     if (i < endLine - 1) end += 1;
   }
   return { start, end };
-}
-
-// ───────────────────────────────────────────────────────────────────
-// Public API: "Pop selected" — extract a bullet into a new child node
-// ───────────────────────────────────────────────────────────────────
-
-/**
- * Split the WHOLE level-1 bullet at `index` (its title line through the line
- * before the next L1, or EOF) out of `body`. Returns the parent body with
- * that block removed (blank-line seams collapsed), plus the raw title line
- * and the raw child lines. Returns null if the index is out of range.
- *
- * NOTE: unlike `locateSection` (which for a bullet returns only the CHILDREN
- * range, excluding the title), this captures the title line too — that's what
- * "remove the whole bullet" requires.
- */
-export function splitOutBullet(body: string, index: number): {
-  newParentBody: string;
-  titleLine: string;
-  childLines: string[];
-} | null {
-  const lines = body.split('\n');
-  const l1: number[] = [];
-  for (let i = 0; i < lines.length; i++) if (L1_LINE_RE.test(lines[i]!)) l1.push(i);
-  const startLine = l1[index];
-  if (startLine === undefined) return null;
-  const endLine = l1[index + 1] ?? lines.length;   // exclusive
-  const block = lines.slice(startLine, endLine);
-  const titleLine = block[0] ?? '';
-  const childLines = block.slice(1).filter((l) => l.trim() !== '');
-  const remaining = [...lines.slice(0, startLine), ...lines.slice(endLine)];
-  const newParentBody = remaining.join('\n').replace(/\n{3,}/g, '\n\n').trim();
-  return { newParentBody, titleLine, childLines };
-}
-
-/** Strip a leading bullet marker (`- `, `* `, `+ `) from a line. */
-function stripBulletMarker(line: string): string {
-  return line.replace(/^\s*[-*+]\s+/, '').trim();
-}
-
-/** Derive a clean node header from a raw L1 bullet line. Prefers a leading
- *  **bold** term, else the text before a `: ` (name: desc convention), else
- *  the whole line with emphasis stripped. */
-function bulletTitleToHeader(titleLine: string): string {
-  const t = stripBulletMarker(titleLine);
-  let header: string;
-  const bold = t.match(/^\*\*(.+?)\*\*/);
-  if (bold) {
-    header = bold[1]!;
-  } else {
-    // Chip-aware: skip a colon that lives inside a [[chip]] (e.g.
-    // `[[2001: A Space Odyssey]]: ...`) and keep the `: ` (space) separator
-    // convention so titles like "Ratio 3:2" aren't split mid-number.
-    const colon = separatorColonIndex(t);
-    const isSep = colon > 0 && t[colon + 1] === ' ';
-    header = (isSep ? t.slice(0, colon) : t).replace(/\*\*/g, '');
-  }
-  // Strip clickable-reference marks so the header is plain text (e.g.
-  // `[[Photosynthesis]]` → `Photosynthesis`); the arrow label (= header)
-  // then matches the chip-term convention used for dedup.
-  return header.replace(/\[\[([^\]]+)\]\]/g, '$1').trim();
-}
-
-/** De-indent the popped bullet's level-2 children into a flat top-level
- *  markdown list (the seed body + the content the rework prompt regroups). */
-function childrenToFlatList(childLines: string[]): string {
-  return childLines
-    .map((l) => l.replace(L2_LINE_RE, '- '))
-    .join('\n');
-}
-
-/**
- * "Pop selected": extract the level-1 bullet at `bulletIndex` (with its
- * sub-points) from the parent into a NEW child node, then have the AI rework
- * it — a short opening paragraph plus the sub-points regrouped into ≥2 named
- * groups. The structural change (parent body edit + child + arrow + select)
- * lands as ONE undo entry via `popBulletToChild`; the streamed rework is
- * pause-excluded from history (see bgGen.updateGenNode), so undoing the pop
- * removes the whole child in a single step.
- */
-export async function popSelectedBullet(parentId: string, bulletIndex: number): Promise<string | null> {
-  try {
-    const proj = useGraphStore.getState().project;
-    if (!proj) return null;
-    const parent = proj.nodes[parentId];
-    if (!parent) return null;
-    const pv = parent.versions[parent.currentVersionIndex];
-    if (!pv) return null;
-    const split = splitOutBullet(pv.body, bulletIndex);
-    if (!split) return null;
-
-    const header = bulletTitleToHeader(split.titleLine);
-    const seedBody = childrenToFlatList(split.childLines);
-    const id = newId();
-    const child: ScatterNode = {
-      id, type: 'term-click',
-      position: spawnNearParent(parent, Object.values(proj.nodes)),
-      frozen: false,
-      groupId: parent.groupId,
-      // Seed with the extracted sub-points so the content survives even if
-      // generation fails; the rework stream replaces the body below.
-      versions: [{ header, body: seedBody, createdAt: Date.now(), generatedBy: 'term-click', contentType: 'encyclopedic' }],
-      currentVersionIndex: 0,
-    };
-    const arrow: Arrow = { id: newId(), fromNodeId: parentId, toNodeId: id, kind: 'auto', label: header };
-
-    useGraphStore.getState().popBulletToChild(parentId, split.newParentBody, child, arrow);
-    useGraphStore.getState().requestPanTo(id, parentId, 'newNodes');
-    // Pass-1 reworks PLAIN sub-points (chips stripped); pass-2 re-marks them.
-    await streamIntoVersion(id, { kind: 'pop-rework', title: header, bulletBody: stripChips(seedBody) }, parentId);
-    return id;
-  } catch (e) {
-    console.error('[scatter] popSelectedBullet failed:', e);
-    throw e;
-  }
 }
 
 /**
@@ -3702,7 +3588,7 @@ async function runPartialRewrite(
     // If pass 1 sees the existing chips it just echoes them and the dedicated
     // chip pass (pass 2, streamChipPass below) finds nothing left to mark —
     // yielding fewer terms. Feeding plain prose lets pass 2 do all the marking.
-    // Mirrors `modify`/`elaborate`/`pop-rework`, which already strip chips
+    // Mirrors `modify`/`elaborate`, which already strip chips
     // before pass 1.
     const promptMarkedBody = target.kind === 'selection'
       ? stripChips(beforeText)

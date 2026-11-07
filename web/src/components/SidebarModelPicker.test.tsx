@@ -41,6 +41,18 @@ describe('SidebarModelPicker web-search control', () => {
     expect(useSettingsStore.getState().activeModelRef?.model).toBe('model-b');
     expect(screen.getByRole('button', { name: 'Allow web search for generation' })).toBeDisabled();
   });
+  it('links to model settings when exactly one model is visible, even if an incompatible saved entry is hidden', () => {
+    vi.spyOn(useModelCatalogStore.getState(), 'refreshCatalog').mockResolvedValue([]);
+    const onManageModels = vi.fn();
+    useSettingsStore.setState({ providers: [{ id: 'one', preset: 'custom', apiKey: 'test', enabledModels: ['active', 'hidden'] }],
+      activeModelRef: { providerId: 'one', model: 'active' }, modelCompatibilityOverrides: {} });
+    render(<SidebarModelPicker onManageModels={onManageModels} />);
+    fireEvent.click(screen.getByRole('button', { name: 'active' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Models and generation' }));
+    expect(onManageModels).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: 'Models and generation' })).toBeNull();
+  });
+
   it('describes search as permission rather than a guarantee', () => {
     act(() => {
       useSettingsStore.setState({

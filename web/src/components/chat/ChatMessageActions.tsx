@@ -75,8 +75,8 @@ export const ChatAssistantActions = memo(function ChatAssistantActions({ nodeId,
   const report = version.factCheck?.pending ?? version.factCheck?.complete;
   const complete = version.factCheck?.complete;
   const canResume = useMemo(() => canResumeFactCheck(version), [version]);
-  const available = factCheckAvailability();
-  const canCheck = !generating && !!version.body.trim() && available.available;
+  const available = factCheckAvailability(version);
+  const canCheck = !generating && available.available;
   const check = (mode: 'new' | 'again' | 'continue') => {
     if (!canCheck) return;
     activateChatAnswer(nodeId, ref); setError('');

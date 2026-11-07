@@ -62,6 +62,22 @@ describe('NodeSidePanel explain actions', () => {
     vi.restoreAllMocks();
   });
 
+  it.each(['explain', 'encyclopedic'] as const)('enables fact-check only when the %s contains text', contentType => {
+    const saved = useSettingsStore.getState();
+    useSettingsStore.setState({providers: [{id: 'model', preset: 'openrouter', apiKey: 'test', enabledModels: ['google/gemini-3.8-flash']}],
+      activeModelRef: { providerId: 'model', model: 'google/gemini-3.8-flash' }});
+    try {
+      renderPanel(contentType);
+      const node = useGraphStore.getState().project!.nodes.n0!;
+      const version = node.versions[0]!;
+      const changeBody = (body: string) => act(() => useGraphStore.getState().updateNode(node.id, {versions: [{...version, body}]}));
+      changeBody('   ');
+      expect(screen.getByRole('button', {name: 'Fact-check'})).toBeDisabled();
+      changeBody('A claim to check.');
+      expect(screen.getByRole('button', {name: 'Fact-check'})).toBeEnabled();
+    } finally { act(() => useSettingsStore.setState(saved)); }
+  });
+
   it('shows exactly one Expand action and no bullet-specific actions', () => {
     renderPanel('explain');
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
@@ -78,7 +94,7 @@ describe('NodeSidePanel explain actions', () => {
     expect(document.querySelector('.side-disclosure-content button')).toBe(screen.getByRole('button', { name: 'Edit header' }));
     expect(screen.getByRole('button', { name: 'Expand whole' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Expand opening paragraph' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Extract bullet' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Extract bullet' })).toBeNull();
   });
 
   it('names the section action after the active bullet', () => {

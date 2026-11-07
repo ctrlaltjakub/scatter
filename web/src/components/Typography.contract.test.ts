@@ -38,7 +38,7 @@ describe('application typography contract', () => {
     }
   });
 
-  it('raises inline 11px Atkinson roles while retaining 11px monospace diagnostics', () => {
+  it('raises inline 11px Atkinson roles', () => {
     for (const relativePath of [
       'dev/PromptsEditor.tsx',
       'dev/BulletSizingSliders.tsx',
@@ -48,8 +48,5 @@ describe('application typography contract', () => {
       expect(source(relativePath), relativePath).not.toMatch(/fontSize:\s*11(?![\d.])/);
     }
 
-    const pixelRuler = source('dev/PixelRuler.tsx');
-    expect(pixelRuler.match(/fontSize:\s*11,/g)).toHaveLength(2);
-    expect(pixelRuler.match(/fontFamily:\s*'ui-monospace, "SF Mono", monospace'/g)).toHaveLength(2);
   });
 });

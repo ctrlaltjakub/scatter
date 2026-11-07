@@ -22,7 +22,6 @@ import { ProjectRestorationScreen } from '@/components/ProjectRestorationScreen'
 import { redoGraphHistory, undoGraphHistory } from '@/lib/graphHistoryActions';
 import { SettingsModal } from '@/components/SettingsModal';
 import type { SettingsPageId } from '@/components/settings/settingsNavigation';
-import { PixelRuler } from '@/components/dev/PixelRuler';
 import { DeviceWarning } from '@/components/DeviceWarning';
 import { ProjectFavicon } from '@/components/ProjectFavicon';
 import { Canvas } from '@/components/canvas/Canvas';
@@ -466,7 +465,7 @@ export default function Page() {
             suppressAuraLayer={holdRestorationForProject}
             sidebarCollapsed={effectiveSidebarCollapsed}
             sidebarPeeking={fullWindowSurfaceOpen ? false : peeking}
-            onOpenSettings={() => setSettingsOrigin('canvas')}
+            onOpenSettings={page => { setSettingsPage(page); setSettingsOrigin('canvas'); }}
             onReferenceClick={(parentId, term, opts) => {
               console.log('[scatter] reference clicked:', term, 'parent:', parentId);
               activateReference(parentId, term, opts);
@@ -484,7 +483,7 @@ export default function Page() {
       </div>
 
       {showWelcomeA && <WelcomeScreenA />}
-      {showWelcomeB && !holdRestorationForProject && <WelcomeScreenB onOpenSettings={() => setSettingsOrigin('picker')} settingsOpen={settingsOpen} />}
+      {showWelcomeB && !holdRestorationForProject && <WelcomeScreenB onOpenSettings={page => { setSettingsPage(page); setSettingsOrigin('picker'); }} settingsOpen={settingsOpen} />}
 
       {sourceManagerOpen && !showWelcomeB && (
         <SourceManager
@@ -504,11 +503,6 @@ export default function Page() {
       <SyncRemoteUpdateModal />
       <GoogleDriveReconnectModal />
 
-      {/* Dev pixel-measuring overlay (viewport variant — fixed to the
-          browser viewport, does NOT scale with canvas zoom). The
-          canvas-tracked variant is mounted inside Canvas.tsx. Both
-          read the same store flag and only the matching one renders. */}
-      <PixelRuler attachment="viewport" />
       <ScreenshotTool />
 
       {/* Steers usage toward desktop + landscape; blurs the app behind it. */}

@@ -1,4 +1,5 @@
 'use client';
+import type { SettingsPageId } from '@/components/settings/settingsNavigation';
 import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
 import { useGraphStore } from '@/store/useGraphStore';
 import { NodeView } from './NodeView';
@@ -15,7 +16,6 @@ import { useNodeMultiSelection, toggleNodeSelection } from './useNodeMultiSelect
 import { RelationHoverPreview } from './RelationHoverPreview';
 import { NodeOverviewController } from './NodeOverviewController';
 import { CanvasToolbar } from './CanvasToolbar';
-import { PixelRuler } from '@/components/dev/PixelRuler';
 import { PhysicsClient, type SizeWake, type NodeInsertion, type LinkInsertion, type PlacedNode } from '@/physics/physicsClient';
 import { useNodeBirthStore, birthIsPending } from '@/store/useNodeBirthStore';
 import { findNodePlacement } from '@/lib/nodePlacement';
@@ -140,7 +140,7 @@ interface Props {
   /** Sidebar is peeking open (transient hover reveal) — suppresses the
    *  top-right toolbar's duplicate model picker. */
   sidebarPeeking?: boolean;
-  onOpenSettings: () => void;
+  onOpenSettings: (page?: SettingsPageId) => void;
   onReferenceClick: (nodeId: string, term: string, opts: { withModifier: boolean }) => void;
   // The action wiring (ask/modify/edit/regen) used to live here but moved to
   // SidebarNodeActions. These remain so page.tsx's wiring stays explicit and
@@ -1376,9 +1376,6 @@ export function Canvas(props: Props) {
           term and selected-text relation on the canvas. */}
       <RelationHoverPreview containerRef={containerRef} />
       <CameraTransform>
-        {/* Canvas-tracked pixel ruler — pans/zooms with everything.
-            Renders only when pixelRulerMode === 'canvas'. */}
-        <PixelRuler attachment="canvas" />
         <ArrowLayer project={project} />
         {projectNodes
           .slice(0, props.progressiveStartup ? startupNodeLimit : projectNodes.length)

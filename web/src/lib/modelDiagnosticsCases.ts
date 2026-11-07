@@ -71,12 +71,12 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
     ['elaborate', 'Expand an encyclopedic node', { kind: 'elaborate', previousBody: DIAGNOSTIC_TEXT }, 'outline'],
     ['expand-section', 'Expand one section', { kind: 'expand-part', markedBody: DIAGNOSTIC_TEXT.replace('- Calculation\n  - Addition: Add all three side lengths.\n  - Units: Use the same unit for every side.', '<<<EXPAND>>>- Calculation\n  - Addition: Add all three side lengths.\n  - Units: Use the same unit for every side.<<<END>>>') }, 'fragment'],
     ['expand-explain', 'Expand an explanation', { kind: 'expand-part', mode: 'explain', markedBody: '<<<EXPAND>>>Perimeter is distance around a shape.<<<END>>>' }, 'prose'],
-    ['pop-bullet', 'Node from a bullet', { kind: 'pop-rework', title: 'Calculating perimeter', bulletBody: '- Addition: Add all sides.\n- Units: Use consistent units.' }, 'outline'],
     ['structure-repair', 'Repair an outline', { kind: 'restructure', previousBody: DIAGNOSTIC_TEXT.replaceAll('  - ', '- ') }, 'outline'],
     ['selection-edit', 'Modify selected text', { kind: 'modify-selection', markedBody: 'Perimeter is <<<SELECTED>>>distance around a shape<<<END_SELECTED>>>.', selectedText: 'distance around a shape', instruction: 'Give a precise definition.', mode: 'explain' }, 'fragment'],
     ['answer', 'Answer node / Markdown table', { kind: 'answer', instruction: 'Compare perimeter and area in a two-row Markdown table.', informationChunking: false }, 'table'],
     ['answer-chunking', 'Answer with information chunking', { kind: 'answer', instruction: 'Compare perimeter and area in a two-row Markdown table.', informationChunking: true }, 'table'],
     ['fact-rewrite', 'Evidence-guided correction', { kind: 'fact-rewrite', previousBody: 'A 3, 4, 5 cm triangle has perimeter 11 cm.', evidenceReport: 'Incorrect: the sum is 12 cm.', sourceCatalog: '⟪E1⟫: 3+4+5 = 12.', freeText: true }, 'prose'],
+    ['fact-rewrite-markdown', 'Evidence-guided Markdown correction', { kind: 'fact-rewrite', previousBody: '| Triangle | Perimeter |\n| --- | --- |\n| 3, 4, 5 cm | 11 cm |', evidenceReport: 'Incorrect: the perimeter is 12 cm. Keep the table.', sourceCatalog: '⟪E1⟫: 3+4+5 = 12.', answerChunking: false }, 'table'],
   ];
   for (const [id, label, variant, shape] of variants) cases.push({ id, label, role: 'main', kind: 'text', requests: 1,
     messages: buildMessages({ variant, context: variant.kind === 'root' ? { parent: null, grandparent: null } : context, maxLevel1: 2 })
@@ -86,7 +86,7 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
       if (shape === 'outline') validateEncyclopedicOutput(text);
       if (shape === 'prose') prose(text);
       if (shape === 'table') table(text);
-      if (id === 'fact-rewrite') assertDiagnostic(text.includes('12') && text.includes('⟪E1⟫'), 'The correction lost the fact or evidence marker.');
+      if (variant.kind === 'fact-rewrite') assertDiagnostic(text.includes('12') && text.includes('⟪E1⟫'), 'The correction lost the fact or evidence marker.');
       assertDiagnostic(!/<<<(?:EXPAND|END|SELECTED)/.test(text), 'Internal selection markers leaked into the answer.');
     } });
   for (const chunking of [false, true]) cases.push({ id: `chat-${chunking}`, label: `Chat · ${chunking ? 'information chunking' : 'normal'}`, role: 'main', kind: 'text', requests: 1,

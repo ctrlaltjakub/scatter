@@ -1,4 +1,5 @@
 'use client';
+import type { SettingsPageId } from '@/components/settings/settingsNavigation';
 import { useGraphStore } from '@/store/useGraphStore';
 import { useEditorStore } from '@/store/useEditorStore';
 import { useImageEditorStore } from '@/store/useImageEditorStore';
@@ -17,7 +18,7 @@ interface Props {
   /** While the sidebar is peeking open, its own model picker is visible, so
    *  we suppress the toolbar's duplicate. */
   peeking?: boolean;
-  onOpenSettings: () => void;
+  onOpenSettings: (page?: SettingsPageId) => void;
 }
 
 /**
@@ -47,11 +48,11 @@ export function CanvasToolbar({ containerRef, sidebarCollapsed, peeking, onOpenS
       <div className="canvas-toolbar">
         <NavActions
           containerRef={containerRef}
-          onOpenSettings={onOpenSettings}
+          onOpenSettings={() => onOpenSettings()}
         />
       </div>
       {/* Active-model switcher as the second row of the same panel. */}
-      <SidebarModelPicker placement="down" variant="toolbar" />
+      <SidebarModelPicker placement="down" variant="toolbar" onManageModels={() => onOpenSettings('models')} />
       <SourceControls />
     </div>
   );

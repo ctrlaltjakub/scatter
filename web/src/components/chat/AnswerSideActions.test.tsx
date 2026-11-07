@@ -39,6 +39,19 @@ describe('answer-specific controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show fact-check results' }));
     expect(screen.getByRole('button', { name: current ? 'Continue check' : 'Check again' })).toBeInTheDocument();
   });
+  it.each([true, false])('offers evidence rewrites only after a complete report (Markdown note: %s)', markdownNote => {
+    const node = setup();
+    const version = node.versions[0]!;
+    version.markdownNote = markdownNote;
+    version.factCheck = { complete: { schemaVersion: 1, bodyFingerprint: factCheckBodyFingerprint(version),
+      versionCreatedAt: version.createdAt, providerId: 'demo', model: 'example', startedAt: 1, complete: true, failedUnitIds: [], units: [] } };
+    const { rerender } = render(<AnswerSideActions node={node} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show fact-check results' }));
+    expect(screen.getByRole('button', { name: 'Rewrite with evidence' })).toBeEnabled();
+    version.factCheck.pending = { ...version.factCheck.complete!, complete: false };
+    rerender(<AnswerSideActions node={{...node}} />);
+    expect(screen.getByRole('button', { name: 'Rewrite with evidence' })).toBeDisabled();
+  });
   it('offers versions, rich editing and images without conversation-only actions or a panel copy button', () => {
     const node = setup();
     const { container } = render(<AnswerSideActions node={node} />);

@@ -38,21 +38,6 @@ interface SettingsState extends Settings {
    */
   forceWelcomeA: boolean;
   /**
-   * Dev overlay. When non-'off', draws a semi-transparent pixel-
-   * measuring grid (100 px major lines + numeric labels, 10 px minor
-   * lines). Two attachment modes:
-   *   - 'viewport': grid is fixed to the browser viewport. Does NOT
-   *     scale with canvas zoom — labels stay readable but they measure
-   *     viewport pixels, not canvas coordinates.
-   *   - 'canvas': grid lives inside the canvas-world and pans/zooms
-   *     with everything else. Labels measure canvas-coordinate pixels.
-   *     At deep zooms the grid spacing shrinks/grows visually but the
-   *     label numbers remain canvas pixels (so a node that's 624 px
-   *     wide always spans 624 grid-pixels regardless of zoom).
-   * Not persisted.
-   */
-  pixelRulerMode: 'off' | 'viewport' | 'canvas';
-  /**
    * Ephemeral dev flag — when true, the interactive-background chooser behaves as
    * if WebGL2 were unavailable, so the "interactive background off" notice can be
    * previewed on hardware that supports WebGL2. Not persisted (resets on reload).
@@ -114,7 +99,6 @@ interface SettingsState extends Settings {
   setInteractiveModel: (providerId: string, model: string) => void;
   setInteractiveModelAuto: () => void;
   setForceWelcomeA: (v: boolean) => void;
-  setPixelRulerMode: (mode: 'off' | 'viewport' | 'canvas') => void;
   setSimulateWebglFailure: (v: boolean) => void;
 
   setPhysicsConfig: (patch: Partial<PhysicsConfig>) => void;
@@ -191,7 +175,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
   hydrated: false,
   forceWelcomeA: false,
-  pixelRulerMode: 'off',
   simulateWebglFailure: false,
   hydrate: async () => {
     const loaded = await loadSettings();
@@ -218,7 +201,6 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     set(clean);
   },
   setForceWelcomeA: (v) => set({ forceWelcomeA: v }),
-  setPixelRulerMode: (mode) => set({ pixelRulerMode: mode }),
   setSimulateWebglFailure: (v) => set({ simulateWebglFailure: v }),
   addProvider: (preset) => {
     const existing = isSingleConnectionProvider(preset) && get().providers.find((p) => p.preset === preset);

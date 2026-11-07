@@ -4,7 +4,7 @@ import {
   ChevronsUpDown, ListChevronsUpDown,
   FileText, Palette,
   Trash, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, ListRestart,
-  SquareArrowOutUpRight, ImagePlus, SquarePen,
+  ImagePlus, SquarePen,
   Sparkles, TriangleAlert, DollarSign,
   Check, SearchCheck, CheckCheck, SpellCheck, Square,
   Images,
@@ -25,7 +25,7 @@ import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import { useActiveIdxStore } from '@/store/useActiveIdxStore';
 import { useActiveRecords, targetsEqual } from '@/store/useRewriteStore';
 import {
-  elaborateNode, expandPart, regenerateNode, popSelectedBullet, redoTermMarking,
+  elaborateNode, expandPart, regenerateNode, redoTermMarking,
   cancelNodeGeneration, cancelNodeGenerationCascade,
   rewriteNodeWithEvidence,
   retypeNodeToText,
@@ -113,7 +113,7 @@ function NodeSidePanelStack({ panelRef, style, snippets, disclosure, children }:
  *     (freetext when collapsed or no active bullet; the active
  *     bullet's L2 children otherwise)
  *   - "Edit" disclosure — opens the full-window article editor and exposes
- *     expansion/extraction actions
+ *     expansion actions
  *   - "Group" — visual grouping (not wired)
  *   - "Pin / Unpin" — freeze the node against physics
  *
@@ -307,15 +307,18 @@ export function NodeSidePanel() {
   const factReport = factState?.pending ?? factState?.complete;
   const hasFactCheck = !!factReport;
   const factIncomplete = !!factState?.pending && !factState.pending.complete;
-  const factAvailable = factCheckAvailability();
+  const factAvailable = factCheckAvailability(v);
   const displayedVersionGenerating = !!node.generating
     && (node.generatingVersionIndex == null
       || node.generatingVersionIndex === node.currentVersionIndex);
+  const evidenceRewriteDisabled = !!factTaskRunning || factIncomplete || !factState?.complete
+    || !!node.generating || !v.body.trim();
   // Manual browsing never depends on a provider key or vision capability.
   const imageDisclosureDisabled = !imageRecommendationSet && displayedVersionGenerating;
   const imageSearchAvailable = wikimediaSearchAvailability();
   const imageRedoDisabled = !!wikimediaTask?.running || displayedVersionGenerating || !v.body.trim() || !imageSearchAvailable.available;
   const beginFactCheck = (mode: 'new' | 'again' | 'continue') => {
+    if (!factAvailable.available || displayedVersionGenerating) return;
     setOpenSection('fact');
     void startFactCheck(node.id, mode).catch((error) => {
       console.error('[scatter] fact check failed to start', error);
@@ -383,14 +386,6 @@ export function NodeSidePanel() {
     (r) => r.kind === 'partial' && targetsEqual(r.target, expandTarget),
   );
   const expandSelectedDisabled = emptyText || wholeRunning || samePartialRunning;
-
-  // "Pop selected" — only when a bullet is selected AND expanded (activeIdx
-  // set, bullets not collapsed) and no whole-body rewrite is in flight.
-  const popDisabled = bulletsCollapsed || activeIdx === null || wholeRunning;
-  const onPopSelected = () => {
-    if (activeIdx === null) return;
-    void popSelectedBullet(node.id, activeIdx);
-  };
 
   // C.8 — Group color cascade for the side panel. The panel lives
   // outside the .node DOM tree so the inline-var cascade from
@@ -657,7 +652,7 @@ export function NodeSidePanel() {
           type="button"
           className={'side-action side-disclosure-trigger' + (openSection === 'text' ? ' toggled' : '')}
           onClick={() => toggleSection('text')}
-          data-tip="Edit, expand, or extract this node's text"
+          data-tip="Edit or expand this node's text"
           aria-expanded={openSection === 'text'}
           aria-controls={`node-text-tools-${node.id}`}
           aria-label="Edit"
@@ -735,26 +730,6 @@ export function NodeSidePanel() {
           {expandSelectedLabel}
         </button>
 
-        {/* "Pop selected" — lifts the selected+expanded bullet (with its
-            sub-points) out into a new child node, then the AI reworks it
-            (opening paragraph + sub-points regrouped into ≥2 named groups).
-            One undo press reverses the whole thing. */}
-        <button
-          type="button"
-          className="side-action"
-          onClick={onPopSelected}
-          disabled={popDisabled}
-          data-tip={
-            wholeRunning
-              ? 'Whole-body rewrite in progress'
-              : popDisabled
-                ? 'Select and expand a bullet to extract it'
-                : `Extract the selected bullet (#${(activeIdx ?? 0) + 1}) into its own node`
-          }
-        >
-          <span className="side-action-icon"><SquareArrowOutUpRight size={15} /></span>
-          Extract bullet
-        </button>
         </>}
 
         {node.type !== 'root' && <button
@@ -836,6 +811,7 @@ export function NodeSidePanel() {
                 <button
                   type="button"
                   className="side-action"
+                  disabled={!factTaskRunning && (!factAvailable.available || displayedVersionGenerating)}
                   onClick={() => {
                     if (factTaskRunning) stopFactCheck(node.id, v.createdAt);
                     else beginFactCheck(canResume ? 'continue' : 'again');
@@ -857,14 +833,10 @@ export function NodeSidePanel() {
                 </button>
                 <button
                   type="button"
-                  className={'side-action' + (
-                    factTaskRunning || factIncomplete || !factState?.complete
-                      ? ' side-action--disabled'
-                      : ''
-                  )}
-                  aria-disabled={factTaskRunning || factIncomplete || !factState?.complete}
+                  className="side-action"
+                  disabled={evidenceRewriteDisabled}
                   onClick={() => {
-                    if (!factTaskRunning && !factIncomplete && factState?.complete) {
+                    if (!evidenceRewriteDisabled && factState?.complete) {
                       void rewriteNodeWithEvidence(node.id, factState.complete);
                     }
                   }}
@@ -964,15 +936,9 @@ export function NodeSidePanel() {
         {!hasFactCheck && (
           <button
             type="button"
-            className={'side-action' + (
-              emptyText || !factAvailable.available || displayedVersionGenerating
-                ? ' side-action--disabled'
-                : ''
-            )}
-            aria-disabled={emptyText || !factAvailable.available || displayedVersionGenerating}
-            onClick={() => {
-              if (!emptyText && factAvailable.available && !displayedVersionGenerating) beginFactCheck('new');
-            }}
+            className="side-action"
+            disabled={!factAvailable.available || displayedVersionGenerating}
+            onClick={() => beginFactCheck('new')}
             data-tip={displayedVersionGenerating
               ? 'Wait until this displayed version finishes generating.'
               : factAvailable.reason ?? 'Search the web for evidence about every factual passage'}

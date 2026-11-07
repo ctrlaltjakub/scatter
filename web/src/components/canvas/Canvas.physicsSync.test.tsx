@@ -113,9 +113,6 @@ vi.mock('./NodeCitationsPanel', () => ({
   rightPanelFallbackWidth: () => 372,
 }));
 
-vi.mock('@/components/dev/PixelRuler', () => ({
-  PixelRuler: () => null,
-}));
 
 const noop = () => {};
 

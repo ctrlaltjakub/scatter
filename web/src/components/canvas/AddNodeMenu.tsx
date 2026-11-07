@@ -32,11 +32,11 @@ export function AddNodeMenu({ nodeId }: { nodeId: string }) {
     <AnimatedCollapse open={open} id={`add-node-${nodeId}`}><div className="side-disclosure-content">
       {([
         ['chat', 'Chat', MessageSquarePlus, 'Start a connected chat using this node as context'],
-        ['media', 'Image or video', ImagePlus, 'Add a connected media node to upload, link or generate an image, GIF or video'],
         ['encyclopedic', 'Encyclopedic node', BookOpen, 'Add an empty connected node for a structured topic overview'],
         ['explain', 'Explanation', CircleHelp, 'Add an empty connected node for a focused explanation'],
-        ['interactive', 'Interactive node', SquareMousePointer, 'Add an empty connected node for an interactive explanation. Higher costs compared to the text or image nodes.'],
         ['note', 'Markdown text node', FilePenLine, 'Add an empty connected text node to write and format yourself'],
+        ['media', 'Image or video', ImagePlus, 'Add a connected media node to upload, link or generate an image, GIF or video'],
+        ['interactive', 'Interactive node', SquareMousePointer, 'Add an empty connected node for an interactive explanation. Higher costs compared to the text or image nodes.'],
       ] as const).map(([kind, label, Icon, tip]) => <button key={kind} type="button" className="side-action" data-tip={tip} onClick={() => add(kind)}>
         <span className="side-action-icon"><Icon size={15} /></span>{label}
         {kind === 'interactive' && <span className="interactive-cost-icons" aria-hidden="true"><TriangleAlert size={13} /><DollarSign size={13} /></span>}

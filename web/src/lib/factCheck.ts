@@ -293,7 +293,8 @@ async function runStage(
   }));
 }
 
-export function factCheckAvailability(): { available: boolean; reason?: string } {
+export function factCheckAvailability(version: Pick<NodeVersion, 'body'>): { available: boolean; reason?: string } {
+  if (!version.body.trim()) return { available: false, reason: 'Add text before running a fact-check.' };
   const settings = useSettingsStore.getState();
   const provider = getActiveProvider(settings);
   const model = settings.activeModelRef?.model;
@@ -347,8 +348,8 @@ export async function startFactCheck(
   const node = project?.nodes[nodeId];
   if (!project || !node) return;
   const version = node.versions[node.currentVersionIndex];
-  if (!version || version.contentType === 'media' || version.media) return;
-  const availability = factCheckAvailability();
+  if (!version?.body.trim() || version.contentType === 'media' || version.media) return;
+  const availability = factCheckAvailability(version);
   if (!availability.available) throw new Error(availability.reason);
 
   const fingerprint = factCheckBodyFingerprint(version);
