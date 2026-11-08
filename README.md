@@ -197,7 +197,7 @@ This makes the app **source-available, not open source** under the [Open Source 
 
 I’m **Jakub Fleites-Jonczyk**. I’m originally from **Poland** and now live in **Germany**, where I’m in my fifth year of **psychiatry residency**. In my spare time, I build web apps and other things. I have **ADHD** and built this app so I could **study** in a way that works for me.
 
-My **residency** takes up most of my week. If you find the app **useful**, **supporting me on Ko-fi** would help me set aside more time to work on it.
+My **residency** takes up most of my week. If you find the app **useful**, **a tip on Ko-fi** could help me spend more time working on it—or at least cover the hosting bill.
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/G2G4104TZU)
 
