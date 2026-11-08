@@ -178,7 +178,7 @@ test('simple headers edit seamlessly from every side panel and save on outside c
   await start(page);
   for (const kind of ['media', 'encyclopedic', 'chat', 'answer', 'interactive']) {
     await seed(page, kind);
-    if (kind === 'encyclopedic') {
+    if (kind === 'encyclopedic' || kind === 'answer') {
       await page.getByRole('button', { name: 'Edit', exact: true }).click();
       await expect(page.locator(`#node-text-tools-${kind} button`).first()).toHaveText('Edit header');
     }

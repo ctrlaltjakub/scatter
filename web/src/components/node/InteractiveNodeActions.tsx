@@ -44,8 +44,8 @@ export function InteractiveNodeActions({ node, isRoot }: { node: ScatterNode; is
       </div>
     </div>
     <AddNodeMenu nodeId={node.id}/>
-    <ChatPanelGroup node={node}/>
     <EditHeaderButton node={node}/>
+    <ChatPanelGroup node={node}/>
     <button type="button" className="side-action" disabled={!ready||busy} onClick={()=>useInteractiveViewerStore.getState().openViewer(node.id,node.currentVersionIndex)}>
       <span className="side-action-icon"><Maximize size={15}/></span>Open enlarged
     </button>

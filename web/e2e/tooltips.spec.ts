@@ -121,6 +121,7 @@ test('text editor buttons and keyboard focus use the same tooltips without steal
   test.setTimeout(60_000);
   await seed(page);
   await page.evaluate(() => (window as any).testExport('useLiveViewportStore').getState().setZoom(0.5));
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
   await page.getByRole('button', { name: 'Edit or export text' }).click();
   const editor = page.locator('.text-editor-stage');
   await expect(editor).toBeVisible();

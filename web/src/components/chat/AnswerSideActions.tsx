@@ -1,6 +1,6 @@
 'use client';
 import { useMemo, useState } from 'react';
-import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, FileText, ListRestart, SearchCheck, SpellCheck, Square, Trash } from 'lucide-react';
+import { Check, CheckCheck, ChevronDown, ChevronLeft, ChevronRight, ListRestart, SearchCheck, SpellCheck, Square, Trash } from 'lucide-react';
 import type { ScatterNode } from '@/store/types';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { factCheckTaskKey, useFactCheckTaskStore } from '@/store/useFactCheckTaskStore';
@@ -12,22 +12,20 @@ import { useNodeStatusStore } from '@/store/useNodeStatusStore';
 import { useChatRuntimeStore } from '@/store/useChatRuntimeStore';
 import { redoTermMarking, cancelNodeGeneration, rewriteNodeWithEvidence } from '@/lib/generate';
 import { AddNodeMenu } from '@/components/canvas/AddNodeMenu';
+import { NodeTextEditMenu } from '@/components/canvas/NodeTextEditMenu';
 import { ChatPanelGroup } from './ChatPanelControls';
 import { VersionCounter } from '@/components/VersionCounter';
 import { useGraphStore } from '@/store/useGraphStore';
 import { removeNodeVersion } from '@/lib/nodeVersions';
-import { useEditorStore } from '@/store/useEditorStore';
 import { AnswerImageActions } from './AnswerImageActions';
 import { AnimatedCollapse } from '../AnimatedCollapse';
 import { useSidePanelDisclosure } from '../canvas/SidePanelDisclosure';
-import { EditHeaderButton } from '../node/EditHeaderButton';
 import { answerEnrichmentError } from '@/lib/chat/sharedEnrichment';
 import { redoChatTerms } from '@/lib/chat/enrichment';
 import { AddToProjectSourcesButton } from '../node/AddToProjectSourcesButton';
 
 export function AnswerSideActions({ node }: { node: ScatterNode }) {
   const [error, setError] = useState('');
-  const [editOpen, setEditOpen] = useSidePanelDisclosure('text');
   const [, setFactOpen] = useSidePanelDisclosure('fact');
   const version = node.versions[node.currentVersionIndex]!;
   const displayedGenerating = !!node.generating
@@ -67,9 +65,6 @@ export function AnswerSideActions({ node }: { node: ScatterNode }) {
       if (patch) useGraphStore.getState().updateNode(node.id, patch);
     }
   };
-  const editTextAction = <button type="button" className="side-action" onClick={() => useEditorStore.getState().openEditor(node.id)}>
-    <span className="side-action-icon"><FileText size={15} /></span>Edit or export text
-  </button>;
   return <div className="side-panel-content answer-side-actions">
     <div className="versions-row">
       <div className="versions-row-cluster">
@@ -87,38 +82,25 @@ export function AnswerSideActions({ node }: { node: ScatterNode }) {
       </div>
     </div>
     <AddNodeMenu key={node.id} nodeId={node.id} />
-    {version.markdownNote ? <>
-      <button type="button" className={`side-action side-disclosure-trigger${editOpen ? ' toggled' : ''}`}
-        aria-expanded={editOpen} aria-controls={`node-text-tools-${node.id}`}
-        data-tip="Edit the header, or edit and export this node's text" onClick={() => setEditOpen(!editOpen)}>
-        <span className="side-action-icon"><FileText size={15} /></span>
-        <span className="side-action-label">Edit</span>
-        <span className="side-disclosure-chevron"><ChevronRight size={14} className="sc-collapse-chevron"
-          style={{ transform: editOpen ? 'rotate(90deg)' : undefined }} /></span>
-      </button>
-      <AnimatedCollapse open={editOpen} id={`node-text-tools-${node.id}`}>
-        <div className="side-disclosure-content">
-          <EditHeaderButton node={node} />
-          {editTextAction}
-        </div>
-      </AnimatedCollapse>
-    </> : <EditHeaderButton node={node} />}
-    <AddToProjectSourcesButton version={version} disabled={!!node.generating} />
+    <NodeTextEditMenu node={node} />
     <ChatPanelGroup node={node} />
-    {report && <button type="button" className={`side-action side-disclosure-trigger${showing ? ' toggled' : ''}`}
-      disabled={!report && !available.available} aria-expanded={!!report && showing}
-      data-tip={report ? 'Show or hide the evidence for this answer' : available.reason ?? 'Check this answer against web sources'}
+    <AnswerImageActions node={node} />
+    {report ? <button type="button" className={`side-action side-disclosure-trigger${showing ? ' toggled' : ''}`}
+      aria-expanded={showing} aria-controls={`node-fact-tools-${node.id}`}
+      data-tip="Show or hide the evidence for this answer"
       onClick={() => {
         setFactOpen(!showing);
-        if (!report) check('new');
-        else if (showing) useCitationPanelStore.getState().close();
+        if (showing) useCitationPanelStore.getState().close();
         else useCitationPanelStore.getState().openFact(node.id, version.createdAt);
       }}>
-      <span className="side-action-icon">{report ? <SearchCheck size={15} /> : <Check size={15} />}</span>
-      <span className="side-action-label">{report ? `${showing ? 'Hide' : 'Show'} fact-check results` : 'Fact-check'}</span>
-      {report && <span className="side-disclosure-chevron">{showing ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>}
+      <span className="side-action-icon"><SearchCheck size={15} /></span>
+      <span className="side-action-label">{showing ? 'Hide' : 'Show'} fact-check results</span>
+      <span className="side-disclosure-chevron">{showing ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</span>
+    </button> : <button type="button" className="side-action" disabled={!canCheck}
+      data-tip={available.reason ?? 'Check this answer against web sources'} onClick={() => check('new')}>
+      <span className="side-action-icon"><Check size={15} /></span>Fact-check
     </button>}
-    <AnimatedCollapse open={!!showing && !!report}><div className="side-disclosure-content">
+    <AnimatedCollapse open={showing && !!report} id={`node-fact-tools-${node.id}`}><div className="side-disclosure-content">
       <button type="button" className="side-action" disabled={!checking && !canCheck}
         onClick={() => checking ? stopFactCheck(node.id, version.createdAt) : check(canResume ? 'continue' : 'again')}>
         <span className="side-action-icon">{checking ? <Square size={15} /> : <CheckCheck size={15} />}</span>
@@ -130,12 +112,7 @@ export function AnswerSideActions({ node }: { node: ScatterNode }) {
         <span className="side-action-icon"><SpellCheck size={15} /></span>Rewrite with evidence
       </button>
     </div></AnimatedCollapse>
-    <AnswerImageActions node={node} />
-    {!report && <button type="button" className="side-action" disabled={!canCheck}
-      data-tip={available.reason ?? 'Check this answer against web sources'} onClick={() => check('new')}>
-      <span className="side-action-icon"><Check size={15} /></span>Fact-check
-    </button>}
-    {!version.markdownNote && editTextAction}
+    <AddToProjectSourcesButton version={version} disabled={!!node.generating} />
     {(error || termError) && <p className="chat-composer-error" role="status">{error || termError}</p>}
   </div>;
 }

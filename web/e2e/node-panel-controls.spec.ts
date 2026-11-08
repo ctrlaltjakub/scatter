@@ -98,6 +98,11 @@ test('side panel ordering, Markdown editing, and quiet chunking state in both th
       await expect(add).toBeVisible();
       await expect(add).toHaveClass(/side-action-add-node/);
       expect(await panel.locator('.versions-row').evaluate(el => el.nextElementSibling?.textContent)).toBe('Add node');
+      const textPanel = ['markdown', 'answer', 'encyclopedic', 'explain'].includes(kind);
+      const prefix = textPanel ? ['Add node', 'Edit', 'Group', 'Search for free images', 'Fact-check']
+        : ['Add node', 'Edit header', 'Group'];
+      const actions = panel.locator(':scope > button.side-action');
+      for (const [i, label] of prefix.entries()) await expect(actions.nth(i)).toHaveAccessibleName(label);
       expect(Number(await add.evaluate(el => getComputedStyle(el).fontWeight))).toBeGreaterThanOrEqual(600);
       expect(await add.evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
       expect(await add.locator('.side-action-icon').evaluate(el => getComputedStyle(el).color))
@@ -121,15 +126,19 @@ test('side panel ordering, Markdown editing, and quiet chunking state in both th
         await chunking.click();
         await page.mouse.move(1450, 1050);
       }
-      if (kind === 'markdown') {
+      if (kind === 'markdown' || kind === 'answer') {
         const edit = panel.getByRole('button', { name: 'Edit', exact: true });
         expect(await add.evaluate(el => el.nextElementSibling?.textContent)).toBe('Edit');
         await add.click();
         await expect(panel.getByRole('button', { name: 'Chat', exact: true })).toBeVisible();
-        await edit.click();
+        await edit.focus();
+        await page.keyboard.press('Enter');
         await expect(add).toHaveAttribute('aria-expanded', 'false');
-        await expect(panel.getByRole('button', { name: 'Edit header', exact: true })).toBeVisible();
-        await expect(panel.getByRole('button', { name: 'Edit or export text' })).toBeVisible();
+        await expect(edit).toHaveAttribute('aria-expanded', 'true');
+        await page.keyboard.press('Tab');
+        await expect(panel.getByRole('button', { name: 'Edit header', exact: true })).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(panel.getByRole('button', { name: 'Edit or export text' })).toBeFocused();
         await page.mouse.move(1450, 1050);
       }
       if (kind === 'explain') {

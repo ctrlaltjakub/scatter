@@ -61,8 +61,7 @@ describe('answer-specific controls', () => {
     expect(screen.queryByRole('button', { name: /Compact|Information chunking|History|Fork|Expand|^Copy$/ })).toBeNull();
     expect(screen.getByRole('button', { name: 'Search for free images' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Show sources' })).not.toBeInTheDocument();
-    expect(container.querySelector('.answer-side-actions')?.lastElementChild)
-      .toBe(screen.getByRole('button', { name: 'Edit or export text' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
     fireEvent.click(screen.getByRole('button', { name: 'Edit or export text' }));
     expect(useEditorStore.getState()).toMatchObject({ nodeId: node.id, open: true });
   });
@@ -73,9 +72,9 @@ describe('answer-specific controls', () => {
       expect(screen.getByRole('button', { name })).toHaveAttribute('data-tip', expect.stringMatching(/.+/));
   });
 
-  it('groups Markdown editing below Add node without changing its actions or undo history', () => {
+  it.each(['manual', 'copied answer'])('groups %s Markdown editing without changing its actions or undo history', origin => {
     const node = setup();
-    node.versions[0]!.markdownNote = true;
+    if (origin === 'manual') Object.assign(node.versions[0]!, { markdownNote: true, body: '' });
     const { container } = render(<AnswerSideActions node={node} />);
     const iconRow = container.querySelector('.versions-row');
     expect(container.querySelector('.answer-side-actions')?.firstElementChild).toBe(iconRow);
@@ -89,6 +88,7 @@ describe('answer-specific controls', () => {
     expect(dropdown).toHaveAttribute('aria-expanded', 'true');
     const header = screen.getByRole('button', { name: 'Edit header' });
     const edit = screen.getByRole('button', { name: 'Edit or export text' });
+    expect(edit).toBeEnabled();
     expect(header.nextElementSibling).toBe(edit);
     fireEvent.click(header);
     expect(useChatRuntimeStore.getState().views[node.id]?.titleEditNonce).toBe(1);

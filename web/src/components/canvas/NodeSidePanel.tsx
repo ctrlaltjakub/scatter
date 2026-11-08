@@ -2,7 +2,7 @@
 import { VersionCounter } from '@/components/VersionCounter';
 import {
   ChevronsUpDown, ListChevronsUpDown,
-  FileText, Palette,
+  Palette,
   Trash, ChevronLeft, ChevronRight, ChevronDown, RotateCcw, ListRestart,
   ImagePlus, SquarePen,
   Sparkles, TriangleAlert, DollarSign,
@@ -17,7 +17,6 @@ import { useGraphStore } from '@/store/useGraphStore';
 import { removeNodeVersion } from '@/lib/nodeVersions';
 import { useNodeBirthStore } from '@/store/useNodeBirthStore';
 import { useNodeEntranceStyle } from '@/lib/nodeEntrance';
-import { useEditorStore } from '@/store/useEditorStore';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { colorToCss } from '@/lib/groupColor';
 import { useLivePositionsStore } from '@/store/useLivePositionsStore';
@@ -62,6 +61,7 @@ import { collectAutomaticBranchNodeIds } from '@/lib/projectBranch';
 import { ChatSideActions } from '@/components/chat/ChatSideActions';
 import { AnswerSideActions } from '@/components/chat/AnswerSideActions';
 import { AddNodeMenu } from './AddNodeMenu';
+import { NodeTextEditMenu } from './NodeTextEditMenu';
 import { isEmptyTextNode } from '@/lib/emptyNodes';
 import { GoogleSearchSuggestions } from '@/components/node/GoogleSearchSuggestions';
 import { AnimatedCollapse } from '../AnimatedCollapse';
@@ -141,7 +141,6 @@ export function NodeSidePanel() {
   const assignNodeToGroup = useGraphStore((s) => s.assignNodeToGroup);
   const assignSubtreeToGroup = useGraphStore((s) => s.assignSubtreeToGroup);
   const createGroupFromNode = useGraphStore((s) => s.createGroupFromNode);
-  const openEditor = useEditorStore((s) => s.openEditor);
 
   const [openSection, setOpenSection] = useState<SidePanelSection | null>(null);
   const [creatingBranchProject, setCreatingBranchProject] = useState(false);
@@ -410,15 +409,6 @@ export function NodeSidePanel() {
     project.nodes,
     project.arrows,
   );
-  const toggleSection = (section: 'text' | 'group' | 'fact') => {
-    if (
-      (openSection === 'wikimedia' && wikimediaPanelOpen)
-      || (openSection === 'fact' && factPanelOpen)
-    ) {
-      useCitationPanelStore.getState().close();
-    }
-    setOpenSection((current) => current === section ? null : section);
-  };
   let panelStyle: React.CSSProperties | undefined;
   if (groupColor) {
     // E.2 — panel BASE stays the translucent white from globals.css;
@@ -446,6 +436,7 @@ export function NodeSidePanel() {
         || (panel.mode === 'wikimedia' && section !== 'wikimedia'))) panel.close();
       setOpenSection(section);
     } } };
+  const toggleGroup = () => panelProps.disclosure.setOpen(openSection === 'group' ? null : 'group');
 
   if (node.chat) return <NodeSidePanelStack {...panelProps}>
     <ChatSideActions key={node.id} node={node} />
@@ -515,11 +506,12 @@ export function NodeSidePanel() {
           </div>
 
           <AddNodeMenu key={node.id} nodeId={node.id} />
+          <EditHeaderButton node={node} />
 
           <button
             type="button"
             className={'side-action side-disclosure-trigger' + (openSection === 'group' ? ' toggled' : '')}
-            onClick={() => toggleSection('group')}
+            onClick={toggleGroup}
             data-tip="Assign this node to a group, or create a new one"
             aria-expanded={openSection === 'group'}
             aria-controls={`node-group-tools-${node.id}`}
@@ -546,8 +538,6 @@ export function NodeSidePanel() {
               />
             </div>
           </AnimatedCollapse>
-
-          <EditHeaderButton node={node} />
 
           {v.media && isEditableImageMedia(v.media) && (() => {
             const gif = isGifMedia(v.media);
@@ -648,109 +638,81 @@ export function NodeSidePanel() {
 
         <AddNodeMenu key={node.id} nodeId={node.id} />
 
-        <button
-          type="button"
-          className={'side-action side-disclosure-trigger' + (openSection === 'text' ? ' toggled' : '')}
-          onClick={() => toggleSection('text')}
-          data-tip="Edit or expand this node's text"
-          aria-expanded={openSection === 'text'}
-          aria-controls={`node-text-tools-${node.id}`}
-          aria-label="Edit"
-        >
-          <span className="side-action-icon"><FileText size={15} /></span>
-          <span className="side-action-label">Edit</span>
-          <span className="side-disclosure-chevron">
-            {openSection === 'text' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </span>
-        </button>
-
-        <AnimatedCollapse open={openSection === 'text'}><div id={`node-text-tools-${node.id}`} className="side-disclosure-content">
-        <EditHeaderButton node={node} />
-        <button
-          type="button"
-          className="side-action"
-          onClick={() => openEditor(node.id)}
-          disabled={emptyText}
-        >
-          <span className="side-action-icon"><FileText size={15} /></span>
-          Edit or export text
-        </button>
-        {isExplain ? (
+        <NodeTextEditMenu node={node} editorDisabled={emptyText}>
+          {isExplain ? (
+            <button
+              type="button"
+              className="side-action"
+              onClick={() => void expandPart(node.id, { kind: 'freetext' })}
+              disabled={expandSelectedDisabled}
+              data-tip={wholeRunning || samePartialRunning
+                ? 'This explanation is already being expanded'
+                : 'Expand this explanation with more detail'}
+            >
+              <span className="side-action-icon"><ChevronsUpDown size={15} /></span>
+              Expand
+            </button>
+          ) : <>
+          {/* "Expand whole" — calls elaborateNode, which streams an
+              extended version of the entire body. ListChevronsUpDown
+              icon signals "many sections at once." */}
           <button
             type="button"
             className="side-action"
-            onClick={() => void expandPart(node.id, { kind: 'freetext' })}
+            onClick={() => void elaborateNode(node.id)}
+            disabled={emptyText}
+            data-tip="Extend the whole body with more detail"
+          >
+            <span className="side-action-icon"><ListChevronsUpDown size={15} /></span>
+            Expand whole
+          </button>
+
+          {/* "Expand selected" — calls expandPart on the active
+              section. ChevronsUpDown (plain) marks it as the
+              single-section variant of Expand-whole. Target picked
+              from bulletsCollapsed + activeIdx as documented in
+              onExpandSelected. Disabled while a whole rewrite is in
+              flight (no partials allowed) or while THIS section is
+              already being expand-part'd. */}
+          <button
+            type="button"
+            className="side-action"
+            onClick={onExpandSelected}
             disabled={expandSelectedDisabled}
-            data-tip={wholeRunning || samePartialRunning
-              ? 'This explanation is already being expanded'
-              : 'Expand this explanation with more detail'}
+            aria-label={expandSelectedLabel}
+            data-tip={
+              wholeRunning
+                ? 'Whole-body rewrite in progress'
+                : samePartialRunning
+                  ? 'This section is already being expanded'
+                  : bulletsCollapsed || activeIdx === null
+                    ? 'Expand the opening paragraph'
+                    : `Expand the selected bullet (#${activeIdx + 1})`
+            }
           >
             <span className="side-action-icon"><ChevronsUpDown size={15} /></span>
-            Expand
+            {expandSelectedLabel}
           </button>
-        ) : <>
-        {/* "Expand whole" — calls elaborateNode, which streams an
-            extended version of the entire body. ListChevronsUpDown
-            icon signals "many sections at once." */}
-        <button
-          type="button"
-          className="side-action"
-          onClick={() => void elaborateNode(node.id)}
-          disabled={emptyText}
-          data-tip="Extend the whole body with more detail"
-        >
-          <span className="side-action-icon"><ListChevronsUpDown size={15} /></span>
-          Expand whole
-        </button>
 
-        {/* "Expand selected" — calls expandPart on the active
-            section. ChevronsUpDown (plain) marks it as the
-            single-section variant of Expand-whole. Target picked
-            from bulletsCollapsed + activeIdx as documented in
-            onExpandSelected. Disabled while a whole rewrite is in
-            flight (no partials allowed) or while THIS section is
-            already being expand-part'd. */}
-        <button
-          type="button"
-          className="side-action"
-          onClick={onExpandSelected}
-          disabled={expandSelectedDisabled}
-          aria-label={expandSelectedLabel}
-          data-tip={
-            wholeRunning
-              ? 'Whole-body rewrite in progress'
-              : samePartialRunning
-                ? 'This section is already being expanded'
-                : bulletsCollapsed || activeIdx === null
-                  ? 'Expand the opening paragraph'
-                  : `Expand the selected bullet (#${activeIdx + 1})`
-          }
-        >
-          <span className="side-action-icon"><ChevronsUpDown size={15} /></span>
-          {expandSelectedLabel}
-        </button>
+          </>}
 
-        </>}
+          {node.type !== 'root' && <button
+            type="button"
+            className="side-action"
+            disabled={!!node.generating || !!activeRecords?.length}
+            onClick={() => { void retypeNodeToText(node.id, isExplain ? 'encyclopedic' : 'explain'); }}
+            data-tip="Generate a new version in this format; keep the previous version"
+          >
+            <span className="side-action-icon"><ArrowRightLeft size={15} /></span>
+            {isExplain ? 'Convert to encyclopedic node' : 'Convert to explain node'}
+          </button>}
 
-        {node.type !== 'root' && <button
-          type="button"
-          className="side-action"
-          disabled={!!node.generating || !!activeRecords?.length}
-          onClick={() => { void retypeNodeToText(node.id, isExplain ? 'encyclopedic' : 'explain'); }}
-          data-tip="Generate a new version in this format; keep the previous version"
-        >
-          <span className="side-action-icon"><ArrowRightLeft size={15} /></span>
-          {isExplain ? 'Convert to encyclopedic node' : 'Convert to explain node'}
-        </button>}
-
-        </div></AnimatedCollapse>
-
-        <AddToProjectSourcesButton version={v} disabled={!!node.generating} />
+        </NodeTextEditMenu>
 
         <button
           type="button"
           className={'side-action side-disclosure-trigger' + (openSection === 'group' ? ' toggled' : '') + (isRoot ? ' side-action--disabled' : '')}
-          onClick={() => { if (!isRoot) toggleSection('group'); }}
+          onClick={() => { if (!isRoot) toggleGroup(); }}
           aria-disabled={isRoot}
           aria-expanded={!isRoot && openSection === 'group'}
           aria-controls={`node-group-tools-${node.id}`}
@@ -781,7 +743,65 @@ export function NodeSidePanel() {
           </div>
         </AnimatedCollapse>
 
-        {hasFactCheck && (
+        <button
+          type="button"
+          className={'side-action side-disclosure-trigger' + (openSection === 'wikimedia' ? ' toggled' : '') + (imageDisclosureDisabled ? ' side-action--disabled' : '')}
+          aria-disabled={imageDisclosureDisabled}
+          aria-expanded={openSection === 'wikimedia'}
+          aria-controls={`node-wikimedia-tools-${node.id}`}
+          onClick={() => {
+            if (wikimediaPanelOpen) {
+              useCitationPanelStore.getState().close();
+              setOpenSection(null);
+              return;
+            }
+            if (imageDisclosureDisabled) return;
+            setOpenSection('wikimedia');
+            useCitationPanelStore.getState().openWikimedia(node.id, v.createdAt);
+          }}
+          data-tip={imageRecommendationSet
+            ? 'Show the freely reusable images saved for this version'
+            : (displayedVersionGenerating
+              ? 'Wait until this version has finished generating'
+              : 'Search image catalogs directly; no AI requests')}
+        >
+          <span className={'side-action-icon' + (wikimediaTask?.running ? ' is-spinning' : '')}>
+            {wikimediaTask?.running ? <LoaderCircle size={15} /> : <Images size={15} />}
+          </span>
+          <span className="side-action-label">{wikimediaPanelOpen ? 'Hide free images' : (!autoFreeImages || !versionSupportsAutomaticFreeImages(node, v)) && !imageRecommendationSet && !wikimediaTask ? 'Search for free images' : 'Show free images'}</span>
+          {!wikimediaTask?.running && imageRecommendationSet ? <span className="side-action-count">{imageRecommendationSet.results.length}</span> : null}
+          <span className="side-disclosure-chevron">
+            {openSection === 'wikimedia' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </span>
+        </button>
+        <AnimatedCollapse open={openSection === 'wikimedia'}>
+          <div id={`node-wikimedia-tools-${node.id}`} className="side-disclosure-content">
+            <button
+              type="button"
+              className={'side-action' + (imageRedoDisabled ? ' side-action--disabled' : '')}
+              aria-disabled={imageRedoDisabled}
+              onClick={() => {
+                if (!imageRedoDisabled) {
+                  useCitationPanelStore.getState().openWikimedia(node.id, v.createdAt);
+                  void startWikimediaDiscovery(node.id, v.createdAt, { rerun: true });
+                }
+              }}
+              data-tip={wikimediaTask?.running
+                ? 'A fresh image search is already running'
+                : (displayedVersionGenerating
+                    ? 'Wait until this version has finished generating before searching again'
+                    : !v.body.trim() ? 'Add text before running an AI image search'
+                      : imageSearchAvailable.reason ?? 'Redo the AI-assisted image search for this node')}
+            >
+              <span className={'side-action-icon' + (wikimediaTask?.running ? ' is-spinning' : '')}>
+                {wikimediaTask?.running ? <LoaderCircle size={15} /> : <RotateCcw size={15} />}
+              </span>
+              {wikimediaTask?.running ? 'Searching…' : 'Redo agentic search'}
+            </button>
+          </div>
+        </AnimatedCollapse>
+
+        {hasFactCheck ? (
           <>
             <button
               type="button"
@@ -848,65 +868,22 @@ export function NodeSidePanel() {
               </div>
             </AnimatedCollapse>
           </>
+        ) : (
+          <button
+            type="button"
+            className="side-action"
+            disabled={!factAvailable.available || displayedVersionGenerating}
+            onClick={() => beginFactCheck('new')}
+            data-tip={displayedVersionGenerating
+              ? 'Wait until this displayed version finishes generating.'
+              : factAvailable.reason ?? 'Search the web for evidence about every factual passage'}
+          >
+            <span className="side-action-icon"><Check size={15} /></span>
+            Fact-check
+          </button>
         )}
 
-        <button
-          type="button"
-          className={'side-action side-disclosure-trigger' + (openSection === 'wikimedia' ? ' toggled' : '') + (imageDisclosureDisabled ? ' side-action--disabled' : '')}
-          aria-disabled={imageDisclosureDisabled}
-          aria-expanded={openSection === 'wikimedia'}
-          aria-controls={`node-wikimedia-tools-${node.id}`}
-          onClick={() => {
-            if (wikimediaPanelOpen) {
-              useCitationPanelStore.getState().close();
-              setOpenSection(null);
-              return;
-            }
-            if (imageDisclosureDisabled) return;
-            setOpenSection('wikimedia');
-            useCitationPanelStore.getState().openWikimedia(node.id, v.createdAt);
-          }}
-          data-tip={imageRecommendationSet
-            ? 'Show the freely reusable images saved for this version'
-            : (displayedVersionGenerating
-              ? 'Wait until this version has finished generating'
-              : 'Search image catalogs directly; no AI requests')}
-        >
-          <span className={'side-action-icon' + (wikimediaTask?.running ? ' is-spinning' : '')}>
-            {wikimediaTask?.running ? <LoaderCircle size={15} /> : <Images size={15} />}
-          </span>
-          <span className="side-action-label">{wikimediaPanelOpen ? 'Hide free images' : (!autoFreeImages || !versionSupportsAutomaticFreeImages(node, v)) && !imageRecommendationSet && !wikimediaTask ? 'Search for free images' : 'Show free images'}</span>
-          {!wikimediaTask?.running && imageRecommendationSet ? <span className="side-action-count">{imageRecommendationSet.results.length}</span> : null}
-          <span className="side-disclosure-chevron">
-            {openSection === 'wikimedia' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </span>
-        </button>
-        <AnimatedCollapse open={openSection === 'wikimedia'}>
-          <div id={`node-wikimedia-tools-${node.id}`} className="side-disclosure-content">
-            <button
-              type="button"
-              className={'side-action' + (imageRedoDisabled ? ' side-action--disabled' : '')}
-              aria-disabled={imageRedoDisabled}
-              onClick={() => {
-                if (!imageRedoDisabled) {
-                  useCitationPanelStore.getState().openWikimedia(node.id, v.createdAt);
-                  void startWikimediaDiscovery(node.id, v.createdAt, { rerun: true });
-                }
-              }}
-              data-tip={wikimediaTask?.running
-                ? 'A fresh image search is already running'
-                : (displayedVersionGenerating
-                    ? 'Wait until this version has finished generating before searching again'
-                    : !v.body.trim() ? 'Add text before running an AI image search'
-                      : imageSearchAvailable.reason ?? 'Redo the AI-assisted image search for this node')}
-            >
-              <span className={'side-action-icon' + (wikimediaTask?.running ? ' is-spinning' : '')}>
-                {wikimediaTask?.running ? <LoaderCircle size={15} /> : <RotateCcw size={15} />}
-              </span>
-              {wikimediaTask?.running ? 'Searching…' : 'Redo agentic search'}
-            </button>
-          </div>
-        </AnimatedCollapse>
+        <AddToProjectSourcesButton version={v} disabled={!!node.generating} />
 
         {isExplain && (
           <button
@@ -930,21 +907,6 @@ export function NodeSidePanel() {
             </span>
             Generate interactive explanation
             <span className="interactive-cost-icons" aria-hidden="true"><TriangleAlert size={13} /><DollarSign size={13} /></span>
-          </button>
-        )}
-
-        {!hasFactCheck && (
-          <button
-            type="button"
-            className="side-action"
-            disabled={!factAvailable.available || displayedVersionGenerating}
-            onClick={() => beginFactCheck('new')}
-            data-tip={displayedVersionGenerating
-              ? 'Wait until this displayed version finishes generating.'
-              : factAvailable.reason ?? 'Search the web for evidence about every factual passage'}
-          >
-            <span className="side-action-icon"><Check size={15} /></span>
-            Fact-check
           </button>
         )}
 

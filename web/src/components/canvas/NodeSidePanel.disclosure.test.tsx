@@ -140,8 +140,9 @@ describe('NodeSidePanel disclosures and groups', () => {
   });
 
   it.each(['encyclopedic', 'explain', 'media', 'interactive', 'chat', 'answer', 'markdown'] as const)(
-    'puts Add node first below the icon row for %s nodes', (kind) => {
+    'keeps the shared actions in order below the icon row for %s nodes', (kind) => {
       seed();
+      useSettingsStore.setState({ autoFreeImages: false });
       const graph = useGraphStore.getState();
       const node = graph.project!.nodes.selected!;
       if (kind === 'chat') graph.updateNode(node.id, createChatNode({
@@ -154,6 +155,26 @@ describe('NodeSidePanel disclosures and groups', () => {
       expect(container.querySelector('.versions-row')?.nextElementSibling).toBe(add);
       expect(add).toHaveClass('side-action-add-node');
       expect(screen.getAllByRole('button', { name: 'Add node' })).toHaveLength(1);
+      const actions = () => Array.from(container.querySelectorAll('.side-panel-content > button.side-action'), b => b.textContent);
+      if (kind === 'chat' || kind === 'media' || kind === 'interactive') {
+        expect(actions().slice(0, 3)).toEqual(['Add node', 'Edit header', 'Group']);
+        return;
+      }
+      const prefix = ['Add node', 'Edit', 'Group', 'Search for free images'];
+      expect(actions().slice(0, 6)).toEqual([...prefix, 'Fact-check', 'Add to project sources']);
+
+      // Finishing a check replaces the action in place, rather than promoting it above images.
+      const version = useGraphStore.getState().project!.nodes[node.id]!.versions[0]!;
+      act(() => graph.updateNode(node.id, { versions: [{ ...version, factCheck: { complete: {
+        schemaVersion: 1, bodyFingerprint: factCheckBodyFingerprint(version), versionCreatedAt: version.createdAt,
+        providerId: 'fixture', model: 'fixture', startedAt: 1, complete: true, failedUnitIds: [], units: [],
+      } } }] }));
+      expect(actions().slice(0, 6)).toEqual([...prefix, 'Show fact-check results', 'Add to project sources']);
+      fireEvent.click(screen.getByRole('button', { name: 'Show fact-check results' }));
+      expect(actions().slice(0, 6)).toEqual([...prefix, 'Hide fact-check results', 'Add to project sources']);
+      fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+      expect(screen.queryByRole('button', { name: 'Check again' })).toBeNull();
+      expect(useCitationPanelStore.getState().mode).toBeNull();
     },
   );
 
