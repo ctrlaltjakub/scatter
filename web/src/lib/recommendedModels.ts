@@ -3,13 +3,18 @@ import type { ImageModelInfo, ModelInfo } from '@/providers/types';
 import { mainModelCompatible, secondaryModelCompatible, interactiveModelCompatible, resolveCaps } from './modelMeta';
 import { listSwitchableModels } from '@/store/providerSelectors';
 
-/** Change this version when changing the curated list; never select “latest” by name. */
-export const RECOMMENDATION_VERSION = '2026-10-25-interactive-kimi';
+// Keep the last shared revision for unchanged roles. An image-only upgrade
+// must not reset someone’s list of main models or reassign a text role.
+const previousRevision = '2026-10-25-interactive-kimi';
+export const RECOMMENDATION_VERSIONS: Record<ModelRole, string> = {
+  main: previousRevision, secondary: previousRevision, interactive: previousRevision, image: '2026-11-08-sunburst-2.6',
+};
+const sunburst = 'gpt-image-2.6-sunburst';
 export const RECOMMENDED_MODELS = {
   main: { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash', label: 'Main model', purpose: 'Nodes and conversations' },
   secondary: { id: 'openai/gpt-6-luna', name: 'GPT-6 Luna', label: 'Secondary model', purpose: 'Terms, previews, and source assistance' },
   interactive: { id: 'moonshotai/kimi-k3.1-pro', name: 'Kimi K3.1 Pro', label: 'Interactive model', purpose: 'Interactive programs and screenshot review' },
-  image: { id: 'openai/gpt-image-2.5-sunburst', name: 'GPT Image 2.5 Sunburst', label: 'Image model', purpose: 'Image generation and editing · optional' },
+  image: { id: `openai/${sunburst}`, name: 'GPT Image 2.6 Sunburst', label: 'Image model', purpose: 'Image generation and editing · optional' },
 } as const;
 export const MODEL_ROLES = Object.keys(RECOMMENDED_MODELS) as ModelRole[];
 
@@ -46,7 +51,7 @@ export function recommendedModelIds(role: ModelRole, preset: ProviderPreset): re
   if (preset === 'openai') {
     if (role === 'secondary') return ['gpt-6-luna'];
     if (role === 'interactive') return ['gpt-6.1-sol'];
-    if (role === 'image') return ['gpt-image-2.5-sunburst'];
+    if (role === 'image') return [sunburst];
     return [];
   }
   if (preset === 'custom') {
@@ -79,7 +84,7 @@ export function pendingRecommendedRoles(settings: Settings): ModelRole[] {
   const prefs = recommendationPreferences(settings);
   return MODEL_ROLES.filter(role => {
     const previous = prefs[role];
-    if (!previous.autoUpdate || !previous.ref || previous.version === RECOMMENDATION_VERSION) return false;
+    if (!previous.autoUpdate || !previous.ref || previous.version === RECOMMENDATION_VERSIONS[role]) return false;
     if (role === 'main') return settings.providers.some(p => p.id === previous.ref!.providerId && p.enabledModels.includes(previous.ref!.model));
     if (role === 'secondary' && settings.secondaryUseSameModel) return false;
     return same(roleRef(settings, role), previous.ref);
@@ -109,7 +114,7 @@ export function planRecommendedModels(settings: Settings, providerId: string, te
     if (!model) { unavailable.push(role); continue; }
     const ref = { providerId, model };
     let roleChanged = !same(previous.ref, ref) || enroll;
-    next = { ...next, modelRecommendations: { ...prefs, [role]: { autoUpdate: true, ref, version: RECOMMENDATION_VERSION } } };
+    next = { ...next, modelRecommendations: { ...prefs, [role]: { autoUpdate: true, ref, version: RECOMMENDATION_VERSIONS[role] } } };
     if (role === 'main') {
       // Main updates opt into a single curated choice, across the whole picker.
       // Keep all connections/credentials and dedicated role assignments intact.

@@ -5,19 +5,22 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { openaiImageAdapter } from './images';
+import { recommendedModelIds } from '@/lib/recommendedModels';
 
 it.skipIf(process.env.SCATTER_IMAGE_AUDIT !== 'openai' && !process.env.SCATTER_IMAGE_EDIT_INPUT)('generates and edits images through the direct OpenAI adapter', async () => {
   const root = process.env.SCATTER_PROVIDER_TEST_DIR ?? join(homedir(), '.local/share/scatter-provider-tests/2026-10-12');
   const secrets = JSON.parse(await readFile(join(root, 'credentials.json'), 'utf8'));
   const directory = join(root, 'results', `openai-image-api-${Date.now()}`);
+  const [model] = recommendedModelIds('image', 'openai');
+  if (!model) throw new Error('No recommended direct OpenAI image model.');
   await mkdir(directory, {recursive: true, mode: 0o700});
   const source = process.env.SCATTER_IMAGE_EDIT_INPUT ? await readFile(process.env.SCATTER_IMAGE_EDIT_INPUT) : (await openaiImageAdapter.generate(secrets.openai, {
-    model: 'gpt-image-2.5-sunburst', prompt: 'Educational diagram on white background: one red triangle on the left and one blue circle on the right. Flat solid shapes. No text.',
+    model, prompt: 'Educational diagram on white background: one red triangle on the left and one blue circle on the right. Flat solid shapes. No text.',
     size: '1024x1024', quality: 'low', signal: AbortSignal.timeout(120000),
   })).bytes;
   await writeFile(join(directory, 'original.png'), source);
   const result = await openaiImageAdapter.edit!(secrets.openai, {
-    model: 'gpt-image-2.5-sunburst', image: new Blob([source as BlobPart], { type: 'image/png' }),
+    model, image: new Blob([source as BlobPart], { type: 'image/png' }),
     prompt: 'Change only the red triangle to green. Preserve the blue circle, white background, arrangement and proportions.',
     size: '1024x1024', quality: 'low', signal: AbortSignal.timeout(120000),
   });

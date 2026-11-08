@@ -38,11 +38,26 @@ describe('curated model updates', () => {
       imageModelRef: { providerId: 'direct', model: 'old-image' },
     };
     source = { ...source, modelRecommendations: modelUpdatePreferences(source, MODEL_ROLES, true) };
-    const plan = planRecommendedModels(source, 'direct', [{ id: 'gpt-6-luna' }], [{ id: 'gpt-image-2.5-sunburst', supportsImageEditing: true }]);
+    const plan = planRecommendedModels(source, 'direct', [{ id: 'gpt-6-luna' }], [{ id: 'gpt-image-2.6-sunburst', supportsImageEditing: true }]);
     expect(plan.changed).toEqual(['secondary', 'image']);
     expect(plan.settings.secondaryModelRef).toEqual({ providerId: 'direct', model: 'gpt-6-luna' });
     expect(plan.settings.activeModelRef).toEqual(source.activeModelRef); // no approved direct-OpenAI main substitute
-    expect(plan.settings.imageModelRef?.providerId).toBe('direct');
+    expect(plan.settings.imageModelRef).toEqual({ providerId: 'direct', model: 'gpt-image-2.6-sunburst' });
+  });
+  it('upgrades only opted-in image assignments when the new Sunburst is available', () => {
+    const source = enrolled();
+    const old = { providerId: 'or', model: 'openai/gpt-image-2.5-sunburst' };
+    source.imageModelRef = old;
+    source.modelRecommendations = { ...source.modelRecommendations!, image: { ref: old, autoUpdate: true, version: '2026-10-25-interactive-kimi' } };
+    source.providers = [{ ...source.providers[0]!, enabledModels: [RECOMMENDED_MODELS.main.id, 'another-main'] }];
+    expect(pendingRecommendedRoles(source)).toEqual(['image']);
+    expect(planRecommendedModels(source, 'or', text, []).settings).toBe(source);
+    const update = planRecommendedModels(source, 'or', text, images);
+    expect(update.changed).toEqual(['image']);
+    expect(update.settings.imageModelRef?.model).toBe('openai/gpt-image-2.6-sunburst');
+    expect(update.settings.providers).toBe(source.providers);
+    const manual = { ...source, modelRecommendations: manualModelChoice(source, 'image') };
+    expect(planRecommendedModels(manual, 'or', text, images).settings).toBe(manual);
   });
   it('never uses another configured provider to replace an unavailable model', () => {
     let source: Settings = { ...enrolled(), secondaryModelRef: { providerId: 'direct', model: 'old-secondary' },

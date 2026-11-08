@@ -1,3 +1,5 @@
+import packageInfo from '../../package.json';
+
 export type ReleaseChannel = 'stable' | 'beta';
 
 export function releaseChannel(
@@ -10,9 +12,15 @@ export function releaseChannel(
   return 'stable';
 }
 
-export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || '0.1.0';
+/** A demo is a presentation label, never a real synchronization channel. */
+export function releaseLabel(channel: ReleaseChannel, demo = process.env.NEXT_PUBLIC_SCATTER_DEMO === '1') {
+  return demo ? 'Demo' : channel === 'beta' ? 'Beta' : 'Stable';
+}
+
+export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || packageInfo.version;
 export const APP_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH || '';
 export const LANDING_URL = 'https://www.scatter.study/?landing=1';
+export const SUPPORT_URL = `${LANDING_URL}#support-me`;
 export const REPOSITORY_URL = 'https://github.com/ctrlaltjakub/scatter';
 export const appPath = (path = '/') => `${APP_BASE_PATH}${path === '/' ? '' : path}` || '/';
 
