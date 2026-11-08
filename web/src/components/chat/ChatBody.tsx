@@ -201,9 +201,10 @@ export function ChatBody({ node, selected, style }: { node: ScatterNode; selecte
 
 export function ChatJumpToLatest({ nodeId }: { nodeId: string }) {
   const atBottom = useChatRuntimeStore((state) => state.views[nodeId]?.atBottom ?? true);
-  return <button type="button" className="node-collapse-toggle chat-jump-latest" disabled={atBottom}
+  return <button type="button" className="node-footer-center-action chat-jump-latest" disabled={atBottom}
     data-tip="Jump to latest message" aria-label="Jump to latest message"
+    onPointerDown={(event) => event.stopPropagation()}
     onClick={(event) => { event.stopPropagation(); useChatRuntimeStore.getState().jumpTo(nodeId); }}>
-    <ArrowDown size={14} />
+    <ArrowDown />
   </button>;
 }

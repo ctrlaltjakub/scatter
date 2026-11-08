@@ -1258,13 +1258,10 @@ function NodeViewImpl(p: Props) {
                 Limited source search
               </span>
             )}
-            {/* Chevron toggle — hides the bullets section, leaving only
-                the first paragraph visible. Centered absolutely so the
-                tag stays in normal flex flow on the left. */}
             {ct === 'chat' && <ChatJumpToLatest nodeId={p.node.id} />}
             {ct === 'encyclopedic' && <button
               type="button"
-              className="bullets-toggle-btn"
+              className="node-footer-center-action bullets-toggle-btn"
               disabled={!hasBullets}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
@@ -1299,7 +1296,7 @@ function NodeViewImpl(p: Props) {
               aria-label={bulletsCollapsed ? 'Expand node' : 'Collapse node'}
               aria-expanded={!effectivelyCollapsed}
             >
-              {effectivelyCollapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+              {effectivelyCollapsed ? <ChevronDown /> : <ChevronUp />}
             </button>}
             {standaloneInteractive && <button type="button" className="node-corner-btn node-interactive-open-btn"
               disabled={!v.interactive?.html || !!p.node.generating} aria-label="Open interactive in a window" data-tip="Open interactive in a window"

@@ -34,6 +34,7 @@ async function fixture(page: Page) {
 test('chat can resize before, during, and after the first answer', async ({ page }) => {
   await fixture(page);
   const node = page.locator('[data-node-id="test-chat"]');
+  const initialWidth = await node.evaluate((el: HTMLElement) => el.offsetWidth);
   const resize = async () => {
     const handle = node.locator('.node-resize.br');
     await expect(handle).toBeVisible();
@@ -65,7 +66,45 @@ test('chat can resize before, during, and after the first answer', async ({ page
   expect(await page.evaluate(() => {
     const node = (window as any).testExport('useGraphStore').getState().project.nodes['test-chat'];
     return node.versions.map((v: any) => [v.width, v.bodyMaxHeight]);
-  })).toEqual([[761, 470], [761, 470]]);
+  })).toEqual([[initialWidth + 150, 470], [initialWidth + 150, 470]]);
+});
+
+test('jump to latest matches the bullet toggle at canvas zoom and works from its padded edge', async ({ page }) => {
+  await fixture(page);
+  await page.evaluate(() => {
+    const find = (window as any).testExport;
+    const graph = find('useGraphStore').getState();
+    const chat = find('appendChatAnswer')(graph.project.nodes['test-chat'],
+      { turnId: 'long-answer', createdAt: 2, question: 'What are the steps?' });
+    const answer = find('updateChatAnswer')(chat, { turnId: 'long-answer', versionCreatedAt: 2 },
+      { body: Array.from({ length: 35 }, (_, i) => `Step ${i + 1}.`).join('\n\n') }, { state: 'complete' });
+    const overview = { id: 'bullet-reference', type: 'root', position: { x: 0, y: 520 }, frozen: true,
+      currentVersionIndex: 0, versions: [{ createdAt: 1, generatedBy: 'root', header: 'Overview',
+        body: 'Introduction.\n\n- **First section**\n  - A detail.', contentType: 'encyclopedic' }] };
+    graph.setProject({ ...graph.project, rootNodeId: overview.id,
+      nodes: { [overview.id]: overview, [chat.id]: { ...answer, generating: false, streamingText: false } } });
+    graph.requestPanTo(null);
+  });
+  const jump = page.getByRole('button', { name: 'Jump to latest message' });
+  const toggle = page.getByRole('button', { name: 'Collapse node', exact: true });
+  const conversation = page.getByRole('region', { name: 'Conversation', exact: true });
+  await expect(jump).toBeDisabled();
+  for (const zoom of [0.8, 1.25, 1]) {
+    await page.evaluate(zoom => (window as any).testExport('useGraphStore').getState()
+      .setViewport({ x: 530, y: 30, zoom }), zoom);
+    await expect.poll(async () => (await toggle.boundingBox())?.width).toBeCloseTo(38 * zoom, 1);
+    for (const [button, reference] of [[jump, toggle], [jump.locator('svg'), toggle.locator('svg')]] as const) {
+      const actual = (await button.boundingBox())!;
+      const expected = (await reference.boundingBox())!;
+      expect(actual.width).toBeCloseTo(expected.width, 1);
+      expect(actual.height).toBeCloseTo(expected.height, 1);
+    }
+  }
+  await conversation.evaluate(el => { el.scrollTop = 0; });
+  await expect(jump).toBeEnabled();
+  await jump.click({ position: { x: 3, y: 12 } });
+  await expect(jump).toBeDisabled();
+  await expect.poll(() => conversation.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop)).toBeLessThan(2);
 });
 
 test('side panel ordering, Markdown editing, and quiet chunking state in both themes', async ({ page }, info) => {
