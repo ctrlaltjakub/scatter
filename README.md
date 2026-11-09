@@ -20,7 +20,7 @@ Generate a **structured overview**, follow **marked terms** into **connected exp
 
 The demo replays **recorded answers** for this project. Click a **marked term** to open it, or type in a **follow-up field or the chat** to ask a prepared question. **Nothing is sent to a model provider**; reload the page to reset the demo. On touch screens, **tap** a term to open it or **hold** it for its preview.
 
-[Main capabilities](#main-capabilities) · [Model costs](#what-keeps-model-costs-down) · [Privacy](#privacy-and-data) · [Get started](#get-started) · [Run locally](#run-locally) · [Support me](#support-me)
+[Main capabilities](#main-capabilities) · [AI costs](#ai-costs) · [Privacy](#privacy-and-data) · [Get started](#get-started) · [Run locally](#run-locally) · [Support me](#support-me)
 
 ## Main capabilities
 
@@ -66,11 +66,15 @@ The demo replays **recorded answers** for this project. Click a **marked term** 
 - **Multiple AI models:** Switch between **several main models** on the canvas. Assign other models by task and control **reasoning, token limits and background activity**.
 - **Deep customization:** Adjust **appearance** with colors, fonts and canvas effects. Change **behavior** with keyboard shortcuts, reading controls and layout settings.
 
-## What keeps model costs down
+## AI costs
 
-Your **model choices and provider rates** determine the bill. The recommended models balance **answer quality, speed and price**.
+While your **model choices and provider rates** determine the bill, the app is designed to **keep costs low**. You choose which models handle which tasks, set **output token limits**, and decide whether to generate term previews automatically.
 
-- **Use a knowledgeable main model.** Prioritize factual knowledge and a low rate of invented answers. Ordinary branches generate **text rather than code** and send at most the **parent and grandparent** as canvas history—not the whole project.
+> ### Recommended models
+>
+> The recommended models balance **answer quality, speed and price**.
+
+- **Use powerful models where accuracy matters.** Your main model writes **node explanations and chat replies**, where factual knowledge and a low hallucination rate matter most. Generating a text answer typically takes **fewer tokens** than writing and testing code for an interactive node. For a new text branch, the app sends at most the **parent and grandparent nodes** as canvas context—not the whole project.
 - **Keep routine work inexpensive.** A **separate, cheaper secondary model** marks terms, writes previews and generates titles. Repeated background tasks need not run at the main model’s rate.
 - **Limit reasoning by default.** Main and secondary tasks default to **low reasoning** where the model supports it. This limits the tokens and time spent thinking; you can raise the main model’s effort when a question warrants it.
 
