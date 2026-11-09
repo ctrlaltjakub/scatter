@@ -70,11 +70,8 @@ The demo replays **recorded answers** for this project. Click a **marked term** 
 
 While your **model choices and provider rates** determine the bill, the app is designed to **keep costs low**. You choose which models handle which tasks, set **output token limits**, and decide whether to generate term previews automatically.
 
-> ### Recommended models
->
-> The recommended models balance **answer quality, speed and price**.
-
-- **Use powerful models where accuracy matters.** Your main model writes **node explanations and chat replies**, where factual knowledge and a low hallucination rate matter most. Generating a text answer typically takes **fewer tokens** than writing and testing code for an interactive node. For a new text branch, the app sends at most the **parent and grandparent nodes** as canvas context—not the whole project.
+- **Recommended models.** The recommended models balance **answer quality, speed and price**.
+- **Use powerful models where accuracy matters.** Your main model writes **node explanations and chat replies**, where factual knowledge and a low hallucination rate matter most. Generating a text answer typically takes **fewer tokens** than writing and testing code. For a new text node, the app sends at most the **parent and grandparent nodes** as canvas context—not the whole project.
 - **Keep routine work inexpensive.** A **separate, cheaper secondary model** marks terms, writes previews and generates titles. Repeated background tasks need not run at the main model’s rate.
 - **Limit reasoning by default.** Main and secondary tasks default to **low reasoning** where the model supports it. This limits the tokens and time spent thinking; you can raise the main model’s effort when a question warrants it.
 
