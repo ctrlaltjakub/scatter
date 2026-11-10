@@ -96,6 +96,7 @@ export function copyBranchIntoProject(
     delete copied.generatingVersionIndex;
     delete copied.streamingText;
     delete copied.generationError;
+    delete copied.retainedOutlineWarning;
     if (nodeId === rootNodeId) {
       copied.type = 'root';
       copied.frozen = true;

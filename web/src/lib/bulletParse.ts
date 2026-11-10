@@ -79,7 +79,7 @@ export function separatorColonIndex(text: string): number {
       }
       // Unbalanced `[[` with no closer — stop skipping; treat rest normally.
     }
-    if (text[i] === ':') return i;
+    if (text[i] === ':' || text[i] === '：') return i;
   }
   return -1;
 }
@@ -226,43 +226,34 @@ export function unboldFreshDescriptions(body: string): string {
   });
 }
 
-let sentenceSegmenter: Intl.Segmenter | undefined;
-/** The source line is the primary boundary. Catch clear extra sentences on
- * a single generated bullet, not periods in initials, abbreviations or URLs.
- * This is validation only; it never splits displayed text or discards facts. */
-function hasExtraSentence(description: string): boolean {
-  if (typeof Intl.Segmenter !== 'function') return false;
-  const prose = description.replace(/⟦\d+⟧|\[\d+\]|\(\d+\)/gu, '')
-    .replace(/“[^”]*”|«[^»]*»|「[^」]*」|『[^』]*』|"[^"]*"/gu, 'quotation')
-    .replace(/`[^`]*`/g, 'code').replace(/https?:\/\/[^\s)<>]+/gi, url => 'URL' + (url.match(/[.!?]+$/)?.[0] ?? ''));
-  sentenceSegmenter ??= new Intl.Segmenter('und', { granularity: 'sentence' });
-  const parts = Array.from(sentenceSegmenter.segment(prose), ({segment}) => segment.trim())
-    .filter(part => /[\p{L}\p{N}]/u.test(part));
-  return parts.slice(0, -1).some(part => {
-    const end = part.replace(/[\s"'’”»」』)\]]+$/gu, '');
-    if (!end.endsWith('.')) return true;
-    // Periods in abbreviated names, titles, units and dotted initialisms are
-    // too ambiguous to justify a paid repair; trust the authored line there.
-    if (/(?:^|[^\p{L}])(?:\p{L}\.)+$/u.test(end)) return false;
-    const lastWord = /([\p{L}\p{M}]+)\.$/u.exec(end)?.[1];
-    if (!lastWord) return true;
-    if (lastWord.length <= 2 || /^\p{Lu}/u.test(lastWord)) return false;
-    return !/^(?:approx|appt|dept|fig|etc|inc|ltd|est|corresp|addl|prof|mrs|डॉ)$/iu.test(lastWord);
-  });
+/** A finished outline sometimes ends with a separate prose note (e.g. a
+ * disclosure about search coverage). The card displays standalone prose above
+ * the list. Keep its words, citation markers and authored lines together there.
+ * Never reinterpret mid-list prose, indented continuations or another list. */
+export function normalizeFreshOutline(body: string): string {
+  const plain = unboldFreshDescriptions(body);
+  const lines = plain.split(/\r\n|[\r\n\u2028\u2029]/u);
+  const first = lines.findIndex(line => BULLET_RE.test(line));
+  if (first < 1 || !lines.slice(0, first).some(line => line.trim())) return plain;
+  let last = lines.length - 1;
+  while (last > first && !BULLET_RE.test(lines[last]!)) last--;
+  if (last + 2 >= lines.length || !/^\s/.test(lines[last]!) || lines[last + 1]!.trim()) return plain;
+  const note = lines.slice(last + 1);
+  if (!note.some(line => line.trim()) || note.some(line => line.trim() && (
+    /^\s/u.test(line) || /^(?:#{1,6}\s|[-*+]\s|\d{1,9}[.)]\s|[>`~|<]|---+$)/u.test(line)
+  ))) return plain;
+  return [lines.slice(0, first).join('\n').trimEnd(), note.join('\n').trim(), lines.slice(first, last + 1).join('\n')].join('\n\n');
 }
 
-/** Validate newly generated outlines, never stored or manually edited nodes.
- * Count opening sentences using the model's explicit source lines. */
+/** Check only the outline's observable structure, never guess whether the
+ * model forgot a sentence boundary. Generated prose lines are authoritative
+ * in every language, including when a paragraph arrives on one line. */
 export function freshOutlineProblem(body: string, maxSections = DEFAULT_MAX_L1_BULLETS): string | null {
-  let opening = 0;
-  let openingEnded = false;
+  let hasOpening = false;
   let childIndent = '';
   const sections: number[] = [];
   for (const line of body.trimEnd().split(/\r\n|[\r\n\u2028\u2029]/u)) {
-    if (!line.trim()) {
-      if (opening) openingEnded = true;
-      continue;
-    }
+    if (!line.trim()) continue;
     const bullet = BULLET_RE.exec(line);
     if (bullet) {
       const [, indent, , text] = bullet;
@@ -275,24 +266,24 @@ export function freshOutlineProblem(body: string, maxSections = DEFAULT_MAX_L1_B
         childIndent = indent;
         const colon = separatorColonIndex(text!);
         const description = text!.slice(colon + 1);
-        if (colon < 1 || !/[\p{L}\p{N}]/u.test(description.replace(/⟦\d+⟧|\[\d+\]|\(\d+\)/g, ''))) return 'Each sub-bullet needs a name and a one-sentence description.';
+        if (colon < 1 || !/[\p{L}\p{N}]/u.test(description.replace(/⟦\d+⟧|\[\d+\]|\(\d+\)/g, ''))) return 'Each sub-bullet needs a name and a description.';
         if (descriptionHasBold(text!, colon)) return 'Do not use bold in sub-bullet descriptions.';
-        if (hasExtraSentence(description)) return 'Write exactly one sentence per sub-bullet description.';
         sections[sections.length - 1]!++;
       }
     } else if (!sections.length) {
-      if (openingEnded) return 'Keep the opening sentences in one paragraph.';
-      opening++;
+      hasOpening = true;
     } else if (/^\s+\S/u.test(line)) {
-      return 'Write exactly one sentence per sub-bullet description, on the bullet line.';
+      return 'Keep each sub-bullet description on the bullet line.';
     } else {
       return 'After the opening, put prose inside a sub-bullet description.';
     }
   }
-  if (opening < 4 || opening > 6) return `The opening has ${opening} sentence lines; it needs 4–6.`;
+  if (!hasOpening) return 'Include an opening paragraph before the main bullets.';
   if (sections.length < 3 || sections.length > maxSections) return `The outline has ${sections.length} main bullets; it needs 3–${maxSections}.`;
   const outside = sections.findIndex(count => count < 2 || count > 10);
-  return outside < 0 ? null : `Main bullet ${outside + 1} has ${sections[outside]} sub-bullets; each needs 2–10.`;
+  if (outside < 0) return null;
+  const count = sections[outside]!;
+  return `Main bullet ${outside + 1} has ${count} sub-bullet${count === 1 ? '' : 's'}; each needs 2–10.`;
 }
 
 /** Strip `[[chip]]` markers down to their plain term (`[[X]]` → `X`). */

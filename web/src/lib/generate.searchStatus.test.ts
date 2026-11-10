@@ -3,6 +3,7 @@ import type { ScatterNode } from '@/store/types';
 import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { regenerateNode, retryGeneration, spawnExplain, spawnTermClick } from './generate';
+import { ignoreOutlineWarning, showRetainedOutlineWarning } from './retainedOutlineWarning';
 
 // This suite counts answer/structure/marking calls; background previews have
 // their own provider lifecycle coverage in termPreviews.test.ts.
@@ -266,14 +267,40 @@ describe('generation web-search provenance', () => {
   });
 
   it('stops after one unsuccessful repair and retries the original task, not the repair', async () => {
-    fake.body = fake.repairedBody = BODY.replace('Beta is the second category.\n', '');
+    fake.body = BODY.replace('  - two: Second detail\n', '');
+    fake.repairedBody = 'Unusable repair with no outline.';
     const id = await spawnTermClick('parent', 'retained topic');
     expect(fake.calls).toBe(2);
-    expect(useGraphStore.getState().project!.nodes[id]!.generationError).toContain('4–6');
+    const project = useGraphStore.getState().project!;
+    const node = project.nodes[id]!;
+    expect(node.generationError).toContain('Main bullet 1 has 1 sub-bullet;');
+    expect(node.versions[0]!.body).toBe(fake.body);
+    expect(showRetainedOutlineWarning(node)).toBe(true);
+    ignoreOutlineWarning(project.id, id, node.versions[0]!.createdAt);
+    expect(showRetainedOutlineWarning(useGraphStore.getState().project!.nodes[id]!)).toBe(false);
+    expect(fake.calls).toBe(2);
     fake.body = BODY;
     await retryGeneration(id);
     expect(fake.messages[2]?.at(-1)).toContain('The user clicked the reference "retained topic"');
     expect(useGraphStore.getState().project!.nodes[id]!.generationError).toBeFalsy();
+    expect(useGraphStore.getState().project!.nodes[id]!.retainedOutlineWarning).toBeUndefined();
+  });
+
+  it('does not buy a rewrite for model-authored prose, German ordinals or a separate search note', async () => {
+    const url = 'https://example.org/evidence';
+    const opener = 'Ein Befund. Noch ein Befund auf derselben Zeile.';
+    const note = 'Hinweis: Nur ein Teil ist belegt.\nFür die übrigen Angaben fehlt ein Beleg.';
+    fake.body = opener + BODY.slice(BODY.indexOf('\n\n')) + '\n\n' + note;
+    fake.body = fake.body.replace('First detail', 'Die Änderung zeigt sich um das 60. Lebensjahr [source](' + url + ').');
+    fake.citations = [{ url, title: 'Evidence', offsetKind: 'citation-label' }];
+    fake.used = true;
+    const id = await spawnTermClick('parent', 'Akkommodation des Auges');
+    const node = useGraphStore.getState().project!.nodes[id]!;
+    expect(fake.calls).toBe(2); // answer and term marking; no outline repair
+    expect(node.generationError).toBeFalsy();
+    expect(node.versions[0]!.body).toContain(opener + '\n\n' + note + '\n\n- Alpha');
+    expect(node.versions[0]!.body).toContain('60. Lebensjahr⟦1⟧.');
+    expect(node.versions[0]!.sources?.map(source => source.url)).toEqual([url]);
   });
 
   it('keeps opening emphasis and removes description bold without a paid repair', async () => {
@@ -286,14 +313,14 @@ describe('generation web-search provenance', () => {
     expect(fake.calls).toBe(2); // content, then term marking
   });
 
-  it('repairs two sentences once and removes bold even when it is introduced by the repair', async () => {
-    fake.body = BODY.replace('First detail', 'One important fact. Another fact belongs elsewhere.');
+  it('repairs a missing description once and removes bold even when it is introduced by the repair', async () => {
+    fake.body = BODY.replace('one: First detail', 'one without a description');
     fake.repairedBody = BODY.replace('First detail', 'The **repaired sentence** keeps both facts.');
     const id = await spawnTermClick('parent', 'repair description');
     const node = useGraphStore.getState().project!.nodes[id]!;
     expect(node.generationError).toBeFalsy();
     expect(node.versions[0]!.body).toContain(': The repaired sentence keeps both facts.');
-    expect(fake.messages[1]?.at(-1)).toContain('The format check reported: Write exactly one sentence per sub-bullet description.');
+    expect(fake.messages[1]?.at(-1)).toContain('The format check reported: Each sub-bullet needs a name and a description.');
     expect(fake.messages[1]?.at(-1)).toContain('Preserve already-valid chapters');
     expect(fake.calls).toBe(3); // content, one repair, term marking
   });
@@ -312,6 +339,23 @@ describe('generation web-search provenance', () => {
     expect(node.versions[1]!.body).toContain('- Gamma');
     expect(node.versions[1]!.sources?.map(s => s.url)).toEqual(['https://example.org/study']);
     expect(fake.calls).toBe(5); // two for spawn, then answer, one repair, and terms
+  });
+
+  it('keeps the regenerated draft and its source when the repair fails, separate from the previous version', async () => {
+    const id = await spawnTermClick('parent', 'fresh topic');
+    const original = useGraphStore.getState().project!.nodes[id]!.versions[0]!;
+    const url = 'https://example.org/study';
+    fake.used = true;
+    fake.body = 'Neue Fassung [source](' + url + ').';
+    fake.citations = [{ url, title: 'Study', offsetKind: 'citation-label' }];
+    fake.repairedBody = 'Unusable repair with no outline.';
+    await regenerateNode(id);
+    const node = useGraphStore.getState().project!.nodes[id]!;
+    expect(fake.calls).toBe(4); // two for spawn, then answer and failed repair
+    expect(node.versions[0]).toEqual(original);
+    expect(node.versions[1]).toMatchObject({ body: 'Neue Fassung⟦1⟧.', sources: [{ url }], webSearched: true });
+    expect(showRetainedOutlineWarning(node)).toBe(true);
+    expect(showRetainedOutlineWarning({ ...node, currentVersionIndex: 0 })).toBe(false);
   });
 
   it('repairs a complete searched answer that omitted the required bullets without dropping its source', async () => {

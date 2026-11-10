@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { loadProject, saveProject, stripTransient } from './projectIO';
+import { stripTransientProject } from './projectPersistenceApply';
 import type { Project } from '@/store/types';
 import { appendChatAnswer, createChatNode, updateChatAnswer } from '@/lib/chat/model';
 
@@ -84,11 +85,13 @@ describe('projectIO', () => {
           generatingVersionIndex: 0,
           streamingText: false,
           generationError: '',
+          retainedOutlineWarning: { message: 'Missing section', versionCreatedAt: 1, ignored: true },
         },
       },
     };
 
     const clean = stripTransient(project);
+    expect(stripTransientProject(project)).toEqual(clean);
     expect(clean).not.toBe(project);
     expect(clean.nodes.n1).toEqual({
       id: 'n1',

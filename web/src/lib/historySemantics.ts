@@ -59,6 +59,7 @@ const NODE_PRESENTATION_KEYS = new Set<string>([
   'generatingVersionIndex',
   'streamingText',
   'generationError',
+  'retainedOutlineWarning',
   'renderedHeight',
   'bulletsCollapsed',
   'activeBulletIdx',
@@ -292,6 +293,7 @@ function mergeNodePresentation(current: ScatterNode, target: ScatterNode): Scatt
     merged.generatingVersionIndex = targetDraftIndex;
     merged.streamingText = current.streamingText;
     merged.generationError = current.generationError;
+    merged.retainedOutlineWarning = current.retainedOutlineWarning;
   }
   return preserveGeneration ? merged : recoverInteractiveNode(recoverChatNode(merged));
 }

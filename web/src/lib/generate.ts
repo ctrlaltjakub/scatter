@@ -40,6 +40,7 @@ import {
 import { getActiveProvider, getProviderById } from '@/store/providerSelectors';
 import { renameScatter, isAutoScatterName } from '@/store/projectActions';
 import { getGenProject, updateGenNode } from '@/store/bgGen';
+import { warnAboutRetainedOutline } from './retainedOutlineWarning';
 import { trackGenerationVersions } from './generationVersionTracking';
 import {
   beginGenerationSession,
@@ -67,7 +68,7 @@ import {
   semanticHeaderText,
 } from './nodeHeaderText';
 import { newId } from './ids';
-import { freshOutlineProblem, stripChips, unboldFreshDescriptions } from './bulletParse';
+import { freshOutlineProblem, normalizeFreshOutline, stripChips } from './bulletParse';
 import { EmbeddedImageText } from './embeddedImageText';
 import { unchipHeaders } from './parser';
 import { makeBulletCommitGate, type CommitGate } from './streamCommitGate';
@@ -159,6 +160,7 @@ function sleep(ms: number): Promise<void> {
  */
 function setGenFlags(nodeId: string, patch: Partial<ScatterNode>): void {
   const node = useGraphStore.getState().project?.nodes[nodeId];
+  if (node?.retainedOutlineWarning && 'generationError' in patch) patch = { ...patch, retainedOutlineWarning: undefined };
   const normalized = patch.generating === true && patch.generatingVersionIndex == null
     ? {
         ...patch,
@@ -1067,9 +1069,12 @@ async function streamIntoVersion(
       onAcc(finalBody);
     }
 
+    let outlineWarning: string | undefined;
     if (STRUCTURE_CHECK_KINDS.has(variant.kind) && !ctrl.signal.aborted) {
-      finalBody = await checkFreshOutline(nodeId, parentIdForContext, finalBody, ctrl.signal, onAcc,
+      const checked = await checkFreshOutline(nodeId, parentIdForContext, finalBody, ctrl.signal, onAcc,
         citationSources, pass1.citations, pass1.internalSources);
+      finalBody = checked.body;
+      outlineWarning = checked.warning;
     }
 
     // Sources become part of the live generating version as soon as pass 1 is
@@ -1098,6 +1103,12 @@ async function streamIntoVersion(
         };
         updateGenNode(genProjectId, nodeId, { versions });
       }
+    }
+
+    if (outlineWarning && genProjectId && !ctrl.signal.aborted && !superseded()) {
+      warnAboutRetainedOutline(genProjectId, nodeId, streamVersionIndex(), outlineWarning);
+      useNodeStatusStore.getState().clearStatus(nodeId);
+      return;
     }
 
     // Text is final — drop the tail skeleton + its reserve before the chip
@@ -1242,24 +1253,24 @@ async function checkFreshOutline(
   nodeId: string, parentIdForContext: string | null, body: string, signal: AbortSignal,
   onAcc: (text: string) => void,
   webSources: readonly NodeSource[], citations: readonly Citation[], internalSources: readonly InternalNodeSource[],
-): Promise<string> {
-  const plain = unboldFreshDescriptions(body);
+): Promise<{ body: string; warning?: string }> {
+  const plain = normalizeFreshOutline(body);
   if (plain !== body) { body = plain; onAcc(body); }
   const outlineIssue = freshOutlineProblem(body);
-  if (!outlineIssue) return body;
+  if (!outlineIssue) return { body };
   const originalRetry = retryArgs.get(nodeId);
   const variant: TaskVariant = { kind: 'restructure', previousBody: body, outlineIssue };
   try {
     const result = await streamChunks({
-      nodeId, parentIdForContext, variant, signal, onAcc, webSearch: false,
-      commitGate: makeBulletCommitGate(),
+      // Keep the first answer on screen until the complete repair is verified.
+      nodeId, parentIdForContext, variant, signal, onAcc: () => {}, webSearch: false,
     });
-    if (signal.aborted) return body;
+    if (signal.aborted) return { body };
     const incomplete = generationCompletionError(result.rawText, result.finishReason, result.citations);
     if (incomplete) throw new Error(incomplete);
-    let repaired = unboldFreshDescriptions(result.normalizedText);
+    let repaired = normalizeFreshOutline(result.normalizedText);
     const issue = freshOutlineProblem(repaired);
-    if (issue) throw new Error(`The model did not produce the required two-level outline after one repair. ${issue} Retry or check the encyclopedic system prompt.`);
+    if (issue) return { body, warning: `The outline still needs a format correction. ${outlineIssue} The original draft is shown.` };
     // Original provider offsets refer to the pre-repair body. Match the source
     // text again rather than reusing those offsets in a differently sized outline.
     const missing = webSources.filter(s => body.includes(`⟦${s.n}⟧`) && !repaired.includes(`⟦${s.n}⟧`));
@@ -1270,11 +1281,13 @@ async function checkFreshOutline(
     const before = webMarks(body), after = webMarks(repaired);
     if (before.size !== after.size || [...before].some(key => !after.has(key))
       || internalSources.some(s => body.includes(`(${s.n})`) !== repaired.includes(`(${s.n})`))) {
-      onAcc(body);
-      throw new Error('The outline repair changed source markers. The repaired text was not used. Retry to generate a new outline.');
+      return { body, warning: 'The outline repair changed the citations. The original draft and its sources are shown.' };
     }
-    if (repaired !== result.normalizedText) onAcc(repaired);
-    return repaired;
+    if (repaired !== body) onAcc(repaired);
+    return { body: repaired };
+  } catch (error) {
+    if (signal.aborted) return { body };
+    return { body, warning: `The original draft is shown because the outline repair failed. ${friendlyErrorMessage(error)}` };
   } finally {
     if (retryArgs.get(nodeId)?.variant === variant && originalRetry) retryArgs.set(nodeId, originalRetry);
   }
@@ -2062,6 +2075,7 @@ async function runWholeRewrite(opts: {
   evidenceGoogleSearchSuggestions?: string[];
 }): Promise<CommittedRewriteCitationCtx | null> {
   const { nodeId, variant, parentIdForContext, newVersionMeta, maxOutputTokens } = opts;
+  const generationProjectId = activeGenerationProjectId();
   const runChips = opts.runChips ?? true;
   const statusLabel = opts.statusLabel ?? statusVerb(variant.kind);
 
@@ -2240,11 +2254,14 @@ async function runWholeRewrite(opts: {
       );
     }
     let citedBody = useRewriteStore.getState().workingBody[nodeId] ?? '';
+    let outlineWarning: string | undefined;
     if (STRUCTURE_CHECK_KINDS.has(variant.kind)) {
-      citedBody = await checkFreshOutline(nodeId, parentIdForContext, citedBody, controller.signal, text => {
+      const checked = await checkFreshOutline(nodeId, parentIdForContext, citedBody, controller.signal, text => {
         store.setWorkingBody(nodeId, text);
         mirrorRewriteDraft(nodeId, text);
       }, [...citationCtx.oldSources, ...citationCtx.newSources], streamRes.citations, citationCtx.internalSources);
+      citedBody = checked.body;
+      outlineWarning = checked.warning;
       if (controller.signal.aborted) {
         finishRewrite(nodeId, rewriteId, 'aborted', newVersionMeta);
         return null;
@@ -2269,9 +2286,14 @@ async function runWholeRewrite(opts: {
       webSearched: citationCtx.webSearchUsed ? true : undefined,
       webSearchFailed: citationCtx.webSearchRequested && !citationCtx.webSearchUsed ? true : undefined,
     }, {
-      deferGeneratingOff: runChips,
+      deferGeneratingOff: runChips && !outlineWarning,
     });
     if (!res?.committed) return null;
+    if (outlineWarning) {
+      if (generationProjectId) warnAboutRetainedOutline(generationProjectId, nodeId, res.versionIndex, outlineWarning);
+      completeGenerationSession(nodeId);
+      return null;
+    }
     // When the caller owns term marking, it finalizes citation numbering afterward.
     if (runChips) {
       await addChipsToCurrentVersion(nodeId, res.versionIndex);

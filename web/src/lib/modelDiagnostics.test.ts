@@ -112,9 +112,12 @@ describe('model diagnostics', () => {
       expect(check.messages[0]?.content).toContain('at least **4**');
       expect(check.messages[0]?.content).toContain(`up to **${id === 'encyclopedic' ? 5 : 3} main bullets**`);
       expect(check.messages[0]?.content).toContain('exactly one complete sentence after the colon');
-      if (id !== 'encyclopedic') expect(() => check.validate!(DIAGNOSTIC_TEXT)).not.toThrow();
-      expect(() => check.validate!(DIAGNOSTIC_TEXT.replace('Add all three side lengths.', 'Add all three side lengths. Use the same units.'))).toThrow('one sentence');
-      expect(() => check.validate!(DIAGNOSTIC_TEXT.replace('Add all three side lengths.', 'Add **all three** side lengths.'))).toThrow('bold');
+      if (id !== 'encyclopedic') {
+        expect(() => check.validate!(DIAGNOSTIC_TEXT)).not.toThrow();
+        expect(() => check.validate!(DIAGNOSTIC_TEXT.replace('Add all three side lengths.', 'Add all three side lengths. Use the same units.'))).not.toThrow();
+        expect(() => check.validate!(DIAGNOSTIC_TEXT.replace('Add all three side lengths.', 'Add **all three** side lengths.') + '\n\nA separate source note.')).not.toThrow();
+      }
+      expect(() => check.validate!(DIAGNOSTIC_TEXT.replace('Add all three side lengths.', '⟦1⟧'))).toThrow('description');
       expect(() => check.validate!(DIAGNOSTIC_TEXT + '\n- Extra section'.repeat(3))).toThrow('main bullets');
     }
   });

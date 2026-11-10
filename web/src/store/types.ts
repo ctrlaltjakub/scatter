@@ -528,6 +528,8 @@ export interface ScatterNode {
    *  Transient like `generating`: stripped before save (projectIO). */
   streamingText?: boolean;
   generationError?: string;
+  /** Runtime-only. A failed outline repair kept this version's original draft. */
+  retainedOutlineWarning?: { versionCreatedAt: number; message: string; ignored?: boolean };
   renderedHeight?: number;  // measured by NodeView via ResizeObserver, used by ArrowLayer + rectCollide
   /** User has clicked the chevron toggle in node-footer to hide the
    *  bullets section, leaving only the opening paragraph. Persisted

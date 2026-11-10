@@ -13,6 +13,7 @@ import { IMAGE_TITLE_PLACEHOLDER, isImageTitlePending } from '@/lib/imageQuestio
 import { NodeBody } from '@/components/node/NodeBody';
 import { NodeFollowUpBar } from '@/components/node/NodeFollowUpBar';
 import { isEmptyTextNode } from '@/lib/emptyNodes';
+import { ignoreOutlineWarning, showRetainedOutlineWarning } from '@/lib/retainedOutlineWarning';
 import { ImageNodeFollowUpBar } from '@/components/node/ImageFollowUpBar';
 import { ImageAtlasOverlay } from '@/components/node/ImageAtlasOverlay';
 import { isStillImageMedia } from '@/lib/imageEditActions';
@@ -302,6 +303,7 @@ function NodeViewImpl(p: Props) {
     && (bulletsCollapsed || !visibleHasBullets);
   const emptyMedia = ct === 'media' && !v?.media && !p.node.generating;
   const emptyText = isEmptyTextNode(p.node);
+  const retainedWarning = showRetainedOutlineWarning(p.node);
   const initialTextFrame = emptyText || (!!v?.initialTextFrame && !!p.node.generating);
   const imageGenerating = ct === 'media' && !!p.node.generating && !!v?.imageGeneration && !v?.media;
   const viewingInteractiveGeneration = ct === 'interactive'
@@ -1201,13 +1203,14 @@ function NodeViewImpl(p: Props) {
             readingFamily={readingFamily}
             parentNodeId={p.node.id}
             selected={p.selected}
-            error={p.node.generationError && (
+            error={p.node.generationError && (retainedWarning ?? (
               emptyText || v.initialTextFrame || isImageGenerationErrorVersion(p.node.id, p.node.currentVersionIndex)
               || (ct === 'interactive' && !v.interactive)
-            )
+            ))
               ? p.node.generationError
               : undefined}
             onRetry={p.onRetry}
+            onIgnore={retainedWarning && nodeProjectId ? () => ignoreOutlineWarning(nodeProjectId, p.node.id, v.createdAt) : undefined}
             retryDisabled={p.retryDisabled}
             onReferenceClick={p.onReferenceClick}
             bodyStyle={bodyStyle}

@@ -15,13 +15,14 @@ export function stripTransient(project: Project): Project {
   let nodes: Record<string, ScatterNode> | null = null;
   for (const [id, n] of Object.entries(project.nodes)) {
     const recovered = recoverInteractiveNode(recoverChatNode(n));
-    if (recovered === n && !('generating' in n) && !('generatingVersionIndex' in n) && !('streamingText' in n) && !('generationError' in n)) continue;
+    if (recovered === n && !('generating' in n) && !('generatingVersionIndex' in n) && !('streamingText' in n) && !('generationError' in n) && !('retainedOutlineWarning' in n)) continue;
     if (!nodes) nodes = { ...project.nodes };
     const clean = { ...recovered };
     delete clean.generating;
     delete clean.generatingVersionIndex;
     delete clean.streamingText;
     delete clean.generationError;
+    delete clean.retainedOutlineWarning;
     nodes[id] = clean;
   }
   let groups: Record<string, Group> | null = null;

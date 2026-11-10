@@ -306,5 +306,6 @@ export function forkChatConversation(
   delete copy.generatingVersionIndex;
   delete copy.streamingText;
   delete copy.generationError;
+  delete copy.retainedOutlineWarning;
   return { node: copy, turnIds };
 }

@@ -74,7 +74,7 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
       // This checks the requested transport shape, not grammatical sentence
       // count: there is deliberately no language-specific punctuation guess.
     } });
-  const malformed = DIAGNOSTIC_TEXT.replaceAll('  - ', '- ').replace('Add all three side lengths.', 'Add the **side lengths**. Use all three sides.');
+  const malformed = DIAGNOSTIC_TEXT.replaceAll('  - ', '- ');
   const variants: [string, string, TaskVariant, 'outline' | 'prose' | 'table' | 'fragment'][] = [
     ['encyclopedic', 'Encyclopedic generation / regeneration', { kind: 'root', topic: `Image file formats: cover ${sampleFormats.join(', ')} in separate main sections. Keep each format acronym in its section title.` }, 'outline'],
     ['term-node', 'Node from a term', { kind: 'term-click', term: 'equilateral triangle' }, 'outline'],

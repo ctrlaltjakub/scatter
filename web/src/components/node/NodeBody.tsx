@@ -56,6 +56,7 @@ interface Props {
   selected: boolean;
   error?: string;
   onRetry?: () => void;
+  onIgnore?: () => void;
   retryDisabled?: boolean;
   onReferenceClick: (term: string, opts: { withModifier: boolean }) => void;
   /** Optional inline style overrides for the .node-body div (e.g. height when user resizes). */
@@ -78,6 +79,7 @@ export function NodeBody({
   selected,
   error,
   onRetry,
+  onIgnore,
   retryDisabled = false,
   onReferenceClick,
   bodyStyle,
@@ -305,7 +307,7 @@ export function NodeBody({
   return (
     <>
     {/* Errors belong to the card, not the clipped/scrolling body viewport. */}
-    <NodeGenerationError error={error} onRetry={onRetry} retryDisabled={retryDisabled} />
+    <NodeGenerationError error={error} onRetry={onRetry} onIgnore={onIgnore} retryDisabled={retryDisabled} />
     <div
       ref={bodyRef}
       className="node-body"

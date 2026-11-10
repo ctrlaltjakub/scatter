@@ -10,12 +10,14 @@ function stripTransientNode(node: ScatterNode): ScatterNode {
     && !('generatingVersionIndex' in node)
     && !('streamingText' in node)
     && !('generationError' in node)
+    && !('retainedOutlineWarning' in node)
   ) return node;
   const clean = { ...node };
   delete clean.generating;
   delete clean.generatingVersionIndex;
   delete clean.streamingText;
   delete clean.generationError;
+  delete clean.retainedOutlineWarning;
   return clean;
 }
 
