@@ -56,6 +56,28 @@ const queuedJobs: string[] = [];
 const MAX_SOURCE_JOBS = 2;
 let runningJobs = 0;
 let embeddingWarmup: Promise<void> | null = null;
+// Serialize only the small staging writes/reads, not extraction or inference.
+// A delete must be the last disk operation for its job, including on reload.
+const stagingTails = new Map<string, Promise<unknown>>();
+const removingJobs = new Set<string>();
+function inStagingOrder<T>(projectId: string, operation: () => Promise<T>): Promise<T> {
+  const tail = stagingTails.get(projectId) ?? Promise.resolve();
+  const next = tail.then(operation, operation);
+  stagingTails.set(projectId, next);
+  const release = () => { if (stagingTails.get(projectId) === next) stagingTails.delete(projectId); };
+  void next.then(release, release);
+  return next;
+}
+
+/** Don't hold an import slot while a cancelled job waits for a shared download. */
+function waitForEmbeddingModel(signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener('abort', abort, { once: true });
+    void prepareSourceEmbeddingModel().then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+}
 
 /** Begin the browser-local Granite download as soon as a project with sources
  * is known. It is shared with indexing and intentionally never blocks UI. */
@@ -83,17 +105,25 @@ export function prepareSourceEmbeddingModel(): Promise<void> {
   return embeddingWarmup;
 }
 
-async function setJobStatus(job: SourceStagingRecord, status: SourceStagingStatus, error?: string) {
-  const next = {
-    ...job,
+function checkpoint(job: SourceStagingRecord, signal: AbortSignal, patch: Partial<SourceStagingRecord>, beforeSave?: () => Promise<void>) {
+  if (signal.aborted) return Promise.resolve();
+  const next = { ...job, ...patch };
+  Object.assign(job, next);
+  useSourceRuntimeStore.getState().upsertJob(next);
+  return inStagingOrder(job.projectId, async () => {
+    if (signal.aborted) return;
+    if (beforeSave) await beforeSave();
+    if (!signal.aborted) await saveSourceStagingRecord(next);
+  });
+}
+
+function setJobStatus(job: SourceStagingRecord, signal: AbortSignal, status: SourceStagingStatus, error?: string) {
+  return checkpoint(job, signal, {
     status,
     statusDetail: status === 'fetching' ? job.statusDetail : undefined,
     waitingForConnection: undefined,
-    ...(error ? { error } : { error: undefined }),
-  };
-  Object.assign(job, next);
-  useSourceRuntimeStore.getState().upsertJob(next);
-  await saveSourceStagingRecord(next);
+    error,
+  });
 }
 
 function browserIsOffline(): boolean {
@@ -116,51 +146,14 @@ async function waitForConnection(signal: AbortSignal): Promise<void> {
 }
 
 async function pauseJobForConnection(job: SourceStagingRecord, signal: AbortSignal): Promise<void> {
-  const paused: SourceStagingRecord = {
-    ...job,
+  await checkpoint(job, signal, {
     status: 'queued',
     statusDetail: undefined,
     waitingForConnection: true,
     error: undefined,
-  };
-  Object.assign(job, paused);
-  useSourceRuntimeStore.getState().upsertJob(paused);
-  await saveSourceStagingRecord(paused);
+  });
   await waitForConnection(signal);
   job.waitingForConnection = undefined;
-}
-
-async function setJobOcrProgress(
-  job: SourceStagingRecord,
-  progress: { page: number; pageCount: number; completedPages: number[] },
-): Promise<void> {
-  const next: SourceStagingRecord = {
-    ...job,
-    status: 'ocr',
-    pageCount: progress.pageCount,
-    completedPages: progress.completedPages,
-    error: undefined,
-  };
-  Object.assign(job, next);
-  useSourceRuntimeStore.getState().upsertJob(next);
-  await saveSourceStagingRecord(next);
-}
-
-async function setJobIndexingProgress(
-  job: SourceStagingRecord,
-  completed: number,
-  total: number,
-): Promise<void> {
-  const next: SourceStagingRecord = {
-    ...job,
-    status: 'indexing',
-    indexingCompleted: completed,
-    indexingTotal: total,
-    error: undefined,
-  };
-  Object.assign(job, next);
-  useSourceRuntimeStore.getState().upsertJob(next);
-  await saveSourceStagingRecord(next);
 }
 
 function enqueue(jobId: string): void {
@@ -173,7 +166,7 @@ async function drainQueue(): Promise<void> {
     const jobId = queuedJobs.shift();
     if (!jobId) continue;
     const job = useSourceRuntimeStore.getState().jobs[jobId];
-    if (!job || job.status === 'failed') continue;
+    if (!job || job.status === 'failed' || removingJobs.has(jobId)) continue;
     const controller = new AbortController();
     activeJobs.set(jobId, controller);
     runningJobs += 1;
@@ -191,9 +184,15 @@ function blocksText(blocks: readonly SourceBlock[]): string {
 
 async function processSourceJob(job: SourceStagingRecord, signal: AbortSignal): Promise<void> {
   const writtenAssets: string[] = [];
+  const writeAsset = async (id: string, blob: Blob) => {
+    signal.throwIfAborted();
+    writtenAssets.push(id);
+    await saveSourceAsset(job.projectId, id, blob);
+  };
   try {
     if (job.waitingForConnection) await pauseJobForConnection(job, signal);
     let input = await loadSourceStagingInput(job.projectId, job.id);
+    signal.throwIfAborted();
     let blocks: SourceBlock[];
     let retainOriginal = false;
     let pageCount: number | undefined;
@@ -201,10 +200,10 @@ async function processSourceJob(job: SourceStagingRecord, signal: AbortSignal): 
     let finalUrl = job.originalUrl;
     if (job.kind === 'webpage') {
       job.statusDetail = 'fetch-direct';
-      await setJobStatus(job, 'fetching');
+      await setJobStatus(job, signal, 'fetching');
       const extracted = await extractWebpage(job.originalUrl ?? '', signal, async (statusDetail) => {
         job.statusDetail = statusDetail;
-        await setJobStatus(job, 'fetching');
+        await setJobStatus(job, signal, 'fetching');
       });
       blocks = extracted.blocks;
       retainOriginal = false;
@@ -214,26 +213,20 @@ async function processSourceJob(job: SourceStagingRecord, signal: AbortSignal): 
       input = new Blob([blocksText(blocks)], { type: 'text/plain' });
     } else {
       if (!input) throw new Error('The local source file is no longer available. Add it again.');
-      await setJobStatus(job, job.kind === 'image' ? 'ocr' : 'extracting');
+      await setJobStatus(job, signal, job.kind === 'image' ? 'ocr' : 'extracting');
       const completedOcrPages = await loadSourceStagingOcrPages(job.projectId, job.id);
-      let progressWrite = Promise.resolve();
       const extracted = await extractSourceBlob(input, job.kind, signal, (progress) => {
-        // OCR pages finish out of order. Serialize the small staging writes so
-        // a slower earlier write cannot erase a later completed-page list.
-        progressWrite = progressWrite.then(async () => {
-          // Save the finished transcription before recording the page as done.
-          // A refresh between pages therefore resumes without spending again
-          // on work whose result already reached local storage.
-          await saveSourceStagingOcrPage(job.projectId, job.id, progress.page, progress.text);
-          await setJobOcrProgress(job, progress);
-        });
-        return progressWrite;
+        // Persist the transcription before marking the page done so resuming
+        // does not pay for a completed page twice.
+        return checkpoint(job, signal, {
+          status: 'ocr', pageCount: progress.pageCount, completedPages: progress.completedPages, error: undefined,
+        }, () => saveSourceStagingOcrPage(job.projectId, job.id, progress.page, progress.text));
       }, completedOcrPages);
       blocks = extracted.blocks;
       retainOriginal = extracted.retainOriginal;
       pageCount = extracted.pageCount;
     }
-    if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    signal.throwIfAborted();
     if (!blocks.some((block) => block.text.trim())) throw new Error('No readable text was found in this source.');
 
     const project = await readProjectForSources(job.projectId);
@@ -250,12 +243,14 @@ async function processSourceJob(job: SourceStagingRecord, signal: AbortSignal): 
     // text receives a new immutable capture revision; exact duplicate local
     // files continue to collapse into the existing source.
     if (duplicate && !sameUrl) {
-      await deleteSourceStagingJob(job.projectId, job.id);
+      await inStagingOrder(job.projectId, () => deleteSourceStagingJob(job.projectId, job.id));
       useSourceRuntimeStore.getState().removeJob(job.id);
       return;
     }
 
-    await setJobStatus(job, 'indexing');
+    signal.throwIfAborted();
+    if (sameUrl) job.sourceId = sameUrl.id;
+    await setJobStatus(job, signal, 'indexing');
     const revisionId = newId();
     const chunks = chunkSourceBlocks(blocks);
     if (!chunks.length) throw new Error('No searchable passages could be prepared from this source.');
@@ -269,15 +264,18 @@ async function processSourceJob(job: SourceStagingRecord, signal: AbortSignal): 
     const keyword = buildKeywordIndex(chunks);
     let embeddingValues: Float32Array | null = null;
     try {
-      await setJobIndexingProgress(job, 0, chunks.length);
-      await prepareSourceEmbeddingModel();
+      await checkpoint(job, signal, { status: 'indexing', indexingCompleted: 0, indexingTotal: chunks.length });
+      await waitForEmbeddingModel(signal);
+      signal.throwIfAborted();
       if (useSourceRuntimeStore.getState().embeddingStatus !== 'ready') {
         throw new Error(useSourceRuntimeStore.getState().embeddingError ?? 'The embedding model is unavailable.');
       }
       embeddingValues = await embedSourceTexts(chunks.map((chunk) => chunk.text), {
-        onBatchProgress: (completed, total) => setJobIndexingProgress(job, completed, total),
+        signal,
+        onBatchProgress: (completed, total) => checkpoint(job, signal, { indexingCompleted: completed, indexingTotal: total }),
       });
     } catch (error) {
+      signal.throwIfAborted(); // cancelling one import is not a shared embedding-model failure
       useSourceRuntimeStore.getState().setEmbedding(
         'failed',
         0,
@@ -285,16 +283,15 @@ async function processSourceJob(job: SourceStagingRecord, signal: AbortSignal): 
       );
     }
 
+    signal.throwIfAborted();
     const contentAssetId = newId();
     const keywordIndexAssetId = newId();
     const embeddingIndexAssetId = embeddingValues ? newId() : undefined;
     const originalAssetId = retainOriginal ? newId() : undefined;
-    await saveSourceAsset(job.projectId, contentAssetId, await encodeSourceDocument(document));
-    writtenAssets.push(contentAssetId);
-    await saveSourceAsset(job.projectId, keywordIndexAssetId, encodeKeywordIndex(keyword));
-    writtenAssets.push(keywordIndexAssetId);
+    await writeAsset(contentAssetId, await encodeSourceDocument(document));
+    await writeAsset(keywordIndexAssetId, encodeKeywordIndex(keyword));
     if (embeddingValues && embeddingIndexAssetId) {
-      await saveSourceAsset(job.projectId, embeddingIndexAssetId, encodeEmbeddingIndex({
+      await writeAsset(embeddingIndexAssetId, encodeEmbeddingIndex({
         schemaVersion: 1,
         model: GRANITE_EMBEDDING_MODEL,
         revision: GRANITE_EMBEDDING_REVISION,
@@ -302,13 +299,12 @@ async function processSourceJob(job: SourceStagingRecord, signal: AbortSignal): 
         chunkIds: chunks.map((chunk) => chunk.id),
         values: embeddingValues,
       }));
-      writtenAssets.push(embeddingIndexAssetId);
     }
     if (originalAssetId && input) {
-      await saveSourceAsset(job.projectId, originalAssetId, input);
-      writtenAssets.push(originalAssetId);
+      await writeAsset(originalAssetId, input);
     }
     for (const assetId of writtenAssets) {
+      signal.throwIfAborted();
       if (!await loadSourceAsset(job.projectId, assetId)) throw new Error('A prepared source asset could not be verified.');
     }
 
@@ -349,16 +345,17 @@ async function processSourceJob(job: SourceStagingRecord, signal: AbortSignal): 
       revisions: { [revisionId]: revision },
       originalUrl: finalUrl,
     };
-    await publishProjectSource(job.projectId, source);
-    await deleteSourceStagingJob(job.projectId, job.id);
+    signal.throwIfAborted();
+    const published = await publishProjectSource(job.projectId, source, signal, Boolean(sameUrl));
+    if (published?.sourceLibrary?.sources[sourceId]?.revisions[revisionId]) writtenAssets.length = 0;
+    await inStagingOrder(job.projectId, () => deleteSourceStagingJob(job.projectId, job.id));
     useSourceRuntimeStore.getState().removeJob(job.id);
   } catch (error) {
-    if ((error as Error)?.name === 'AbortError') return;
+    if (signal.aborted || (error as Error)?.name === 'AbortError') return;
     // Browsers can report a clean offline state without a useful network error.
     // Keep the row pending and resume invisibly when connectivity returns,
     // instead of asking the user to retry a healthy source by hand.
     if (browserIsOffline() && ['webpage', 'image', 'pdf'].includes(job.kind)) {
-      for (const assetId of writtenAssets) await deleteSourceAsset(job.projectId, assetId).catch(() => undefined);
       try {
         await pauseJobForConnection(job, signal);
       } catch (pauseError) {
@@ -368,8 +365,9 @@ async function processSourceJob(job: SourceStagingRecord, signal: AbortSignal): 
       if (!signal.aborted) await processSourceJob(job, signal);
       return;
     }
+    await setJobStatus(job, signal, 'failed', error instanceof Error ? error.message : String(error));
+  } finally {
     for (const assetId of writtenAssets) await deleteSourceAsset(job.projectId, assetId).catch(() => undefined);
-    await setJobStatus(job, 'failed', error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -394,9 +392,11 @@ async function createJob(options: {
     originalUrl: options.originalUrl,
     mimeType: options.mimeType,
   };
-  if (options.input) await saveSourceStagingInput(record.projectId, record.id, options.input);
-  await saveSourceStagingRecord(record);
-  useSourceRuntimeStore.getState().upsertJob(record);
+  await inStagingOrder(record.projectId, async () => {
+    if (options.input) await saveSourceStagingInput(record.projectId, record.id, options.input);
+    await saveSourceStagingRecord(record);
+    useSourceRuntimeStore.getState().upsertJob(record);
+  });
   // The first queued source is already the user's explicit choice to use
   // project material. Set the remembered policy now rather than waiting until
   // extraction finishes, so a generation started in the meantime can wait for
@@ -447,9 +447,12 @@ export async function addWebpageSources(projectId: string, urls: readonly string
 }
 
 export async function restoreSourceProcessing(projectId: string): Promise<void> {
-  const jobs = await listSourceStagingRecords(projectId);
-  useSourceRuntimeStore.getState().replaceProjectJobs(projectId, jobs);
-  for (const job of jobs) if (job.status !== 'failed') enqueue(job.id);
+  await inStagingOrder(projectId, async () => {
+    const jobs = (await listSourceStagingRecords(projectId)).filter(job => !removingJobs.has(job.id));
+    const runtime = useSourceRuntimeStore.getState();
+    runtime.replaceProjectJobs(projectId, jobs.map(job => runtime.jobs[job.id] ?? job));
+    for (const job of jobs) if (job.status !== 'failed') enqueue(job.id);
+  });
 }
 
 export async function waitForProjectSources(
@@ -492,23 +495,42 @@ export async function retrySourceJob(jobId: string): Promise<void> {
     indexingCompleted: undefined,
     indexingTotal: undefined,
   };
-  await saveSourceStagingRecord(next);
-  useSourceRuntimeStore.getState().upsertJob(next);
-  enqueue(jobId);
+  await inStagingOrder(job.projectId, async () => {
+    if (removingJobs.has(jobId) || !useSourceRuntimeStore.getState().jobs[jobId]) return;
+    await saveSourceStagingRecord(next);
+    if (!removingJobs.has(jobId)) {
+      useSourceRuntimeStore.getState().upsertJob(next);
+      enqueue(jobId);
+    }
+  });
 }
 
 export async function removeSourceJob(jobId: string): Promise<void> {
-  activeJobs.get(jobId)?.abort();
   const job = useSourceRuntimeStore.getState().jobs[jobId];
   if (!job) return;
-  await deleteSourceStagingJob(job.projectId, job.id);
+  removingJobs.add(jobId);
+  activeJobs.get(jobId)?.abort();
+  const index = queuedJobs.indexOf(jobId);
+  if (index !== -1) queuedJobs.splice(index, 1);
   useSourceRuntimeStore.getState().removeJob(job.id);
+  try {
+    await inStagingOrder(job.projectId, () => deleteSourceStagingJob(job.projectId, job.id));
+  } catch {
+    useSourceRuntimeStore.getState().upsertJob({ ...job, status: 'failed', error: 'Could not remove the local import. Try removing it again.' });
+  } finally {
+    removingJobs.delete(jobId);
+  }
 }
 
 export async function permanentlyDeleteSource(projectId: string, sourceId: string): Promise<void> {
   const project = await readProjectForSources(projectId);
   const source = project?.sourceLibrary?.sources[sourceId];
   if (!source) return;
+  // Removing a saved webpage also cancels its pending refresh, without
+  // disturbing imports of the same URL in other projects.
+  const refreshes = Object.values(useSourceRuntimeStore.getState().jobs).filter(job =>
+    job.projectId === projectId && (job.sourceId === sourceId || (source.originalUrl && job.originalUrl === source.originalUrl)));
+  await Promise.all(refreshes.map(job => removeSourceJob(job.id)));
   const ids = sourceAssetIds({ mode: 'ignore', order: [sourceId], sources: { [sourceId]: source } });
   await removeProjectSource(projectId, sourceId);
   for (const assetId of [...ids.eager, ...ids.lazy]) await deleteSourceAsset(projectId, assetId);

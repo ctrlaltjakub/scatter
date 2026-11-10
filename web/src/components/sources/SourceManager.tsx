@@ -120,6 +120,7 @@ export function SourceManager({
   const [filter, setFilter] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<{ source: ProjectSource; rect: DOMRect } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const confirmationRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const autoScrollFrame = useRef(0);
   const dragPointerY = useRef(0);
@@ -214,7 +215,7 @@ export function SourceManager({
     if (!deleteTarget) return;
     const dismiss = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (panelRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target) || confirmationRef.current?.contains(target)) return;
       setDeleteTarget(null);
     };
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') setDeleteTarget(null); };
@@ -289,7 +290,9 @@ export function SourceManager({
             {job.status === 'failed' && (
               <button type="button" onClick={() => { void retrySourceJob(job.id); }} data-tip="Retry source processing"><RotateCcw size={15} /></button>
             )}
-            <button type="button" onClick={() => { void removeSourceJob(job.id); }} data-tip="Remove failed import"><Trash2 size={15} /></button>
+            <button type="button" onClick={() => { void removeSourceJob(job.id); }}
+              data-tip={job.status === 'failed' ? 'Remove failed import' : 'Cancel import'}
+              aria-label={`${job.status === 'failed' ? 'Remove' : 'Cancel import of'} ${job.title}`}><Trash2 size={15} /></button>
           </div>
         ))}
         <SortableContext items={visible.map((source) => source.id)} strategy={verticalListSortingStrategy}>
@@ -344,6 +347,7 @@ export function SourceManager({
   );
   const confirmation = deleteTarget ? (
       <div
+        ref={confirmationRef}
         className="project-delete-confirmation source-delete-confirmation"
         style={{
           left: Math.min(window.innerWidth - 170, deleteTarget.rect.right + 6),

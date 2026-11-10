@@ -7,7 +7,7 @@ type EmbedRequest = {
   id: number;
   texts: string[];
   batchSize?: number;
-};
+} | { type: 'cancel'; id: number };
 
 type WorkerResponse =
   | { type: 'model-progress'; id: number; progress: number }
@@ -21,14 +21,21 @@ const workerScope = self as DedicatedWorkerGlobalScope;
 // the worker so source imports and generation-time queries share one warmed
 // model safely without ever blocking Scatter's UI thread.
 let inferenceQueue = Promise.resolve();
+const requests = new Map<number, AbortController>();
 
 workerScope.onmessage = (event: MessageEvent<EmbedRequest>) => {
   const request = event.data;
-  if (request.type !== 'embed') return;
+  if (request.type === 'cancel') {
+    requests.get(request.id)?.abort();
+    return;
+  }
+  const controller = new AbortController();
+  requests.set(request.id, controller);
   inferenceQueue = inferenceQueue.then(async () => {
     try {
       const values = await runGraniteEmbedding({
         texts: request.texts,
+        signal: controller.signal,
         batchSize: request.batchSize,
         onProgress: (progress) => workerScope.postMessage({
           type: 'model-progress', id: request.id, progress,
@@ -40,11 +47,11 @@ workerScope.onmessage = (event: MessageEvent<EmbedRequest>) => {
       const buffer = values.buffer as ArrayBuffer;
       workerScope.postMessage({ type: 'result', id: request.id, buffer } satisfies WorkerResponse, [buffer]);
     } catch (error) {
-      workerScope.postMessage({
-        type: 'error',
-        id: request.id,
-        message: error instanceof Error ? error.message : String(error),
+      if (!controller.signal.aborted) workerScope.postMessage({
+        type: 'error', id: request.id, message: error instanceof Error ? error.message : String(error),
       } satisfies WorkerResponse);
+    } finally {
+      requests.delete(request.id);
     }
   });
 };

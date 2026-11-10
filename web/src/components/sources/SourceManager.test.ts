@@ -1,10 +1,36 @@
 import { createElement } from 'react';
-import { render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
 import { useSourceRuntimeStore } from '@/store/useSourceRuntimeStore';
+import { useSourceUiStore } from '@/store/useSourceUiStore';
 import type { ProjectSource } from '@/store/types';
 import { SourceManager, stageLabel } from './SourceManager';
+
+describe('SourceManager deletion', () => {
+  it.each([true, false])('confirms a pointer click in the separate dialog (embedded: %s)', async (embedded) => {
+    const project = createBlankProject('Source deletion', 'root');
+    const source: ProjectSource = {
+      id: 'source', title: 'Ready source', kind: 'text', checked: true, createdAt: 1,
+      contentHash: 'test', activeRevisionId: 'rev', revisions: {},
+    };
+    project.sourceLibrary = { mode: 'use', order: [source.id], sources: { [source.id]: source } };
+    useGraphStore.setState({ project, activeProjectId: project.id });
+    useSourceUiStore.getState().openManager();
+    const user = userEvent.setup();
+    render(createElement(SourceManager, { embedded }));
+    const remove = () => user.click(screen.getByRole('button', { name: 'Delete Ready source' }));
+    const confirmation = () => within(screen.getByRole('dialog', { name: 'Delete source?' }));
+    await remove();
+    await user.click(confirmation().getByRole('button', { name: 'No' }));
+    expect(useGraphStore.getState().project?.sourceLibrary?.sources.source).toBeDefined();
+    await remove();
+    await user.click(confirmation().getByRole('button', { name: 'Yes' }));
+    await vi.waitFor(() => expect(useGraphStore.getState().project?.sourceLibrary?.sources.source).toBeUndefined());
+    expect(screen.queryByRole('dialog', { name: 'Delete source?' })).not.toBeInTheDocument();
+  });
+});
 
 describe('SourceManager page counts', () => {
   beforeEach(() => {

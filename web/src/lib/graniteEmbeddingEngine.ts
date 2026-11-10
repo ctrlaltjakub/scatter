@@ -36,14 +36,18 @@ async function loadExtractor(onProgress?: (progress: number) => void): Promise<F
 
 export async function runGraniteEmbedding(options: {
   texts: readonly string[];
+  signal?: AbortSignal;
   batchSize?: number;
   onProgress?: (progress: number) => void;
   onBatchProgress?: (completed: number, total: number) => void | Promise<void>;
 }): Promise<Float32Array> {
-  const { texts } = options;
+  const { texts, signal } = options;
+  signal?.throwIfAborted();
   if (!texts.length) return new Float32Array();
   await options.onBatchProgress?.(0, texts.length);
+  signal?.throwIfAborted();
   const extractor = await loadExtractor(options.onProgress);
+  signal?.throwIfAborted();
   // Larger batches amortize tokenization/session overhead. In production the
   // allocation lives off the UI thread. A 16-item batch is the best desktop
   // compromise here: doubling it only improved measured throughput by about
@@ -51,8 +55,10 @@ export async function runGraniteEmbedding(options: {
   const batchSize = Math.max(1, options.batchSize ?? 16);
   const values = new Float32Array(texts.length * GRANITE_EMBEDDING_DIMENSIONS);
   for (let start = 0; start < texts.length; start += batchSize) {
+    signal?.throwIfAborted();
     const batch = texts.slice(start, start + batchSize);
     const output = await extractor(batch, { pooling: 'cls', normalize: true });
+    signal?.throwIfAborted();
     if (output.data.length !== batch.length * GRANITE_EMBEDDING_DIMENSIONS) {
       throw new Error('Granite returned an unexpected embedding shape.');
     }

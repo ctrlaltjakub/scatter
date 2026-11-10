@@ -61,4 +61,15 @@ describe('Granite browser embeddings', () => {
 
     expect(progress).toEqual([[0, 3], [2, 3], [3, 3]]);
   });
+
+  it('stops a cancelled import between batches without stopping another request', async () => {
+    const controller = new AbortController();
+    const progress: number[] = [];
+    await expect(embedSourceTexts(['one', 'two', 'three'], {
+      signal: controller.signal, batchSize: 1,
+      onBatchProgress: n => { progress.push(n); if (n === 1) controller.abort(); },
+    })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(progress).toEqual([0, 1]);
+    await expect(embedSourceTexts(['another source'])).resolves.toHaveLength(384);
+  });
 });

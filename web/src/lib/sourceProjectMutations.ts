@@ -21,8 +21,9 @@ export async function mutateSourceLibraryWithoutHistory(
     try {
       useGraphStore.setState((state) => {
         if (state.project?.id !== projectId) return state;
-        const sourceLibrary = update(state.project.sourceLibrary ?? EMPTY_SOURCE_LIBRARY);
-        if (sourceLibrary === state.project.sourceLibrary) return state;
+        const previous = state.project.sourceLibrary ?? EMPTY_SOURCE_LIBRARY;
+        const sourceLibrary = update(previous);
+        if (sourceLibrary === previous) return state;
         return { project: { ...state.project, sourceLibrary, updatedAt: Date.now() } };
       });
     } finally {
@@ -32,15 +33,22 @@ export async function mutateSourceLibraryWithoutHistory(
   }
   const project = await loadProjectById(projectId);
   if (!project) return null;
-  const sourceLibrary = update(project.sourceLibrary ?? EMPTY_SOURCE_LIBRARY);
+  const previous = project.sourceLibrary ?? EMPTY_SOURCE_LIBRARY;
+  const sourceLibrary = update(previous);
+  if (sourceLibrary === previous) return project;
   const next = { ...project, sourceLibrary, updatedAt: Date.now() };
   await saveProjectFile(next);
   await updateInactiveProjectMeta(next);
   return next;
 }
 
-export async function publishProjectSource(projectId: string, source: ProjectSource): Promise<Project | null> {
-  return mutateSourceLibraryWithoutHistory(projectId, (library) => publishReadySource(library, source));
+export async function publishProjectSource(projectId: string, source: ProjectSource, signal: AbortSignal, refresh: boolean): Promise<Project | null> {
+  return mutateSourceLibraryWithoutHistory(projectId, (library) => {
+    // Reading an inactive project is asynchronous. Recheck at the mutation,
+    // not just before opening the file.
+    if (signal.aborted || (refresh && !library.sources[source.id])) return library;
+    return publishReadySource(library, source);
+  });
 }
 
 export async function removeProjectSource(projectId: string, sourceId: string): Promise<Project | null> {
