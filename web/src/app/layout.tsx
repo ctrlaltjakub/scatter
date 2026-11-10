@@ -62,8 +62,8 @@ const atkinson = Atkinson_Hyperlegible({
 // Link previews never include a visitor's projects. The public landing page
 // hosts one static capture for both releases; no client-side request is needed.
 const shareImage = {
-  url: 'https://www.scatter.study/media/scatter-mind-map.png', width: 1200, height: 630, type: 'image/png',
-  alt: 'Scatter’s Music theory mind map, with arrows from the opening explanation to intervals and polymeter.',
+  url: 'https://www.scatter.study/media/scatter-readme-hero.png', width: 1200, height: 630, type: 'image/png',
+  alt: 'A dark-mode music theory project in Scatter, with a term preview, a circle of fifths, a video and a drum sequencer connected on the canvas.',
 };
 const shareTitle = 'Scatter — AI-powered mind maps';
 const description = 'Explore knowledge through AI-assisted mind maps on an interactive canvas.';
