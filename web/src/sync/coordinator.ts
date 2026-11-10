@@ -45,10 +45,13 @@ import {
 import {
   GoogleDriveAuthorizationRejected,
   GoogleDriveReconnectRequired,
+  GoogleDriveRenewalWindowError,
   GoogleDriveSyncProvider,
   ensureGoogleDriveAccessToken,
   googleDriveTokenNeedsRefresh,
+  hasGoogleDriveAccessToken,
   installGoogleDriveGestureRefresh,
+  prepareGoogleDriveAccountHint,
   renewGoogleDriveAccessToken,
 } from './providers/googleDrive';
 import { isBrowserOnline, subscribeNetworkStatus } from '@/lib/networkStatus';
@@ -223,12 +226,14 @@ function googleSyncEnabled(): boolean {
 
 function onDriveRenewed(): void {
   if (!googleSyncEnabled()) return;
+  void prepareGoogleDriveAccountHint();
   useSyncStore.getState().setRuntime({ error: null, googleDriveReconnectRequired: false });
   scheduleSync(0);
 }
 
 function onDriveRenewalError(error: Error): void {
   if (!googleSyncEnabled() || !isBrowserOnline()) return;
+  if (error instanceof GoogleDriveRenewalWindowError && hasGoogleDriveAccessToken()) return;
   if (error instanceof GoogleDriveAuthorizationRejected) requireGoogleDriveReconnect(error.message);
   else useSyncStore.getState().setRuntime({ error: error.message });
 }
@@ -1250,6 +1255,9 @@ export async function initializeSyncCoordinator(): Promise<() => void> {
       return;
     }
     if (!isBrowserOnline()) return;
+    // Cache the chosen account while the old grant is usable. Never postpone
+    // opening the next Google popup past the click that authorized it.
+    void prepareGoogleDriveAccountHint();
     if (driveRefreshCleanup || driveRefreshSetupPending) return;
     driveRefreshSetupPending = true;
     const generation = ++driveRefreshGeneration;

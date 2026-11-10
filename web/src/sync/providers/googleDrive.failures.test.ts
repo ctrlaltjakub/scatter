@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearGoogleDriveSourceAccessToken, clearGoogleDriveToken, hasGoogleDriveAccessToken, GoogleDriveAuthorizationRejected,
+import { clearGoogleDriveSourceAccessToken, clearGoogleDriveToken, GoogleDriveSyncProvider, hasGoogleDriveAccessToken, GoogleDriveAuthorizationRejected, GoogleDriveRenewalWindowError,
   requestGoogleDriveSourceAccessToken, requestGoogleDriveToken } from './googleDrive';
 
 const scriptSelector = 'script[src="https://accounts.google.com/gsi/client"]';
@@ -62,16 +62,63 @@ describe('Google authorization failure recovery', () => {
     expect(hasGoogleDriveAccessToken()).toBe(true);
   });
 
-  it.each(['popup_closed', 'popup_failed_to_open'])('routes a no-prompt %s to explicit reconnect', async type => {
+  it.each(['popup_closed', 'popup_failed_to_open'])('routes a no-prompt %s with no usable grant to explicit reconnect', async type => {
+    vi.useFakeTimers();
     installGoogle();
     window.google!.accounts!.oauth2!.initTokenClient = config => ({
       callback: config.callback, requestAccessToken: () => config.error_callback?.({type}),
     });
-    await expect(requestGoogleDriveToken('none')).rejects.toBeInstanceOf(GoogleDriveAuthorizationRejected);
+    const result = requestGoogleDriveToken('none').catch(error => error);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(await result).toBeInstanceOf(GoogleDriveAuthorizationRejected);
     // A user-initiated sign-in still reports cancellation / blocked popups normally.
     const explicit = await requestGoogleDriveToken().catch((error: unknown) => error);
     expect(explicit).toBeInstanceOf(Error);
     expect(explicit).not.toBeInstanceOf(GoogleDriveAuthorizationRejected);
+  });
+
+  it.each(['grant', 'login_required'])('uses the actual OAuth %s if received just after the silent popup closed', async outcome => {
+    vi.useFakeTimers(); installGoogle();
+    let reply!: () => void;
+    window.google!.accounts!.oauth2!.initTokenClient = config => ({
+      callback: config.callback, requestAccessToken: () => {
+        config.error_callback?.({ type: 'popup_closed' });
+        reply = () => config.callback(outcome === 'grant' ? { access_token: 'new', expires_in: 3600 } : { error: outcome });
+      },
+    });
+    const result = requestGoogleDriveToken('none').catch(error => error);
+    await vi.advanceTimersByTimeAsync(1_800);
+    reply();
+    if (outcome === 'grant') expect(await result).toBeUndefined();
+    else expect(await result).toHaveProperty('message', 'login_required');
+    expect(hasGoogleDriveAccessToken()).toBe(outcome === 'grant');
+    await vi.advanceTimersByTimeAsync(0); // Deliver jsdom's queued storage event.
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('keeps sync available after a no-result close, without reporting renewal success or accepting out-of-time grants', async () => {
+    vi.useFakeTimers(); installGoogle();
+    await requestGoogleDriveToken();
+    const old = localStorage.getItem('scatter.google-drive-token.v1');
+    let close!: () => void, late!: () => void;
+    window.google!.accounts!.oauth2!.initTokenClient = config => ({
+      callback: config.callback, requestAccessToken: () => {
+        close = () => config.error_callback?.({ type: 'popup_closed' });
+        late = () => config.callback({ access_token: 'too-late' });
+        close();
+      },
+    });
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ files: [] }));
+    const renewal = requestGoogleDriveToken('none').catch(error => error);
+    const listing = new GoogleDriveSyncProvider().list();
+    await vi.advanceTimersByTimeAsync(1_900);
+    close(); // Not a new request and must not extend the timer.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await renewal).toBeInstanceOf(GoogleDriveRenewalWindowError);
+    expect(await listing).toEqual([]);
+    expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: 'Bearer synthetic-token' });
+    late(); expect(localStorage.getItem('scatter.google-drive-token.v1')).toBe(old);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   describe.each([

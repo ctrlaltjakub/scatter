@@ -6,12 +6,14 @@ import { syncRequestSignal } from '../requestTimeout';
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 const DRIVE_SELECTED_FILES_SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const TOKEN_KEY = 'scatter.google-drive-token.v1';
+const ACCOUNT_KEY = 'scatter.google-drive-account.v1';
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
 const DRIVE_API = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3';
 const SIMPLE_LIMIT = 5 * 1024 * 1024;
 const TOKEN_REFRESH_WINDOW_MS = 5 * 60 * 1000;
 const TOKEN_REQUEST_TIMEOUT_MS = 30_000;
+const POPUP_RESULT_GRACE_MS = 2_000;
 const IDENTITY_LOAD_TIMEOUT_MS = 15_000;
 const RECONNECT_REQUIRED_ERRORS = new Set([
   'access_denied',
@@ -58,6 +60,8 @@ let sourceAccessToken: StoredToken | null = null;
 // A pointerdown can start renewal before that same click starts a sync action.
 // Both paths must share the grant instead of racing or opening two popups.
 let syncTokenRequest: Promise<void> | null = null;
+let connectionGeneration = 0;
+let accountLookup: { token: string; promise: Promise<void> } | null = null;
 let identityLoad: Promise<void> | null = null;
 
 interface GoogleTokenResponse {
@@ -82,6 +86,8 @@ declare global {
           initTokenClient(config: {
             client_id: string;
             scope: string;
+            login_hint?: string;
+            include_granted_scopes?: boolean;
             callback: (response: GoogleTokenResponse) => void;
             error_callback?: (error: { type: string }) => void;
           }): GoogleTokenClient;
@@ -93,6 +99,7 @@ declare global {
 
 export class GoogleDriveReconnectRequired extends Error {}
 export class GoogleDriveAuthorizationRejected extends Error {}
+export class GoogleDriveRenewalWindowError extends Error {}
 
 export function resolveGoogleDriveClientId(
   configuredClientId: string | undefined,
@@ -140,7 +147,7 @@ function readStoredToken(): StoredToken | null {
 function loadStoredToken(): StoredToken | null {
   const token = readStoredToken();
   if (token && token.expiresAt > Date.now() + 30_000) return token;
-  if (token) clearGoogleDriveToken();
+  if (token) removeStoredToken(); // Expiry is not a disconnect; keep the selected account.
   return null;
 }
 
@@ -155,6 +162,46 @@ export function hasGoogleDriveAccessToken(): boolean {
 export function googleDriveTokenNeedsRefresh(now = Date.now()): boolean {
   const token = readStoredToken();
   return !token || token.expiresAt <= now + TOKEN_REFRESH_WINDOW_MS;
+}
+
+function storedAccount(): string | null {
+  try { return localStorage.getItem(ACCOUNT_KEY); } catch { return null; }
+}
+
+function setStoredAccount(email: string | null): void {
+  try {
+    if (email) localStorage.setItem(ACCOUNT_KEY, email);
+    else localStorage.removeItem(ACCOUNT_KEY);
+  } catch { /* Browser storage may be unavailable. */ }
+}
+
+/** Google accepts an email as an OAuth login_hint. Drive exposes the connected
+ * user's own address with our existing appData scope; no profile or file access. */
+async function driveAccountEmail(accessToken: string): Promise<string | null> {
+  try {
+    const response = await fetch(`${DRIVE_API}/about?fields=user(emailAddress)`, {
+      headers: { Authorization: `Bearer ${accessToken}` }, credentials: 'omit',
+      cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) return null;
+    const { user } = await response.json() as { user?: { emailAddress?: string } };
+    const email = user?.emailAddress?.trim().toLowerCase();
+    return email?.includes('@') ? email : null;
+  } catch { return null; }
+}
+
+/** Prepare before the next click, including for connections made before hints
+ * existed. Opening an OAuth window must not wait for an asynchronous lookup. */
+export function prepareGoogleDriveAccountHint(): Promise<void> {
+  const token = readStoredToken();
+  if (storedAccount() || !token || token.expiresAt <= Date.now() || navigator.onLine === false) return Promise.resolve();
+  if (accountLookup?.token === token.accessToken) return accountLookup.promise;
+  const generation = connectionGeneration;
+  const lookup = { token: token.accessToken, promise: driveAccountEmail(token.accessToken).then(email => {
+    if (email && generation === connectionGeneration && readStoredToken()?.accessToken === token.accessToken) setStoredAccount(email);
+  }).finally(() => { if (accountLookup === lookup) accountLookup = null; }) };
+  accountLookup = lookup;
+  return lookup.promise;
 }
 
 function storeToken(response: GoogleTokenResponse): StoredToken {
@@ -210,20 +257,52 @@ function googlePopupError(type: string): Error {
       : 'Google sign-in could not finish. Please try again.');
 }
 
-function requestLoadedGoogleDriveToken(prompt?: GooglePrompt): Promise<void> {
+function requestLoadedGoogleDriveToken(prompt: GooglePrompt | undefined, generation: number): Promise<void> {
   const oauth = window.google?.accounts?.oauth2;
   if (!oauth) return Promise.reject(new Error('Google authorization did not initialize.'));
+  const disconnected = () => new Error('The Google Drive connection changed before authorization finished.');
+  if (generation !== connectionGeneration) return Promise.reject(disconnected());
+  const hint = (prompt === 'none' || prompt === '') ? storedAccount() : null;
+  const identifyingExistingAccount = !hint && (prompt === 'none' || prompt === '') ? accountLookup?.promise : undefined;
   return new Promise<void>((resolve, reject) => {
     let settled = false;
+    let closeTimer: number | undefined;
     const finish = (action: () => void) => {
       if (settled) return;
       settled = true;
       window.clearTimeout(timeout);
+      window.clearTimeout(closeTimer);
       action();
     };
     const timeout = window.setTimeout(() => {
       finish(() => reject(new Error('Google authorization did not finish. Reconnect Google Drive.')));
     }, TOKEN_REQUEST_TIMEOUT_MS);
+    const noPopupResult = (blocked: boolean) => {
+      const reason = blocked ? 'Google could not open its renewal window. Allow pop-ups for this site.'
+        : 'Google closed the renewal window without returning an authorization result.';
+      reject(hasGoogleDriveAccessToken()
+        ? new GoogleDriveRenewalWindowError(`${reason} Your current access is still valid.`)
+        : new GoogleDriveAuthorizationRejected(`${reason} Reconnect Google Drive to choose the sync account.`));
+    };
+    const accept = async (response: GoogleTokenResponse) => {
+      // A legacy token may still be identifying itself when the user clicks.
+      // Open synchronously, but don't replace it until that check finishes.
+      if (response.access_token && identifyingExistingAccount) await identifyingExistingAccount;
+      if (generation !== connectionGeneration) throw disconnected();
+      const expectedAccount = hint ?? (prompt === 'none' || prompt === '' ? storedAccount() : null);
+      if (response.access_token && identifyingExistingAccount && !expectedAccount) {
+        throw new Error('Could not identify the connected Google account. Try again or reconnect Google Drive.');
+      }
+      if (response.access_token && expectedAccount) {
+        // A login hint is not proof. Never use another account's token for sync.
+        const email = await driveAccountEmail(response.access_token);
+        if (generation !== connectionGeneration || storedAccount() !== expectedAccount) throw disconnected();
+        if (!email) throw new Error('Could not verify the Google account for renewal. Try again.');
+        if (email !== expectedAccount) throw new GoogleDriveAuthorizationRejected('Google returned a different account. Reconnect Google Drive to choose the sync account.');
+      }
+      storeToken(response);
+      if (!expectedAccount) setStoredAccount(null); // A successful explicit connection can select another account.
+    };
     try {
       const client = oauth.initTokenClient({
         client_id: resolveGoogleDriveClientId(
@@ -231,18 +310,18 @@ function requestLoadedGoogleDriveToken(prompt?: GooglePrompt): Promise<void> {
           window.location.origin,
         )!,
         scope: DRIVE_SCOPE,
-        error_callback: error => finish(() => {
-          // A no-prompt grant can return popup_closed instead of login_required.
-          // There was no sign-in screen for the user to cancel.
-          if (prompt === 'none' && (error.type === 'popup_closed' || error.type === 'popup_failed_to_open')) {
-            reject(new GoogleDriveAuthorizationRejected(error.type === 'popup_failed_to_open'
-              ? 'Google could not open its renewal window. Allow pop-ups for this site, then reconnect Google Drive.'
-              : 'Google could not renew access automatically. Reconnect Google Drive to continue syncing.'));
-          } else reject(googlePopupError(error.type));
-        }),
-        callback: (response) => finish(() => {
-          try { storeToken(response); resolve(); } catch (error) { reject(error); }
-        }),
+        include_granted_scopes: false, // Don't fold previously approved Picker access into the sync token.
+        ...(hint ? { login_hint: hint } : {}),
+        error_callback: error => {
+          if (settled) return;
+          if (prompt === 'none' && error.type === 'popup_closed') {
+            // GIS polls popup.closed separately from receiving Google's OAuth
+            // message. A quiet popup can close before the opener handles it.
+            closeTimer ??= window.setTimeout(() => finish(() => noPopupResult(false)), POPUP_RESULT_GRACE_MS);
+          } else finish(() => prompt === 'none' && error.type === 'popup_failed_to_open'
+            ? noPopupResult(true) : reject(googlePopupError(error.type)));
+        },
+        callback: response => finish(() => { void accept(response).then(resolve, reject); }),
       });
       client.requestAccessToken(prompt === undefined ? undefined : { prompt });
     } catch (error) { finish(() => reject(error)); }
@@ -257,11 +336,13 @@ export function requestGoogleDriveToken(prompt?: GooglePrompt): Promise<void> {
   );
   if (!clientId) return Promise.reject(new Error('Google Drive sync is not configured for this Scatter deployment.'));
   // Start immediately when the SDK is ready, preserving the user gesture.
+  const generation = connectionGeneration;
   const request = window.google?.accounts?.oauth2
-    ? requestLoadedGoogleDriveToken(prompt)
-    : loadGoogleIdentity().then(() => requestLoadedGoogleDriveToken(prompt));
-  syncTokenRequest = request.finally(() => { syncTokenRequest = null; });
-  return syncTokenRequest;
+    ? requestLoadedGoogleDriveToken(prompt, generation)
+    : loadGoogleIdentity().then(() => requestLoadedGoogleDriveToken(prompt, generation));
+  const shared = request.finally(() => { if (syncTokenRequest === shared) syncTokenRequest = null; });
+  syncTokenRequest = shared;
+  return shared;
 }
 
 /** Call from an explicit sync/restore click, before other asynchronous work. */
@@ -361,10 +442,17 @@ export async function installGoogleDriveGestureRefresh(callbacks: {
       || !googleDriveTokenNeedsRefresh()) return;
     requesting = true;
     void renewGoogleDriveAccessToken().then(() => {
+      if (disposed) return;
       retryAfter = 0;
       callbacks.onRefreshed();
     }).catch((cause) => {
+      if (disposed) return;
       retryAfter = Date.now() + 60_000;
+      // An ambiguous close shouldn't flash another popup on every click/minute
+      // while the current token can still carry sync traffic.
+      if (cause instanceof GoogleDriveRenewalWindowError) {
+        retryAfter = Math.max(retryAfter, (readStoredToken()?.expiresAt ?? 0) - 30_000);
+      }
       callbacks.onError?.(cause instanceof Error ? cause : new Error(String(cause)));
     }).finally(() => { requesting = false; });
   };
@@ -378,13 +466,27 @@ export async function installGoogleDriveGestureRefresh(callbacks: {
   };
 }
 
-export function clearGoogleDriveToken(): void {
+function removeStoredToken(): void {
   try { localStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
   try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* ignore */ }
 }
 
+export function clearGoogleDriveToken(): void {
+  connectionGeneration++;
+  syncTokenRequest = null;
+  accountLookup = null;
+  removeStoredToken();
+  setStoredAccount(null);
+}
+
+async function waitForDriveGrant(): Promise<void> {
+  try { await syncTokenRequest; } catch (error) {
+    if (!(error instanceof GoogleDriveRenewalWindowError && hasGoogleDriveAccessToken())) throw error;
+  }
+}
+
 async function driveFetch(url: string, init: RequestInit = {}): Promise<Response> {
-  await syncTokenRequest;
+  await waitForDriveGrant();
   let token = loadStoredToken();
   if (!token) throw new GoogleDriveReconnectRequired('Reconnect Google Drive to resume sync.');
   const send = (accessToken: string) => fetch(url, {
@@ -396,7 +498,7 @@ async function driveFetch(url: string, init: RequestInit = {}): Promise<Response
   if (response.status === 401) {
     // An old request may finish after a renewal. Retry once with that newer
     // grant; never erase it because the previous token was rejected.
-    await syncTokenRequest;
+    await waitForDriveGrant();
     const renewed = loadStoredToken();
     if (renewed && renewed.accessToken !== token.accessToken) {
       token = renewed;
@@ -404,7 +506,7 @@ async function driveFetch(url: string, init: RequestInit = {}): Promise<Response
     }
   }
   if (response.status === 401) {
-    if (readStoredToken()?.accessToken === token.accessToken) clearGoogleDriveToken();
+    if (readStoredToken()?.accessToken === token.accessToken) removeStoredToken();
     throw new GoogleDriveReconnectRequired('Reconnect Google Drive to resume sync.');
   }
   return response;

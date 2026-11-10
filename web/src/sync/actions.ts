@@ -1,5 +1,5 @@
 import { useSyncStore } from '@/store/useSyncStore';
-import { clearGoogleDriveToken, GoogleDriveSyncProvider, googleDriveTokenNeedsRefresh, requestGoogleDriveToken } from './providers/googleDrive';
+import { clearGoogleDriveToken, GoogleDriveSyncProvider, googleDriveTokenNeedsRefresh, prepareGoogleDriveAccountHint, requestGoogleDriveToken } from './providers/googleDrive';
 import { WebDavSyncProvider } from './providers/webdav';
 import { requestSyncNow, scheduleSync, stopScheduledSync } from './coordinator';
 import type { SyncConfig, WebDavConnection } from './types';
@@ -9,6 +9,7 @@ export async function connectGoogleDriveSync(options: { deferSync?: boolean } = 
   await requestGoogleDriveToken();
   const provider = new GoogleDriveSyncProvider();
   await provider.test();
+  void prepareGoogleDriveAccountHint();
   const current = useSyncStore.getState().config;
   const config: SyncConfig = { ...current, enabled: !options.deferSync, provider: 'google-drive' };
   await useSyncStore.getState().replaceConfig(config);
@@ -17,6 +18,7 @@ export async function connectGoogleDriveSync(options: { deferSync?: boolean } = 
 }
 export async function reconnectGoogleDriveSync(): Promise<void> {
   await requestGoogleDriveToken();
+  void prepareGoogleDriveAccountHint();
   await useSyncStore.getState().patchConfig({ provider: 'google-drive' });
   useSyncStore.getState().setRuntime({ googleDriveReconnectRequired: false, error: null });
   await requestSyncNow({ manual: true });

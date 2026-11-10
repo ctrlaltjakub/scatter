@@ -35,6 +35,7 @@ function connectedDrive() {
 
 describe('SettingsModal Google Drive diagnostics', () => {
   beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ user: { emailAddress: 'fixture@example.invalid' } })));
     vi.mocked(useIsBrowserOnline).mockReturnValue(true);
     useSyncStore.setState({
       config: defaultSyncConfig(),
