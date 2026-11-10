@@ -1,11 +1,22 @@
 import { describe, it, expect } from 'vitest';
-import {
-  buildMessages,
-} from './promptBuilder';
+import { buildMessages, type TaskVariant } from './promptBuilder';
 import { DEFAULT_PROMPTS } from './promptDefaults';
 import { useSettingsStore } from '@/store/useSettingsStore';
 
 describe('buildMessages', () => {
+  it.each([
+    { kind: 'root', topic: 'Music theory' },
+    { kind: 'term-click', term: 'Harmony' },
+    { kind: 'follow-up', question: 'How does harmony vary between styles?' },
+    { kind: 'follow-up', question: 'What about modes?', selectedText: 'tonality' },
+  ] satisfies TaskVariant[])('plans coverage before applying identical production bounds for $kind', variant => {
+    const content = buildMessages({ variant, context: {parent: null, grandparent: null} })[0]!.content;
+    expect(content).toContain('the chapters of a thorough book about the topic, and the sub-bullets as its subchapters');
+    expect(content).toContain('not targets or stopping points');
+    expect(content).toMatch(/up to \*\*10 main bullets\*\*[\s\S]+at least \*\*3 main bullets\*\*/);
+    expect(content).toMatch(/up to \*\*10 sub-bullets per chapter\*\*[\s\S]+at least \*\*2\*\*/);
+    expect(content).toMatch(/up to \*\*6 complete sentences\*\*[\s\S]+at least \*\*4\*\*/);
+  });
   it('shows parent/grandparent meaning in the visible default context template', () => {
     expect(DEFAULT_PROMPTS.contextBlockTemplate).toContain('immediate source of the query');
     expect(DEFAULT_PROMPTS.contextBlockTemplate).toContain('The grandparent node');

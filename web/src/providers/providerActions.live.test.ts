@@ -120,7 +120,7 @@ it.skipIf(!['openai', 'anthropic', 'ollama', 'lm-studio'].includes(preset ?? '')
         ['expand-whole', { kind: 'elaborate', previousBody: text }, 'outline'],
         ['expand-section', { kind: 'expand-part', markedBody: text.replace('- Calculation\n  - Addition: Add the lengths of all three sides.\n  - Units: Use the same unit for every side.', '<<<EXPAND>>>- Calculation\n  - Addition: Add the lengths of all three sides.\n  - Units: Use the same unit for every side.<<<END>>>') }, 'outline'],
         ['expand-explain', { kind: 'expand-part', mode: 'explain', markedBody: '<<<EXPAND>>>Perimeter is distance around a shape.<<<END>>>' }, 'prose'],
-        ['repair-node-structure', { kind: 'restructure', previousBody: text.replaceAll('  - ', '- ') }, 'outline'],
+        ['repair-node-structure', { kind: 'restructure', previousBody: text.replaceAll('  - ', '- '), outlineIssue: freshOutlineProblem(text.replaceAll('  - ', '- '), 3)! }, 'outline'],
         ['modify-selected-text', { kind: 'modify-selection', markedBody: 'Perimeter is <<<SELECTED>>>distance around a shape<<<END_SELECTED>>>.', selectedText: 'distance around a shape', instruction: 'Use a more precise definition.', mode: 'explain' }, 'fragment'],
         ['detached-answer-chunked', { kind: 'answer', instruction: 'Compare perimeter and area in a two-row Markdown table.', informationChunking: true }, 'markdown'],
         ['detached-answer-normal', { kind: 'answer', instruction: 'Compare perimeter and area in a two-row Markdown table.', informationChunking: false }, 'markdown'],

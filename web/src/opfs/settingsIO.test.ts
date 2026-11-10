@@ -188,15 +188,14 @@ describe('settingsIO', () => {
     await writeJSON('settings.json', { providers: [], activeModelRef: null, nodeFontId: 'press-start' });
     expect((await loadSettings()).nodeFontId).toBe('app');
   });
-  it('migrates existing installs to fast-start OpenRouter routing', async () => {
+  it('defaults files with no OpenRouter routing preference to cheapest providers', async () => {
     const { writeJSON } = await import('./storage');
     await writeJSON('settings.json', { providers: [], activeModelRef: null });
-    expect((await loadSettings()).openRouterRouting).toBe('fast-start');
-  });
-  it('round-trips an explicit cheapest-provider preference', async () => {
-    const custom = { ...DEFAULT_SETTINGS, openRouterRouting: 'lowest-cost' as const };
-    await saveSettings(custom);
     expect((await loadSettings()).openRouterRouting).toBe('lowest-cost');
+  });
+  it.each(['lowest-cost', 'fast-start'] as const)('preserves saved OpenRouter routing: %s', async openRouterRouting => {
+    await saveSettings({ ...DEFAULT_SETTINGS, openRouterRouting });
+    expect((await loadSettings()).openRouterRouting).toBe(openRouterRouting);
   });
   it('defaults older files to hierarchy-aware group colors', async () => {
     const { writeJSON } = await import('./storage');

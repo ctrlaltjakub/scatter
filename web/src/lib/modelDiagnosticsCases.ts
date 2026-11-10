@@ -8,7 +8,7 @@ import { applyTermSelection, markedTerms, stripTermMarkers } from './termMarking
 import { previewRequest, previewTerms, inspectTermPreviews } from './termPreviewCore';
 import { GenerationResponseError, parseResponseJson, validateEncyclopedicOutput } from './generationValidation';
 import { parseFactCheckFinding } from './factCheckCore';
-import { parseBody } from './bulletParse';
+import { freshOutlineProblem, parseBody } from './bulletParse';
 import { languageInfo, languageDirection } from './languages';
 import { factCheckMessages } from './factCheckRequest';
 import { imageQuestionInstructions } from './imageQuestionPrompt';
@@ -33,6 +33,19 @@ export function assertDiagnostic(condition: unknown, message: string): asserts c
 }
 const prose = (text: string) => assertDiagnostic(!/^\s*(?:#{1,6} |[-*] |```)/m.test(text), 'The explanation used outline/code formatting instead of prose.');
 const table = (text: string) => assertDiagnostic(/\|[^\n]+\|/.test(text) && /\|\s*:?-{3,}/.test(text), 'The requested Markdown table is missing or malformed.');
+
+// Only this fixed, multilingual capability check asks for particular chapter
+// titles. Real topics never have to pass a keyword test or fill the maximum.
+const sampleFormats = ['JPEG', 'PNG', 'SVG', 'TIFF'];
+const sampleCap = (variant: TaskVariant) => variant.kind === 'root' ? 5 : 3;
+function checkSampleCoverage(text: string) {
+  const covered = (parseBody(text)?.bullets ?? []).flatMap(({ title }) => {
+    const names = sampleFormats.filter(name => title.normalize('NFKC').toUpperCase().includes(name));
+    return names.length === 1 ? names : [];
+  });
+  const missing = sampleFormats.filter(name => !covered.includes(name));
+  assertDiagnostic(!missing.length, `The outline did not give each requested format its own main bullet. Missing separate headings: ${missing.join(', ')}.`);
+}
 
 /** Small, fixed fixtures exercise production prompts without graph writes.
  * Root/regenerate and empty-node generation share one prompt and one test. */
@@ -61,8 +74,9 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
       // This checks the requested transport shape, not grammatical sentence
       // count: there is deliberately no language-specific punctuation guess.
     } });
+  const malformed = DIAGNOSTIC_TEXT.replaceAll('  - ', '- ').replace('Add all three side lengths.', 'Add the **side lengths**. Use all three sides.');
   const variants: [string, string, TaskVariant, 'outline' | 'prose' | 'table' | 'fragment'][] = [
-    ['encyclopedic', 'Encyclopedic generation / regeneration', { kind: 'root', topic: 'Triangle perimeter' }, 'outline'],
+    ['encyclopedic', 'Encyclopedic generation / regeneration', { kind: 'root', topic: `Image file formats: cover ${sampleFormats.join(', ')} in separate main sections. Keep each format acronym in its section title.` }, 'outline'],
     ['term-node', 'Node from a term', { kind: 'term-click', term: 'equilateral triangle' }, 'outline'],
     ['follow-up', 'Encyclopedic follow-up', { kind: 'follow-up', question: 'Explore polygon perimeter.' }, 'outline'],
     ['selected-follow-up', 'Follow-up on selected text', { kind: 'follow-up', question: 'What other units are used?', selectedText: 'same unit' }, 'outline'],
@@ -72,7 +86,7 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
     ['elaborate', 'Expand an encyclopedic node', { kind: 'elaborate', previousBody: DIAGNOSTIC_TEXT }, 'outline'],
     ['expand-section', 'Expand one section', { kind: 'expand-part', markedBody: DIAGNOSTIC_TEXT.replace('- Calculation\n  - Addition: Add all three side lengths.\n  - Units: Use the same unit for every side.', '<<<EXPAND>>>- Calculation\n  - Addition: Add all three side lengths.\n  - Units: Use the same unit for every side.<<<END>>>') }, 'fragment'],
     ['expand-explain', 'Expand an explanation', { kind: 'expand-part', mode: 'explain', markedBody: '<<<EXPAND>>>Perimeter is distance around a shape.<<<END>>>' }, 'prose'],
-    ['structure-repair', 'Repair an encyclopedic outline', { kind: 'restructure', previousBody: DIAGNOSTIC_TEXT.replaceAll('  - ', '- ').replace('Add all three side lengths.', 'Add the **side lengths**. Use all three sides.') }, 'outline'],
+    ['structure-repair', 'Repair an encyclopedic outline', { kind: 'restructure', previousBody: malformed, outlineIssue: freshOutlineProblem(malformed, 3)! }, 'outline'],
     ['selection-edit', 'Modify selected text', { kind: 'modify-selection', markedBody: 'Perimeter is <<<SELECTED>>>distance around a shape<<<END_SELECTED>>>.', selectedText: 'distance around a shape', instruction: 'Give a precise definition.', mode: 'explain' }, 'fragment'],
     ['answer', 'Answer node / Markdown table', { kind: 'answer', instruction: 'Compare perimeter and area in a two-row Markdown table.', informationChunking: false }, 'table'],
     ['answer-chunking', 'Answer with information chunking', { kind: 'answer', instruction: 'Compare perimeter and area in a two-row Markdown table.', informationChunking: true }, 'table'],
@@ -80,14 +94,17 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
     ['fact-rewrite-markdown', 'Evidence-guided Markdown correction', { kind: 'fact-rewrite', previousBody: '| Triangle | Perimeter |\n| --- | --- |\n| 3, 4, 5 cm | 11 cm |', evidenceReport: 'Incorrect: the perimeter is 12 cm. Keep the table.', sourceCatalog: '⟪E1⟫: 3+4+5 = 12.', answerChunking: false }, 'table'],
   ];
   for (const [id, label, variant, shape] of variants) cases.push({ id, label, role: 'main', kind: 'text', requests: 1,
-    messages: buildMessages({ variant, context: variant.kind === 'root' ? { parent: null, grandparent: null } : context, maxLevel1: 3 })
+    messages: buildMessages({ variant, context: variant.kind === 'root' ? { parent: null, grandparent: null } : context, maxLevel1: sampleCap(variant) })
       .map(message => message.role === 'system' && ['root', 'term-click', 'follow-up', 'explain', 'answer'].includes(variant.kind)
         ? { ...message, content: message.content + '\n\n' + languagePrompt } : message),
     validate: text => {
       if (shape === 'outline') {
         if (variant.kind === 'elaborate' || variant.kind === 'modify') {
           assertDiagnostic(parseBody(text)?.bullets.some(b => b.children.length) === true, 'The edit lost the two-level outline.');
-        } else validateEncyclopedicOutput(text, 3);
+        } else {
+          validateEncyclopedicOutput(text, sampleCap(variant));
+          if (variant.kind === 'root') checkSampleCoverage(text);
+        }
       }
       if (shape === 'prose') prose(text);
       if (shape === 'table') table(text);

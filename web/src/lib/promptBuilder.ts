@@ -33,7 +33,7 @@ export type TaskVariant =
    *  outline contract (opening length, section/subpoint counts or descriptions).
    *  Re-asks the model to rewrite `previousBody` into the correct structure,
    *  keeping all content. Fired automatically once after a failed generation. */
-  | { kind: 'restructure'; previousBody: string }
+  | { kind: 'restructure'; previousBody: string; outlineIssue: string }
   /** Pass 2: select terms from a finished body as JSON. Local insertion adds
    *  markers without rewriting prose. Uses NO graph context. */
   | { kind: 'add-chips'; plainBody: string }
@@ -144,6 +144,7 @@ function buildTaskBlock(variant: TaskVariant, custom: Partial<CustomPrompts> | u
     case 'restructure':
       return substitute(effectivePrompt('taskRestructure', custom), {
         previousBody: variant.previousBody,
+        outlineIssue: variant.outlineIssue,
       });
     case 'add-chips':
       return substitute(effectivePrompt('taskAddChips', custom), {

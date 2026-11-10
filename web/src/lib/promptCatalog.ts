@@ -66,14 +66,13 @@ Keep the requested Markdown structure: headings and short labels remain single l
     help: "Placeholders: {maxLevel1} (max level-1 bullets for this generation; starts at 10, +1 per \"Expand whole\")",
     text: `You are part of **Scatter**, a learning tool where the user explores topics by building a graph of ideas. Your responses become nodes in that graph.
 
-**Format — encyclopedia entry, not essay.** Be DENSE, SCANNABLE, and ENCYCLOPEDICALLY COMPLETE:
-- Start a new entry with one opening paragraph of **4–6 complete sentences** that defines or frames the explored topic — plain prose, no bullets. Make every sentence compact, to the point, information-dense, and filler-free. In each opening sentence, bold its 2-3 most important parts (\`**like this**\`); keep each bold short and focused — a word or short phrase, never a whole clause or half the sentence. Apply this emphasis rule to the opening only.
+**Plan for coverage.** Think of the main bullets as the chapters of a thorough book about the topic, and the sub-bullets as its subchapters. First identify its distinct, important directions for exploration; give each its own chapter. Under each chapter, cover the substantive concepts, distinctions, or examples that belong there. Let the subject determine the counts independently: broad topics need more chapters, and some chapters need more children than others. The minimums below are safeguards for narrow subjects, not targets or stopping points. Do not split one idea or repeat facts just to fill a quota. Output the entry, not your plan.
+- **Opening:** define the topic or answer the question, then use each additional sentence for a distinct point the reader needs to understand the outline. Write up to **6 complete sentences** in one paragraph; even a narrow topic needs at least **4**. Use compact prose, no bullets. In each opening sentence, bold its 2-3 most important parts (\`**like this**\`); keep each bold short and focused — a word or short phrase, never a whole clause or half the sentence. Apply this emphasis rule to the opening only.
 - After the opening, the entire body is one **two-level** bulleted list — nothing else. No prose paragraphs between bullets.
 - **Indentation is strict.** A level-1 bullet starts at column 0: \`- title\`. A level-2 bullet is indented by EXACTLY TWO SPACES before its marker: \`  - name: description\`. Exactly two levels — **third-level (or deeper) bullets are FORBIDDEN; never indent a bullet by more than two spaces.**
-- **Level 1:** write **3–{maxLevel1} main bullets**. Use short chapter titles, with no trailing description.
-- **Level 2:** give **2–10 sub-bullets under every main bullet**. Write each as \`name: description\`, using a literal ASCII colon after the name. Write exactly one complete sentence after the colon, on the same source line. Do not use bold in the description. Keep any citations with that sentence.
-- Choose counts based on the topic. Do not pad narrow topics to reach a maximum. Group related material when a section would otherwise exceed its limit.
-- Cover the significant concepts, distinctions and examples within these bounds. When explicitly editing or expanding an existing entry, preserve unrelated material rather than shortening or padding it to meet fresh-entry limits.
+- **Main bullets:** use short, distinct chapter titles, with no trailing description. Keep separate branches separate; do not hide a major subject inside an umbrella heading just to shorten the outline. Use up to **{maxLevel1} main bullets**. If more directions deserve a chapter, group the closest ones and retain their distinctions below. Even a very narrow topic needs at least **3 main bullets**.
+- **Sub-bullets:** give each chapter as many distinct subtopics as it warrants, up to **10 sub-bullets per chapter**; even a small chapter needs at least **2**. Write each as \`name: description\`, using a literal ASCII colon after the name. Write exactly one complete sentence after the colon, on the same source line. Do not use bold in the description. Keep any citations with that sentence.
+- When explicitly editing or expanding an existing entry, preserve unrelated material rather than shortening or padding it to meet fresh-entry limits.
 - **Order by importance.** At both levels, list from most fundamental / essential first to most peripheral last. The first level-1 covers the most foundational part of the topic; the first level-2 under any level-1 is its most essential sub-point. Do not order chronologically or alphabetically unless that ordering also happens to be the importance ordering.
 - Avoid filler ("It is important to note...", "In conclusion...", openings that just repeat the header). Write no follow-up questions.
 - **Allowed formatting is ONLY:** the opening paragraph, two-level bullets (\`- \` / \`  - \`), and \`**bold**\` for emphasis. **Never** use headings (\`#\`, \`##\`, \`###\`), blockquotes (\`>\`), tables, code fences, or ordinary markdown links. Provider-generated source citations are the sole exception: place each source link immediately after the supported claim, never collected into a source list or cluster elsewhere.
@@ -230,7 +229,7 @@ Return only the complete answer body, without a redundant document title.`,
     description: "Generates the **first encyclopedic node** from a topic.",
     help: "Placeholders: {topic}",
     text: `This is the start of a new exploration. The user wants to learn about: "{topic}".
-Use the opening to orient the reader. Organize the main bullets into distinct directions for exploring the topic.`,
+Use the opening to orient the reader. Give each significant direction for exploring the topic its own main bullet within the format limits.`,
   },
   taskTermClick: {
     group: "Exploration",
@@ -238,14 +237,14 @@ Use the opening to orient the reader. Organize the main bullets into distinct di
     description: "Explores a **clicked term** in a new connected node.",
     help: "Placeholders: {term}",
     text: `The user clicked the reference "{term}" inside the parent node to explore it on its own. Treat "{term}" as the topic of this new node — the parent/grandparent shown above are only context for where the user is; do not summarize them, write a full, standalone exploration of "{term}".
-Use the opening to define the term, then organize its important aspects into the shared two-level outline.`,
+Use the opening to define the term. Map its important aspects as distinct branches, not just the aspect mentioned in the parent.`,
   },
   taskFollowUp: {
     group: "Exploration",
     label: "Task: follow-up",
     description: "Answers a **follow-up question** in a new encyclopedic node.",
     help: "Placeholders: {question}",
-    text: `{selectionBlock}The user asks: "{question}". Answer directly in the opening paragraph. Use the same encyclopedic outline as for a new topic, focusing on aspects relevant to the question. Do not repeat the question.`,
+    text: `{selectionBlock}The user asks: "{question}". Answer directly in the opening paragraph. Map every significant direction relevant to the question using the same encyclopedic outline as for a new topic. Do not repeat the question or broaden it to unrelated subjects.`,
   },
   classifyFollowUp: {
     group: "Exploration",
@@ -388,8 +387,10 @@ Output ONLY the replacement prose for the marked section. Do not include the mar
     group: "Editing and expansion",
     label: "Task: fix bullet structure (auto-regeneration)",
     description: "Repairs **bullet structure** without changing the topic.",
-    help: "Placeholders: {previousBody} (the malformed body to restructure)",
-    text: `The node you just wrote did NOT follow the required encyclopedic format. Rewrite it to meet the opening, main-bullet, sub-bullet and description limits in the system message. Keep the supported facts and the topic; combine related points if necessary. Write one opening sentence per source line. Write each sub-bullet description as exactly one sentence on its bullet line, without bold. Combine related facts into that sentence; keep citations beside the supported claim.
+    help: "Placeholders: {outlineIssue} (the first failed format check), {previousBody} (the draft to repair).",
+    text: `Repair the draft below. The format check reported: {outlineIssue}
+
+Return the complete entry. Fix the reported defect and any other format violations, keeping the supported facts and topic. Preserve already-valid chapters, subtopics and their order; do not condense the outline to its minimum counts. Merge entries only where a count exceeds its cap; if a count is below its minimum, add a distinct, relevant point. Keep one opening sentence per source line and exactly one unbolded description sentence on each sub-bullet line.
 
 Here is what you wrote — restructure it:
 

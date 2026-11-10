@@ -1245,9 +1245,10 @@ async function checkFreshOutline(
 ): Promise<string> {
   const plain = unboldFreshDescriptions(body);
   if (plain !== body) { body = plain; onAcc(body); }
-  if (!freshOutlineProblem(body)) return body;
+  const outlineIssue = freshOutlineProblem(body);
+  if (!outlineIssue) return body;
   const originalRetry = retryArgs.get(nodeId);
-  const variant: TaskVariant = { kind: 'restructure', previousBody: body };
+  const variant: TaskVariant = { kind: 'restructure', previousBody: body, outlineIssue };
   try {
     const result = await streamChunks({
       nodeId, parentIdForContext, variant, signal, onAcc, webSearch: false,

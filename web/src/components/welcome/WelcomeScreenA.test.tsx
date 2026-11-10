@@ -297,7 +297,8 @@ describe('onboarding copy and entry controls', () => {
     expect(logo).toHaveAttribute('href', 'https://www.scatter.study/?landing=1');
     fireEvent.click(screen.getByRole('button', {name: /Quick setup/}));
     expect(colors()).toEqual(palette);
-    expect(screen.getByText(/Later, you can see what you’ve spent/)).toBeInTheDocument();
+    expect(screen.getByText('Usage-based billing.').parentElement).toHaveTextContent(
+      'Usage-based billing. You pay as you go at the rates of the models you choose. The recommended models balance quality and cost. Later, you can see what you’ve spent on OpenRouter or in Settings → OpenRouter. We don’t receive any of that money.');
     expect(screen.queryByText(/separate from chat subscriptions/)).not.toBeInTheDocument();
     expect(screen.getByText(/any other data you enter in the app/)).toBeInTheDocument();
   });

@@ -235,8 +235,8 @@ function finalize(
     generationLanguage: normalizeLanguage(d.generationLanguage),
     webSearch: typeof d.webSearch === 'boolean' ? d.webSearch : DEFAULT_SETTINGS.webSearch,
     selectionWebSearch: normalizeSelectionWebSearch(d.selectionWebSearch),
-    openRouterRouting: d.openRouterRouting === 'lowest-cost'
-      ? 'lowest-cost'
+    openRouterRouting: d.openRouterRouting === 'lowest-cost' || d.openRouterRouting === 'fast-start'
+      ? d.openRouterRouting
       : DEFAULT_SETTINGS.openRouterRouting,
     sentencePerLine: typeof d.sentencePerLine === 'boolean' ? d.sentencePerLine : true,
     autoTermPreviews: typeof d.autoTermPreviews === 'boolean' ? d.autoTermPreviews : true,

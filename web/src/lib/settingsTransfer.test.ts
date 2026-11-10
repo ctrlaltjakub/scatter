@@ -134,7 +134,7 @@ describe('settings transfer', () => {
 
     expect(imported.settings.groupColorAssignment).toBe(DEFAULT_SETTINGS.groupColorAssignment);
     expect(imported.settings.selectionWebSearch).toEqual({ engineId: 'google', customEngines: [] });
-    expect(imported.settings.openRouterRouting).toBe('fast-start');
+    expect(imported.settings.openRouterRouting).toBe('lowest-cost');
     expect(imported.settings.imageGenerationSettings).toEqual(DEFAULT_SETTINGS.imageGenerationSettings);
     expect(imported.settings.nodeFontId).toBe(DEFAULT_SETTINGS.nodeFontId);
     expect(imported.uiPreferences.theme).toBe('dark');

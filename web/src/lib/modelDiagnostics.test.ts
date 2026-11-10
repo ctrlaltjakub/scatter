@@ -94,14 +94,25 @@ describe('model diagnostics', () => {
     for (const id of ['encyclopedic', 'term-node', 'follow-up', 'selected-follow-up', 'structure-repair']) {
       const check = jobs.find(job => job.test.id === id)!.test;
       expect(check.requests).toBe(1);
-      expect(check.messages[0]?.content).toContain('4–6 complete sentences');
-      expect(check.messages[0]?.content).toContain('3–3 main bullets'); // keep this paid diagnostic small
+      expect(check.messages[0]?.content).toContain('up to **6 complete sentences**');
+      expect(check.messages[0]?.content).toContain('at least **4**');
+      expect(check.messages[0]?.content).toContain(`up to **${id === 'encyclopedic' ? 5 : 3} main bullets**`);
       expect(check.messages[0]?.content).toContain('exactly one complete sentence after the colon');
-      expect(() => check.validate!(DIAGNOSTIC_TEXT)).not.toThrow();
+      if (id !== 'encyclopedic') expect(() => check.validate!(DIAGNOSTIC_TEXT)).not.toThrow();
       expect(() => check.validate!(DIAGNOSTIC_TEXT.replace('Add all three side lengths.', 'Add all three side lengths. Use the same units.'))).toThrow('one sentence');
       expect(() => check.validate!(DIAGNOSTIC_TEXT.replace('Add all three side lengths.', 'Add **all three** side lengths.'))).toThrow('bold');
-      expect(() => check.validate!(DIAGNOSTIC_TEXT + '\n- Extra section')).toThrow('main bullets');
+      expect(() => check.validate!(DIAGNOSTIC_TEXT + '\n- Extra section'.repeat(3))).toThrow('main bullets');
     }
+  });
+  it('checks breadth in one existing generation: unrelated or merged headings cannot substitute for a requested branch', () => {
+    const check = diagnosticPlan(settings(), 'main').find(job => job.test.id === 'encyclopedic')!.test;
+    const sample = ['JPEG', 'PNG', 'SVG', 'TIFF'].map(format =>
+      `- ${format}\n  - Encoding: The file uses a defined encoding.\n  - Uses: Different applications support this format.`).join('\n');
+    const complete = DIAGNOSTIC_TEXT.split('\n- Calculation')[0] + '\n' + sample;
+    expect(check.requests).toBe(1);
+    expect(() => check.validate!(complete)).not.toThrow();
+    expect(() => check.validate!(complete.replace('- TIFF', '- General notes'))).toThrow(/separate headings: TIFF/);
+    expect(() => check.validate!(complete.replace('- SVG', '- SVG and TIFF').replace('- TIFF\n', '- Other\n'))).toThrow(/SVG, TIFF/);
   });
   it('keeps explicit line instructions in every prose generation/edit capability path', () => {
     useSettingsStore.setState({ ...DEFAULT_SETTINGS });

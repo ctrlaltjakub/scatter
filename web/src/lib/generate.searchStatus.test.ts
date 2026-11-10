@@ -293,6 +293,8 @@ describe('generation web-search provenance', () => {
     const node = useGraphStore.getState().project!.nodes[id]!;
     expect(node.generationError).toBeFalsy();
     expect(node.versions[0]!.body).toContain(': The repaired sentence keeps both facts.');
+    expect(fake.messages[1]?.at(-1)).toContain('The format check reported: Write exactly one sentence per sub-bullet description.');
+    expect(fake.messages[1]?.at(-1)).toContain('Preserve already-valid chapters');
     expect(fake.calls).toBe(3); // content, one repair, term marking
   });
 

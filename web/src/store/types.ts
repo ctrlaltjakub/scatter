@@ -849,9 +849,7 @@ export interface Settings {
   defaultChatInformationChunking: boolean;
   /** Selection-toolbar searches open a browser tab; unrelated to AI search. */
   selectionWebSearch: import('@/lib/selectionWebSearch').SelectionWebSearchSettings;
-  /** Provider routing for OpenRouter text requests. Missing legacy values
-   * deliberately migrate to fast-start so existing users receive the improved
-   * responsiveness as soon as this app version loads. */
+  /** OpenRouter text requests default to cheapest providers when no choice is saved. */
   openRouterRouting: OpenRouterRoutingPreference;
   /** Render authored prose lines separately in encyclopedic/explain nodes.
    *  Default true; off flows source lines within their paragraphs. Pure
@@ -1015,7 +1013,7 @@ export const DEFAULT_SETTINGS: Settings = {
   syncApiKeys: false,
   cameraAutoPan: { ...DEFAULT_CAMERA_AUTO_PAN },
   defaultChatInformationChunking: true,
-  openRouterRouting: 'fast-start',
+  openRouterRouting: 'lowest-cost',
   // Default look = one sentence per line (with the tree connector), justified.
   // Users can switch to a single block and/or left-align from Settings → Canvas.
   sentencePerLine: true,

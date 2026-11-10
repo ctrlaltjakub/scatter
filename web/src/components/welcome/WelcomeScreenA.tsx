@@ -274,7 +274,7 @@ export function WelcomeScreenA() {
               <button className="btn btn-primary" disabled={busy} onClick={() => void connectOpenRouter()}>Connect OpenRouter <ArrowRight size={16} /></button>
               {openRouter && <button className="btn btn-secondary" disabled={busy} onClick={() => void prepare()}>Use existing OpenRouter connection</button>}
             </div>
-            <div className="onboarding-facts"><p><strong>Usage-based billing.</strong> You pay as you go at the rates of the models you choose. The recommended models balance quality and cost. Later, you can see what you’ve spent on OpenRouter or in Settings → OpenRouter.</p>
+            <div className="onboarding-facts"><p><strong>Usage-based billing.</strong> You pay as you go at the rates of the models you choose. The recommended models balance quality and cost. Later, you can see what you’ve spent on OpenRouter or in Settings → OpenRouter. We don’t receive any of that money.</p>
               <p><strong>Spending limits.</strong> OpenRouter lets you control spending by setting a limit on the API key.</p>
               <p><strong>Credential storage.</strong> We don’t collect your API keys or any other data you enter in the app. Your browser stores the key locally and syncs it to your other devices only if you opt in. Your browser sends requests directly to OpenRouter, which forwards them to the model provider.</p></div>
             <button className="settings-text-action" disabled={busy} onClick={() => navigate('connect', 'custom')}>Add an API key manually</button>

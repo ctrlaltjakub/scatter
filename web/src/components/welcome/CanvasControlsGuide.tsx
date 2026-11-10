@@ -15,13 +15,13 @@ export function CanvasControlsGuide({ onContinue }: { onContinue: () => void }) 
       </header>
       <div className="canvas-guide-grid">
         <section><Move aria-hidden /><h2>Move and zoom</h2>
-          <p><strong>Pan:</strong> click and drag empty canvas with a mouse or trackpad, or use <kbd>WASD</kbd>.</p>
-          <p><strong>Zoom:</strong> scroll the mouse wheel, pinch the trackpad, or use <kbd>Q</kbd> / <kbd>E</kbd>.</p>
+          <p><strong>Pan:</strong> <strong>click and drag</strong> an empty area of the canvas with a mouse or trackpad, or use <kbd>WASD</kbd>.</p>
+          <p><strong>Zoom:</strong> scroll the mouse wheel over an empty area of the canvas, pinch the trackpad, or use <kbd>Q</kbd> / <kbd>E</kbd>.</p>
           <p className="field-help">Over scrollable text, hold <kbd>Ctrl</kbd> / <kbd>⌘</kbd> while scrolling to zoom.</p>
         </section>
         <section><Pin aria-hidden /><h2>Place a node</h2>
           <p>Drag its <strong>header</strong> to move it. Click the <strong>pin</strong> in its top-right corner to keep it in place or release it.</p>
-          <p>You can also drag it away from a connected node. Release when the pin lights up.</p>
+          <p>You can also drag it away from a connected node to pin it. Release when the pin lights up.</p>
         </section>
         <section><MousePointer2 aria-hidden /><h2>Explore a term</h2>
           <p>Hover over an <strong className="canvas-guide-term">underlined term</strong> for a preview. Click to create a connected node or visit the one that already exists.</p>
