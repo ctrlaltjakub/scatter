@@ -6,7 +6,6 @@ import { useModelCatalogStore } from '@/store/useModelCatalogStore';
 import { useModelDiagnosticsStore } from '@/store/useModelDiagnosticsStore';
 import { diagnosticPlan, diagnosticSignature, type DiagnosticResult } from '@/lib/modelDiagnostics';
 import { ModelDiagnostics } from './ModelDiagnostics';
-import { LocalModelGuide } from './LocalModelGuide';
 
 const run = vi.fn(), stop = vi.fn(), clear = vi.fn(), writeText = vi.fn();
 beforeEach(() => {
@@ -236,22 +235,5 @@ describe('optional model diagnostics UI', () => {
     expect(useModelDiagnosticsStore.getState().running).toBe(true);
     expect(stop).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Stop all tests' })).toBeEnabled();
-  });
-  it('shows the guide above its parent without propagating Escape', () => {
-    const closeParent = vi.fn();
-    const original = Object.getOwnPropertyDescriptor(HTMLDialogElement.prototype, 'showModal');
-    const show = vi.fn(function (this: HTMLDialogElement) { this.open = true; });
-    Object.defineProperty(HTMLDialogElement.prototype, 'showModal', { configurable: true, value: show });
-    render(<div onKeyDown={closeParent}><LocalModelGuide /></div>);
-    fireEvent.click(screen.getByRole('button', { name: 'Local providers: connection guide' }));
-    const dialog = screen.getByRole('dialog', { name: 'Local provider connections' });
-    expect(show).toHaveBeenCalledOnce();
-    expect(dialog).toHaveTextContent('Local image generation is not supported.');
-    fireEvent.keyDown(dialog, { key: 'Escape' });
-    expect(closeParent).not.toHaveBeenCalled();
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Close connection guide' }));
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    if (original) Object.defineProperty(HTMLDialogElement.prototype, 'showModal', original);
-    else Reflect.deleteProperty(HTMLDialogElement.prototype, 'showModal');
   });
 });

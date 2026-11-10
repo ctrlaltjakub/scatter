@@ -62,7 +62,7 @@ const PRESETS: Record<ProviderPreset, ProviderPresetInfo> = {
     adapter: ollamaAdapter,
     defaultBaseUrl: 'http://localhost:11434/v1',
     needsProxy: false,
-    helpText: 'Allow the app’s address in OLLAMA_ORIGINS on your Ollama server. If authentication is off, enter any nonempty API key. Vision and tool support are read from the server.',
+    helpText: 'Add the app’s origin (for example, https://www.scatter.study) to OLLAMA_ORIGINS and restart Ollama. For a local server without authentication, enter “local” as the API key. The app shows vision and tool support when the server reports it.',
   },
   'lm-studio': {
     id: 'lm-studio',
@@ -70,7 +70,7 @@ const PRESETS: Record<ProviderPreset, ProviderPresetInfo> = {
     adapter: lmStudioAdapter,
     defaultBaseUrl: 'http://localhost:1234/v1',
     needsProxy: false,
-    helpText: 'Enable the local server and CORS in LM Studio. If authentication is off, enter any nonempty API key. Vision and tool support are read from the server.',
+    helpText: 'Start the LM Studio server and turn on Enable CORS in its settings. Enter your API token if authentication is on, or “local” if it’s off. The app shows vision and tool support when the server reports it.',
   },
   custom: {
     id: 'custom',

@@ -76,7 +76,7 @@ import { SettingsSection, SettingsToggle } from './settings/SettingsSection';
 import { SETTINGS_PAGES, searchSettingsPages, type SettingsPageId } from './settings/settingsNavigation';
 import { GenerationTokenLimits } from './settings/GenerationTokenLimits';
 import { CollapsibleSection } from './dev/CollapsibleSection';
-import { LocalModelGuide } from './settings/LocalModelGuide';
+import { REPOSITORY_URL } from '@/lib/deployment';
 import { ModelDiagnostics } from './settings/ModelDiagnostics';
 import { AnimatedCollapse } from './AnimatedCollapse';
 import {
@@ -125,6 +125,14 @@ interface Props {
 }
 
 /* ---- Providers tab ---- */
+function ProviderHelp({ preset }: { preset: ProviderPreset }) {
+  const { helpText } = getPreset(preset);
+  if (!helpText || !isProviderEnabled(preset)) return null;
+  return <p className="field-help">{helpText}{isLocalSearchPreset(preset) && <>{' '}
+    <a href={`${REPOSITORY_URL}/blob/main/web/docs/local-providers.md`} target="_blank" rel="noopener noreferrer">Local providers: connection guide</a>
+  </>}</p>;
+}
+
 function ProviderCard({
   account,
   expanded,
@@ -245,7 +253,7 @@ function ProviderCard({
               </button>
             </div>
           </div>
-          {isProviderEnabled(account.preset) && presetInfo.helpText && <p className="field-help">{presetInfo.helpText}</p>}
+          <ProviderHelp preset={account.preset} />
           {account.preset === 'openrouter' && <OpenRouterRoutingRow id={account.id} />}
           {isLocalSearchPreset(account.preset) && <LocalSearchConnection account={account} />}
 
@@ -263,7 +271,6 @@ function ProviderCard({
           >
             <Trash2 size={14} /> Remove provider
           </button>
-          {isLocalSearchPreset(account.preset) && <LocalModelGuide />}
         </div>
       </AnimatedCollapse>
     </div>
@@ -362,9 +369,8 @@ export function ProvidersTab({ onboarding = false }: { onboarding?: boolean } = 
               <Plus size={14} /> Add
             </button>
           </div>
-          <p className="field-help">{getPreset(addingPreset).helpText}</p>
+          <ProviderHelp preset={addingPreset} />
           <p className="field-help"><strong>OpenRouter, Anthropic, and OpenAI</strong> each allow one connection. <strong>Local and custom providers</strong> allow multiple named connections.</p>
-          {isLocalSearchPreset(addingPreset) && <LocalModelGuide />}
         </div>
       </AnimatedCollapse>
       <div className="sc-provider-cards">

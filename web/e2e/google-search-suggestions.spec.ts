@@ -14,7 +14,7 @@ async function openFixture(page: Page, kind: string, history = false) {
   await page.route('**/*', route => new URL(route.request().url()).hostname === 'localhost'
     ? route.continue() : route.abort());
   await page.goto('/');
-  await page.getByRole('heading', { name: 'Configure AI models' }).waitFor();
+  await page.getByRole('heading', { name: 'Configure your AI models' }).waitFor();
   // Let initial empty-settings hydration finish before installing the fixture.
   await page.waitForTimeout(400);
   await page.evaluate(async ({ kind, snippet, history }) => {

@@ -309,7 +309,7 @@ describe('onboarding copy and entry controls', () => {
     expect(button).not.toHaveAttribute('aria-pressed');
     expect(document.documentElement.dataset.theme).toBe('mocha');
     expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
-    expect(screen.getByRole('heading', { name: 'Configure AI models' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Configure your AI models' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Quick setup/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Switch to light mode' }));
     expect(document.documentElement.dataset.theme).toBe('latte');
@@ -318,9 +318,9 @@ describe('onboarding copy and entry controls', () => {
   });
   it('uses descriptive setup language without marketing slogans', () => {
     render(<WelcomeScreenA />);
-    expect(screen.getByRole('heading', { name: 'Configure AI models' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Configure your AI models' })).toBeInTheDocument();
     expect(screen.getByText('Model configuration', { exact: true })).toBeInTheDocument();
-    expect(screen.getByText('Use recommended models, configure providers manually, or restore an existing setup.')).toBeInTheDocument();
+    expect(screen.getByText('To use Scatter, connect your own AI models. You can mix cloud and local models from different providers. Quick setup guides you through connecting to OpenRouter and recommends a model for each role.')).toBeInTheDocument();
     expect(screen.queryByText(/curiosity/i)).not.toBeInTheDocument();
   });
 

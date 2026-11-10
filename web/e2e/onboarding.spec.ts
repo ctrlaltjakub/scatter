@@ -41,6 +41,21 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test('the local guide opens a new tab without losing the provider selection', async ({ page, context }) => {
+  const guide = 'https://github.com/ctrlaltjakub/scatter/blob/main/web/docs/local-providers.md';
+  await context.route(guide, route => route.fulfill({ contentType: 'text/html', body: '<h1>Local providers: connection guide</h1>' }));
+  await page.goto('/');
+  await page.getByRole('button', { name: /Choose your own models Add provider/ }).click();
+  const provider = page.getByLabel('Choose a provider');
+  await provider.selectOption('lm-studio');
+  const popup = page.waitForEvent('popup');
+  await page.getByRole('link', { name: 'Local providers: connection guide' }).click();
+  const tab = await popup;
+  await expect(tab).toHaveURL(guide);
+  await tab.close();
+  await expect(provider).toHaveValue('lm-studio');
+});
+
 test('custom setup reaches the topic picker and OpenRouter account settings', async ({ page }, info) => {
   await page.goto('/');
   await page.getByRole('button', { name: /Choose your own models Add provider/ }).click();

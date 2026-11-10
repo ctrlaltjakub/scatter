@@ -65,9 +65,9 @@ test.describe('landing navigation', () => {
     await page.goto('/');
     await page.getByRole('button', { name: 'Use anyway' }).click();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    await expect(page.getByRole('heading', { name: 'Configure AI models' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Configure your AI models' })).toBeVisible();
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Configure AI models' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Configure your AI models' })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole('link', { name: 'Back to landing page' })).toBeVisible();

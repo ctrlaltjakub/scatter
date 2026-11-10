@@ -192,7 +192,7 @@ export function WelcomeScreenA() {
     { id: 'confirm', title: 'Confirm usage', detail: 'Age, reliability, and responsibility' },
   ];
   const stepIndex = steps.findIndex(s => s.id === step);
-  const titles = step === 'choose' ? ['Configure AI models', 'Use recommended models, configure providers manually, or restore an existing setup.']
+  const titles = step === 'choose' ? ['Configure your AI models', 'To use Scatter, connect your own AI models. You can mix cloud and local models from different providers. Quick setup guides you through connecting to OpenRouter and recommends a model for each role.']
     : showSync ? ['Restore synchronized settings', 'Connect the storage provider configured on your other device.']
     : step === 'connect' ? [path === 'quick' ? 'Connect OpenRouter' : restored ? 'Settings restored' : 'Configure providers',
       restored ? 'Your model choices are saved. Add the missing API keys to use them on this device.' : path === 'quick' ? 'One OpenRouter connection provides access to all four recommended models.' : 'Add API keys and configure model provider connections.']
@@ -261,9 +261,9 @@ export function WelcomeScreenA() {
               <button className="btn btn-primary" disabled={busy} onClick={() => void connectOpenRouter()}>Connect OpenRouter <ArrowRight size={16} /></button>
               {openRouter && <button className="btn btn-secondary" disabled={busy} onClick={() => void prepare()}>Use existing OpenRouter connection</button>}
             </div>
-            <div className="onboarding-facts"><p><strong>Usage-based billing.</strong> Paid models use OpenRouter credits, separate from ChatGPT, Claude, or Gemini subscriptions. New users may need to add credits on OpenRouter.</p>
-              <p><strong>Spending limits.</strong> Set a limit for this app’s API key and review usage in Settings → OpenRouter.</p>
-              <p><strong>Credential storage.</strong> The key is stored in this browser’s local data. Prompts go to OpenRouter and the model provider. Cloud sync excludes keys by default; you can enable key syncing in Settings → Synchronization. Full settings exports can include keys.</p></div>
+            <div className="onboarding-facts"><p><strong>Usage-based billing.</strong> OpenRouter credits are separate from chat subscriptions. You pay as you go at the rates of the models you choose. The recommended models balance quality and cost. See what you’ve spent on OpenRouter or in Settings → OpenRouter.</p>
+              <p><strong>Spending limits.</strong> You can cap this app’s spending by setting a limit on its API key in OpenRouter.</p>
+              <p><strong>Credential storage.</strong> We don’t collect your API key or prompts. Your browser stores the key locally and syncs it to your other devices only if you opt in. Your browser sends requests directly to OpenRouter, which forwards them to the model provider.</p></div>
             <button className="settings-text-action" disabled={busy} onClick={() => navigate('connect', 'custom')}>Add an API key manually</button>
           </> : <>
             {restored && <div className="settings-callout"><Check size={18} /><p><strong>Model choices preserved.</strong> Add API keys to the restored provider connections below. Models can be changed on the next step.</p></div>}

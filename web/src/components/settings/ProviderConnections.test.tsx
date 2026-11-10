@@ -3,36 +3,34 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProvidersTab, SettingsModal } from '../SettingsModal';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { DEFAULT_SETTINGS } from '@/store/types';
+import { getPreset } from '@/providers/registry';
 
 vi.mock('@/opfs/settingsIO', () => ({ saveSettings: vi.fn(async () => undefined), loadSettings: vi.fn() }));
 beforeEach(() => useSettingsStore.setState({ ...DEFAULT_SETTINGS, providers: [], activeModelRef: null }));
 
 describe('provider connections', () => {
-  it.each([false, true])('keeps the local guide last throughout connection setup (onboarding: %s)', (onboarding) => {
+  it.each([false, true])('links each local provider description to the GitHub guide (onboarding: %s)', (onboarding) => {
     render(<ProvidersTab onboarding={onboarding} />);
-    const chooser = screen.getByLabelText('Choose a provider');
-    for (const preset of ['ollama', 'lm-studio', 'custom']) {
-      fireEvent.change(chooser, { target: { value: preset } });
-      const link = screen.getByRole('button', { name: 'Local providers: connection guide' });
-      expect(link.closest('.settings-add-provider')?.lastElementChild).toBe(link);
+    const localPresets = ['ollama', 'lm-studio', 'custom'] as const;
+    const checkGuide = (preset: typeof localPresets[number]) => {
+      const link = screen.getByRole('link', { name: 'Local providers: connection guide' });
+      expect(link).toHaveAttribute('href', 'https://github.com/ctrlaltjakub/scatter/blob/main/web/docs/local-providers.md');
+      expect(link).toHaveAttribute('target', '_blank');
+      const help = link.closest('p');
+      expect(help).toHaveTextContent(getPreset(preset).helpText!);
+      expect(help?.lastElementChild).toBe(link);
+    };
+    for (const preset of localPresets) {
+      fireEvent.change(screen.getByLabelText('Choose a provider'), { target: { value: preset } });
+      checkGuide(preset);
     }
     fireEvent.click(screen.getByRole('button', { name: /^Add$/ }));
-    const link = screen.getByRole('button', { name: 'Local providers: connection guide' });
-    const body = link.closest('.settings-provider-body');
-    expect(body?.lastElementChild).toBe(link);
-    fireEvent.change(screen.getByLabelText('Base URL'), { target: { value: 'http://localhost:1234/v1' } });
-    fireEvent.change(screen.getByLabelText('API key'), { target: { value: 'local' } });
-    for (const mode of ['lmstudio-mcp', 'responses-mcp', 'localai', 'searxng']) {
-      fireEvent.change(screen.getByLabelText('Search connection'), { target: { value: mode } });
-      expect(body?.lastElementChild).toBe(link);
-      expect(within(body as HTMLElement).getAllByRole('button', { name: 'Local providers: connection guide' })).toHaveLength(1);
-    }
-    for (const preset of ['ollama', 'lm-studio', 'custom']) {
+    for (const preset of localPresets) {
       fireEvent.change(screen.getByLabelText('Provider'), { target: { value: preset } });
-      expect(body?.lastElementChild).toBe(link);
+      checkGuide(preset);
     }
     fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'openai' } });
-    expect(screen.queryByRole('button', { name: 'Local providers: connection guide' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Local providers: connection guide' })).not.toBeInTheDocument();
   });
   it('retains saved Gemini connections but explains why direct integration is disabled', () => {
     useSettingsStore.getState().addProvider('gemini');

@@ -129,7 +129,7 @@ npm ci
 npm run dev
 ```
 
-Open **[localhost:3000](http://localhost:3000)** and complete onboarding. Enter model-provider keys **in the app** so they are stored in your browser, separate from the deployment.
+Open **[localhost:3000](http://localhost:3000)** and complete onboarding. Enter model-provider keys **in the app** so they are stored in your browser, separate from the deployment. For Ollama, LM Studio or another compatible server, see the **[local provider connection guide](web/docs/local-providers.md)**.
 
 The app uses **Next.js 16, React 19 and TypeScript**, with a **WebGL ASCII canvas**, physics-based layout and browser-local persistence. The development and production scripts use **webpack** to preserve the browser-only model-runtime configuration.
 

@@ -103,9 +103,6 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
 
   const secondary = (id: string, label: string, system: string, user: string, tokens: number, validate?: (text: string) => void) =>
     cases.push({ id, label, role: 'secondary', kind: 'text', requests: 1, tokens, messages: pair(system, user), validate });
-  // The bundled local-provider guide uses these same marking/preview paths.
-  // Its static snapshot is separately validated by localModelGuideContent.test;
-  // do not add redundant paid checks for an asset generated during maintenance.
   const terms = termSelectionPrompt(DIAGNOSTIC_TEXT, settings.customPrompts);
   secondary('terms', 'Mark / re-mark terms · including copied answers', terms.system, terms.user, 2000, text => {
     const body = applyTermSelection(DIAGNOSTIC_TEXT, text);
