@@ -1,4 +1,6 @@
 'use client';
+import { SidebarWordmark } from '../SidebarWordmark';
+import { createFirstLevelWordmarkPalette } from '@/lib/sidebarWordmark';
 import { ModelDiagnostics } from '../settings/ModelDiagnostics';
 
 import { useEffect, useRef, useState } from 'react';
@@ -33,6 +35,7 @@ import { isProviderEnabled } from '@/providers/providerPolicy';
 import { LANDING_URL } from '@/lib/deployment';
 
 export function WelcomeScreenA() {
+  const [brandPalette, setBrandPalette] = useState<string[]>([]);
   const providers = useSettingsStore(s => s.providers);
   const [canCancel] = useState(() => !!useSettingsStore.getState().activeModelRef && !readOnboardingSession());
   const active = useSettingsStore(s => s.activeModelRef);
@@ -61,6 +64,7 @@ export function WelcomeScreenA() {
   const openRouter = providers.find(p => p.preset === 'openrouter' && p.apiKey.trim());
 
   useEffect(() => {
+    setBrandPalette(createFirstLevelWordmarkPalette());
     const saved = readOnboardingSession();
     if (saved) {
       setPath(saved.path); setStep(saved.step);
@@ -207,7 +211,7 @@ export function WelcomeScreenA() {
   return <main className="welcome onboarding">
     <section className="onboarding-shell settings-modal" aria-label="Set up Scatter">
       <aside className="onboarding-rail">
-        <div className="onboarding-brand">Scatter<span>Model configuration</span></div>
+        <div className="onboarding-brand"><SidebarWordmark paletteOverride={brandPalette} showEveryColor /><span className="onboarding-brand-caption">Model configuration</span></div>
         <nav aria-label="Setup progress"><ol className="onboarding-timeline">
           {steps.map((item, index) => <li key={item.id} className={index === stepIndex ? 'is-current' : index < stepIndex ? 'is-complete' : ''}>
             <button disabled={busy || index > stepIndex} aria-current={item.id === step ? 'step' : undefined}
@@ -261,9 +265,9 @@ export function WelcomeScreenA() {
               <button className="btn btn-primary" disabled={busy} onClick={() => void connectOpenRouter()}>Connect OpenRouter <ArrowRight size={16} /></button>
               {openRouter && <button className="btn btn-secondary" disabled={busy} onClick={() => void prepare()}>Use existing OpenRouter connection</button>}
             </div>
-            <div className="onboarding-facts"><p><strong>Usage-based billing.</strong> OpenRouter credits are separate from chat subscriptions. You pay as you go at the rates of the models you choose. The recommended models balance quality and cost. See what you’ve spent on OpenRouter or in Settings → OpenRouter.</p>
-              <p><strong>Spending limits.</strong> You can cap this app’s spending by setting a limit on its API key in OpenRouter.</p>
-              <p><strong>Credential storage.</strong> We don’t collect your API key or prompts. Your browser stores the key locally and syncs it to your other devices only if you opt in. Your browser sends requests directly to OpenRouter, which forwards them to the model provider.</p></div>
+            <div className="onboarding-facts"><p><strong>Usage-based billing.</strong> You pay as you go at the rates of the models you choose. The recommended models balance quality and cost. Later, you can see what you’ve spent on OpenRouter or in Settings → OpenRouter.</p>
+              <p><strong>Spending limits.</strong> OpenRouter lets you control spending by setting a limit on the API key.</p>
+              <p><strong>Credential storage.</strong> We don’t collect your API keys or any other data you enter in the app. Your browser stores the key locally and syncs it to your other devices only if you opt in. Your browser sends requests directly to OpenRouter, which forwards them to the model provider.</p></div>
             <button className="settings-text-action" disabled={busy} onClick={() => navigate('connect', 'custom')}>Add an API key manually</button>
           </> : <>
             {restored && <div className="settings-callout"><Check size={18} /><p><strong>Model choices preserved.</strong> Add API keys to the restored provider connections below. Models can be changed on the next step.</p></div>}

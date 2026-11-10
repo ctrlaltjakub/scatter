@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, type Settings } from '@/store/types';
 import { diagnosticPlan, diagnosticTargets, runDiagnosticJob, runDiagnosticPlan, type DiagnosticJob, type DiagnosticResult } from './modelDiagnostics';
 import { diagnosticError, GenerationResponseError, parseResponseJson, validateEncyclopedicOutput } from './generationValidation';
+import { DIAGNOSTIC_TEXT } from './modelDiagnosticsCases';
 import { GenerationOutputLimitError } from './generationLimits';
 import { ProviderError } from '@/providers/errors';
 import type { ChatChunk, StreamChatOpts } from '@/providers/types';
@@ -87,6 +88,17 @@ describe('model diagnostics', () => {
     expect(invoke).toHaveBeenCalledOnce();
     expect(() => job.test.validate?.(`${sample} ${sample}`)).toThrow('two requested sentence source lines');
     expect(() => job.test.validate?.(`${sample}\n\n${sample}`)).toThrow('two requested sentence source lines');
+  });
+  it('tests all fresh encyclopedic paths against the same limits in a single request per check', () => {
+    const jobs = diagnosticPlan(settings(), 'main');
+    for (const id of ['encyclopedic', 'term-node', 'follow-up', 'selected-follow-up', 'structure-repair']) {
+      const check = jobs.find(job => job.test.id === id)!.test;
+      expect(check.requests).toBe(1);
+      expect(check.messages[0]?.content).toContain('4–6 complete sentences');
+      expect(check.messages[0]?.content).toContain('3–3 main bullets'); // keep this paid diagnostic small
+      expect(() => check.validate!(DIAGNOSTIC_TEXT)).not.toThrow();
+      expect(() => check.validate!(DIAGNOSTIC_TEXT + '\n- Extra section')).toThrow('main bullets');
+    }
   });
   it('keeps explicit line instructions in every prose generation/edit capability path', () => {
     useSettingsStore.setState({ ...DEFAULT_SETTINGS });

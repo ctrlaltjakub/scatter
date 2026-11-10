@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { colorToCss, mutedAccentHex, resolveColorHex } from '@/lib/groupColor';
 import { generateWordmarkPattern, type WordmarkGlyphStyle } from '@/lib/sidebarWordmark';
 import { useGraphStore } from '@/store/useGraphStore';
@@ -15,14 +15,16 @@ const INITIAL_PATTERN: WordmarkGlyphStyle[] = LETTERS.map(() => ({
 }));
 
 interface SidebarWordmarkProps {
-  /** Runtime palette used by the project-restoration shell. */
+  /** A palette for screens without a loaded project. */
   paletteOverride?: readonly string[];
+  showEveryColor?: boolean;
   /** Changes force a fresh arrangement even when the two colors are unchanged. */
   reshuffleToken?: number;
 }
 
 export function SidebarWordmark({
   paletteOverride,
+  showEveryColor = false,
   reshuffleToken = 0,
 }: SidebarWordmarkProps = {}) {
   const projectColor = useGraphStore((state) => state.project?.color ?? null);
@@ -54,9 +56,8 @@ export function SidebarWordmark({
   const previousSelectionRef = useRef<readonly string[] | null>(null);
   const previousReshuffleRef = useRef(reshuffleToken);
   const [hovered, setHovered] = useState(false);
-  const [pattern, setPattern] = useState(() => (
-    paletteOverride ? generateWordmarkPattern(paletteOverride) : INITIAL_PATTERN
-  ));
+  const draw = useCallback(() => generateWordmarkPattern(palette, Math.random, showEveryColor), [palette, showEveryColor]);
+  const [pattern, setPattern] = useState(() => paletteOverride ? draw() : INITIAL_PATTERN);
 
   useEffect(() => {
     const paletteChanged = previousPaletteRef.current !== paletteKey;
@@ -68,22 +69,22 @@ export function SidebarWordmark({
     previousSelectionRef.current = selection;
     previousReshuffleRef.current = reshuffleToken;
     if (paletteChanged || focusChanged || reshuffleRequested) {
-      setPattern(generateWordmarkPattern(palette));
+      setPattern(draw());
     }
-  }, [palette, paletteKey, paletteOverride, reshuffleToken, selection]);
+  }, [draw, paletteKey, paletteOverride, reshuffleToken, selection]);
 
   useEffect(() => {
     if (!hovered) return;
-    const timer = window.setInterval(() => setPattern(generateWordmarkPattern(palette)), 500);
+    const timer = window.setInterval(() => setPattern(draw()), 500);
     return () => window.clearInterval(timer);
-  }, [hovered, palette]);
+  }, [hovered, draw]);
 
   return (
     <a href={LANDING_URL} target="_blank" rel="noopener noreferrer"
       className="app-wordmark" data-link-control aria-label="Scatter landing page (opens in a new tab)"
-      onMouseEnter={() => { setHovered(true); setPattern(generateWordmarkPattern(palette)); }}
+      onMouseEnter={() => { setHovered(true); setPattern(draw()); }}
       onMouseLeave={() => setHovered(false)}
-      onFocus={() => setPattern(generateWordmarkPattern(palette))}>
+      onFocus={() => setPattern(draw())}>
       {LETTERS.map((letter, index) => {
         const glyph = pattern[index] ?? INITIAL_PATTERN[index]!;
         return (

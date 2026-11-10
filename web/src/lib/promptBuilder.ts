@@ -30,7 +30,7 @@ export type TaskVariant =
    *  unmarked portions of the body verbatim. */
   | { kind: 'expand-part'; markedBody: string; mode?: 'encyclopedic' | 'explain' }
   /** Internal corrective pass: the previous output broke the two-level bullet
-   *  structure (fewer than 2 level-1 bullets each with ≥2 level-2 children).
+   *  outline contract (opening length, section/subpoint counts or descriptions).
    *  Re-asks the model to rewrite `previousBody` into the correct structure,
    *  keeping all content. Fired automatically once after a failed generation. */
   | { kind: 'restructure'; previousBody: string }

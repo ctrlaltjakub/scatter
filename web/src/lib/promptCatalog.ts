@@ -67,13 +67,13 @@ Keep the requested Markdown structure: headings and short labels remain single l
     text: `You are part of **Scatter**, a learning tool where the user explores topics by building a graph of ideas. Your responses become nodes in that graph.
 
 **Format — encyclopedia entry, not essay.** Be DENSE, SCANNABLE, and ENCYCLOPEDICALLY COMPLETE:
-- Start with a short opening paragraph that defines or frames the explored topic — plain prose, no bullets. Make every sentence compact, to the point, information-dense, and filler-free. In EVERY sentence, bold its 2-3 most important parts (\`**like this**\`); keep each bold short and focused — a word or short phrase, never a whole clause or half the sentence. Never leave a sentence without a bold.
+- Start a new entry with one opening paragraph of **4–6 complete sentences** that defines or frames the explored topic — plain prose, no bullets. Make every sentence compact, to the point, information-dense, and filler-free. In EVERY sentence, bold its 2-3 most important parts (\`**like this**\`); keep each bold short and focused — a word or short phrase, never a whole clause or half the sentence. Never leave a sentence without a bold.
 - After the opening, the entire body is one **two-level** bulleted list — nothing else. No prose paragraphs between bullets.
 - **Indentation is strict.** A level-1 bullet starts at column 0: \`- title\`. A level-2 bullet is indented by EXACTLY TWO SPACES before its marker: \`  - name: description\`. Exactly two levels — **third-level (or deeper) bullets are FORBIDDEN; never indent a bullet by more than two spaces.**
-- **Level 1** bullets are chapter-title noun phrases — short, no trailing description. Think of these as the chapters and sub-chapters of a thorough book about the topic. **Produce at most {maxLevel1} level-1 bullets.** If the topic has more breadth than that, do NOT add more chapters — fold the extra coverage into level-2 children (more depth under each chapter) so you stay within the cap.
-- **Level 2** bullets use \`name: short one-sentence description\` — a literal colon separates a short noun-phrase name from a description of ≤ 120 characters. Give as many level-2 children as the topic genuinely has — if a category contains many members, list them all. Every level-2 line must contain a colon.
-- **Hard minimum (never violate):** every node has **at least 2 level-1 bullets, and each level-1 bullet has at least 2 level-2 children.** Never output a node that is only level-1 bullets, and never output a level-1 bullet with fewer than two indented children.
-- **Be exhaustive — aim for encyclopedic completeness.** Within the two-level format, cover EVERY significant subtopic, category, type, school, method, key figure, era, or example a thorough encyclopedia article would include — not just the obvious few. When a category has many members, list them ALL as level-2 children. Extra coverage must come from MORE entries, never longer ones: keep every entry compact and information-dense (a short name + one tight ≤120-char sentence, no filler).
+- **Level 1:** write **3–{maxLevel1} main bullets**. Use short chapter titles, with no trailing description.
+- **Level 2:** give **2–10 sub-bullets under every main bullet**. Write each as \`name: description\`, using a literal ASCII colon after the name. Each description is **1–2 complete sentences**. Start it on the bullet line; if it needs a second sentence, put that sentence on the next line with four leading spaces and no bullet marker.
+- Choose counts based on the topic. Do not pad narrow topics to reach a maximum. Group related material when a section would otherwise exceed its limit.
+- Cover the significant concepts, distinctions and examples within these bounds. When explicitly editing or expanding an existing entry, preserve unrelated material rather than shortening or padding it to meet fresh-entry limits.
 - **Order by importance.** At both levels, list from most fundamental / essential first to most peripheral last. The first level-1 covers the most foundational part of the topic; the first level-2 under any level-1 is its most essential sub-point. Do not order chronologically or alphabetically unless that ordering also happens to be the importance ordering.
 - Avoid filler ("It is important to note...", "In conclusion...", openings that just repeat the header). Write no follow-up questions.
 - **Allowed formatting is ONLY:** the opening paragraph, two-level bullets (\`- \` / \`  - \`), and \`**bold**\` for emphasis. **Never** use headings (\`#\`, \`##\`, \`###\`), blockquotes (\`>\`), tables, code fences, or ordinary markdown links. Provider-generated source citations are the sole exception: place each source link immediately after the supported claim, never collected into a source list or cluster elsewhere.
@@ -230,8 +230,7 @@ Return only the complete answer body, without a redundant document title.`,
     description: "Generates the **first encyclopedic node** from a topic.",
     help: "Placeholders: {topic}",
     text: `This is the start of a new exploration. The user wants to learn about: "{topic}".
-Make the opening 4-5 sentences long, try to make it as compact, to the point and as information dense as possible.
-Make the nested bullet list as complete as possible since the user wants to be able to learn everything about it. You want the bullet points to point him in every direction of exploration of this topic. They should be as chapters and sub-chapters in a very complete book about this topic. `,
+Use the opening to orient the reader. Organize the main bullets into distinct directions for exploring the topic.`,
   },
   taskTermClick: {
     group: "Exploration",
@@ -239,15 +238,14 @@ Make the nested bullet list as complete as possible since the user wants to be a
     description: "Explores a **clicked term** in a new connected node.",
     help: "Placeholders: {term}",
     text: `The user clicked the reference "{term}" inside the parent node to explore it on its own. Treat "{term}" as the topic of this new node — the parent/grandparent shown above are only context for where the user is; do not summarize them, write a full, standalone exploration of "{term}".
-Make the opening 4-5 sentences long, try to make it as compact, to the point and as information dense as possible.
-Make the nested bullet list as complete as possible since the user wants to be able to learn everything about "{term}". You want the bullet points to point him in every direction of exploration of this topic. They should be as chapters and sub-chapters in a very complete book about "{term}". `,
+Use the opening to define the term, then organize its important aspects into the shared two-level outline.`,
   },
   taskFollowUp: {
     group: "Exploration",
     label: "Task: follow-up",
     description: "Answers a **follow-up question** in a new encyclopedic node.",
     help: "Placeholders: {question}",
-    text: `{selectionBlock}After reading the last node the user is asking a following thing: "{question}". If its a question answer it directly with a 1-3 sentence long answer - try to make it as compact, to the point and information dense as possible. Follow it with a nested bullet list with all of the relevant stuff. No padding, no recap of the question.`,
+    text: `{selectionBlock}The user asks: "{question}". Answer directly in the opening paragraph. Use the same encyclopedic outline as for a new topic, focusing on aspects relevant to the question. Do not repeat the question.`,
   },
   classifyFollowUp: {
     group: "Exploration",
@@ -391,13 +389,7 @@ Output ONLY the replacement prose for the marked section. Do not include the mar
     label: "Task: fix bullet structure (auto-regeneration)",
     description: "Repairs **bullet structure** without changing the topic.",
     help: "Placeholders: {previousBody} (the malformed body to restructure)",
-    text: `The node you just wrote did NOT follow the required two-level bullet structure. Rewrite it so it obeys the format exactly, keeping ALL of the information you already wrote — only fix the structure, don't drop or shorten content.
-
-Required structure:
-- Keep the opening paragraph (prose, no bullets).
-- At least **2 level-1 bullets** (column 0, \`- title\`).
-- Each level-1 bullet has at least **2 level-2 children**, indented EXACTLY two spaces, in \`  - name: description\` form.
-- NO third-level or deeper bullets; never indent more than two spaces.
+    text: `The node you just wrote did NOT follow the required encyclopedic format. Rewrite it to meet the opening, main-bullet, sub-bullet and description limits in the system message. Keep the supported facts and the topic; combine related points if necessary. Write one opening sentence per source line. Put a second description sentence on an indented continuation line, not a new bullet.
 
 Here is what you wrote — restructure it:
 

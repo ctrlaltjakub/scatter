@@ -4,6 +4,7 @@ import {
   clearGoogleDriveSourceAccessToken,
   clearGoogleDriveToken,
   googleDriveTokenNeedsRefresh,
+  GoogleDriveAuthorizationRejected,
   installGoogleDriveGestureRefresh,
   requestGoogleDriveToken,
   requestGoogleDriveSourceAccessToken,
@@ -210,6 +211,32 @@ describe('Google Drive synchronization provider', () => {
     await explicit;
     cleanup();
     expect(request).toHaveBeenCalledOnce();
+    expect(request).toHaveBeenCalledWith({ prompt: 'none' });
+  });
+
+  it('returns an interaction requirement to the app and leaves sign-in for an explicit reconnect', async () => {
+    const requests: (string | undefined)[] = [];
+    window.google!.accounts!.oauth2!.initTokenClient = config => ({
+      callback: config.callback,
+      requestAccessToken: options => {
+        requests.push(options?.prompt);
+        config.callback(options?.prompt === 'none' ? {error: 'account_selection_required'} : {access_token: 'renewed', expires_in: 3600});
+      },
+    });
+    let needsReconnect = false;
+    const cleanup = await installGoogleDriveGestureRefresh({
+      shouldRefresh: () => !needsReconnect,
+      onRefreshed: vi.fn(),
+      onError: error => { needsReconnect = error instanceof GoogleDriveAuthorizationRejected; },
+    });
+    try {
+      window.dispatchEvent(new Event('pointerdown'));
+      await vi.waitFor(() => expect(needsReconnect).toBe(true));
+      window.dispatchEvent(new Event('pointerdown'));
+      await requestGoogleDriveToken();
+      expect(requests).toEqual(['none', undefined]);
+      expect(googleDriveTokenNeedsRefresh()).toBe(false);
+    } finally { cleanup(); }
   });
 
   it('does not discard a newly renewed token when an older request returns 401', async () => {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearGoogleDriveSourceAccessToken, clearGoogleDriveToken, hasGoogleDriveAccessToken,
+import { clearGoogleDriveSourceAccessToken, clearGoogleDriveToken, hasGoogleDriveAccessToken, GoogleDriveAuthorizationRejected,
   requestGoogleDriveSourceAccessToken, requestGoogleDriveToken } from './googleDrive';
 
 const scriptSelector = 'script[src="https://accounts.google.com/gsi/client"]';
@@ -60,6 +60,18 @@ describe('Google authorization failure recovery', () => {
     expect(document.querySelector(scriptSelector)).toBeNull();
     installGoogle(); await requestGoogleDriveToken();
     expect(hasGoogleDriveAccessToken()).toBe(true);
+  });
+
+  it.each(['popup_closed', 'popup_failed_to_open'])('routes a no-prompt %s to explicit reconnect', async type => {
+    installGoogle();
+    window.google!.accounts!.oauth2!.initTokenClient = config => ({
+      callback: config.callback, requestAccessToken: () => config.error_callback?.({type}),
+    });
+    await expect(requestGoogleDriveToken('none')).rejects.toBeInstanceOf(GoogleDriveAuthorizationRejected);
+    // A user-initiated sign-in still reports cancellation / blocked popups normally.
+    const explicit = await requestGoogleDriveToken().catch((error: unknown) => error);
+    expect(explicit).toBeInstanceOf(Error);
+    expect(explicit).not.toBeInstanceOf(GoogleDriveAuthorizationRejected);
   });
 
   describe.each([

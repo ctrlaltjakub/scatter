@@ -19,13 +19,19 @@ import { INTERACTIVE_NODE_W } from './nodeSize';
 import { INTERACTIVE_VIEWPORT_HEIGHT, INTERACTIVE_VIEWPORT_WIDTH } from './interactiveDocument';
 
 const BODY = `A compact opening paragraph.
+Alpha is the first category.
+Beta is the second category.
+Gamma completes the outline.
 
 - Alpha
   - one: First detail
   - two: Second detail
 - Beta
   - one: Third detail
-  - two: Fourth detail`;
+  - two: Fourth detail
+- Gamma
+  - one: Fifth detail.
+  - two: Sixth detail.`;
 
 const fake = vi.hoisted(() => ({
   classifier: 'explore' as 'explore' | 'explain' | 'interactive',
@@ -126,7 +132,7 @@ function installLongSelectionParent(): { selection: NodeTextSelection; selectedT
 function hasSelectedFollowUpPrompt(selectedText: string, question: string): boolean {
   return fake.prompts.some((prompt) => (
     prompt.includes(`The user highlighted this exact passage in the parent node:\n\n${selectedText}`)
-    && prompt.includes(`user is asking a following thing: "${question}"`)
+    && prompt.includes(`user asks: "${question}"`)
   ));
 }
 

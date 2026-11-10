@@ -9,7 +9,8 @@
 }
 .onboarding-rail { padding: 32px 20px 68px; background: color-mix(in oklab, var(--mantle) 60%, var(--base)); border-right: 1px solid var(--settings-line); display: flex; flex-direction: column; }
 .onboarding-brand { font-size: 28px; letter-spacing: -0.8px; padding: 0 10px; }
-.onboarding-brand span { display: block; margin-top: 5px; font-size: 13px; letter-spacing: 0; color: var(--subtext0); }
+.onboarding-brand .app-wordmark { width: fit-content; letter-spacing: normal; }
+.onboarding-brand-caption { display: block; margin-top: 5px; font-size: 13px; letter-spacing: 0; color: var(--subtext0); }
 .onboarding-timeline { list-style: none; margin: 52px 0 0; padding: 0; }
 .onboarding-timeline li { position: relative; padding-bottom: 30px; }
 .onboarding-timeline li:not(:last-child)::after { content: ''; position: absolute; left: 22px; top: 36px; bottom: 4px; width: 1px; background: var(--settings-line); }
@@ -64,7 +65,7 @@
   .onboarding-shell { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); height: calc(100dvh - 24px); }
   .onboarding-rail { padding: 16px 20px; border-right: 0; border-bottom: 1px solid var(--settings-line); }
   .onboarding-brand { font-size: 22px; padding: 0; }
-  .onboarding-brand span, .onboarding-timeline small { display: none; }
+  .onboarding-brand-caption, .onboarding-timeline small { display: none; }
   .onboarding-timeline { display: flex; margin-top: 14px; gap: 8px; }
   .onboarding-timeline li { flex: 1; padding: 0; }
   .onboarding-timeline li::after { display: none; }

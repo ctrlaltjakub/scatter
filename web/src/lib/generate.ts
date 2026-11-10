@@ -67,7 +67,7 @@ import {
   semanticHeaderText,
 } from './nodeHeaderText';
 import { newId } from './ids';
-import { isValidStructure, stripChips } from './bulletParse';
+import { freshOutlineProblem, stripChips } from './bulletParse';
 import { EmbeddedImageText } from './embeddedImageText';
 import { unchipHeaders } from './parser';
 import { makeBulletCommitGate, type CommitGate } from './streamCommitGate';
@@ -1067,47 +1067,9 @@ async function streamIntoVersion(
       onAcc(finalBody);
     }
 
-    // Structure self-check: if a freshly-generated node doesn't have ≥2 level-1
-    // bullets each with ≥2 level-2 children, re-generate ONCE in place with a
-    // corrective instruction. We re-use streamChunks (not a recursive
-    // streamIntoVersion) so genProjectId / onAcc stay captured even if the user
-    // switched projects. 'restructure' is not in STRUCTURE_CHECK_KINDS, so this
-    // can't loop. All writes go through updateGenNode (undo-paused), so the
-    // whole generate→detect→regenerate stays a single undo entry.
-    // Citation markers are already normalized before this point. The protected
-    // restructure prompt preserves them, and the final safety net restores any
-    // marker the corrective model accidentally drops.
-    if (STRUCTURE_CHECK_KINDS.has(variant.kind) && !isValidStructure(finalBody)) {
-      const malformed = finalBody;
-      const restructure = await streamChunks({
-        nodeId,
-        variant: { kind: 'restructure', previousBody: malformed },
-        parentIdForContext,
-        signal: ctrl.signal,
-        onAcc,
-        // The original search already produced the evidence catalog. Searching
-        // again would change the sources while this pass only fixes structure.
-        webSearch: false,
-        commitGate: makeBulletCommitGate(), // fresh gate — new stream, new state
-      });
-      const restructureError = generationCompletionError(
-        restructure.rawText,
-        restructure.finishReason,
-        restructure.citations,
-      );
-      if (!ctrl.signal.aborted && (restructureError || !isValidStructure(finalBody))) {
-        if (genProjectId) updateGenNode(genProjectId, nodeId, {
-          generating: false,
-          streamingText: false,
-          generationError: restructureError
-            ?? 'The model did not produce the required two-level outline, even after a structure-repair pass. Retry once; if this repeats, restore the relevant system prompt or choose a model with stronger structured output.',
-        });
-        useNodeStatusStore.getState().clearStatus(nodeId);
-        return;
-      }
-      // Keep the manual Retry button replaying the ORIGINAL generation, not the
-      // internal corrective pass (streamChunks overwrote retryArgs).
-      retryArgs.set(nodeId, { variant, parentIdForContext });
+    if (STRUCTURE_CHECK_KINDS.has(variant.kind) && !ctrl.signal.aborted) {
+      finalBody = await checkFreshOutline(nodeId, parentIdForContext, finalBody, ctrl.signal, onAcc,
+        citationSources, pass1.citations, pass1.internalSources);
     }
 
     // Sources become part of the live generating version as soon as pass 1 is
@@ -1274,34 +1236,44 @@ async function streamIntoVersion(
   }
 }
 
-/**
- * After a REGENERATION via the rewrite-burst path (regenerateNode /
- * regenerateHeader), run ONE in-place corrective restructure if the freshly
- * committed body fails the two-level structure check. Overwrites the
- * just-committed version body via the spawn streaming core, so it adds no extra
- * version and (writes being undo-paused) keeps the regenerate as one undo entry.
- * Skips on abort/error and when the kind isn't a fresh-generation kind.
- */
-async function correctStructureAfterRegen(
-  nodeId: string,
-  kind: TaskVariant['kind'],
-  parentIdForContext: string | null,
-  targetVersionIndex: number,
-): Promise<void> {
-  if (!STRUCTURE_CHECK_KINDS.has(kind)) return;
-  const node = useGraphStore.getState().project?.nodes[nodeId];
-  if (!node || node.generationError) return;
-  const projectId = activeGenerationProjectId();
-  targetVersionIndex = (projectId ? getGenerationSession(projectId, nodeId)?.draftVersionIndex : undefined) ?? targetVersionIndex;
-  const body = node.versions[targetVersionIndex]?.body ?? '';
-  if (!body || isValidStructure(body)) return;
-  setGenFlags(nodeId, { generating: true, generationError: undefined });
-  await streamIntoVersion(
-    nodeId,
-    { kind: 'restructure', previousBody: body },
-    parentIdForContext,
-    targetVersionIndex,
-  );
+/** Exactly one repair for a fresh outline. A repair never searches again, invents
+ * sources, or replaces the Retry action. Edits and stored versions bypass this. */
+async function checkFreshOutline(
+  nodeId: string, parentIdForContext: string | null, body: string, signal: AbortSignal,
+  onAcc: (text: string) => void,
+  webSources: readonly NodeSource[], citations: readonly Citation[], internalSources: readonly InternalNodeSource[],
+): Promise<string> {
+  if (!freshOutlineProblem(body)) return body;
+  const originalRetry = retryArgs.get(nodeId);
+  const variant: TaskVariant = { kind: 'restructure', previousBody: body };
+  try {
+    const result = await streamChunks({
+      nodeId, parentIdForContext, variant, signal, onAcc, webSearch: false,
+      commitGate: makeBulletCommitGate(),
+    });
+    if (signal.aborted) return body;
+    const incomplete = generationCompletionError(result.rawText, result.finishReason, result.citations);
+    if (incomplete) throw new Error(incomplete);
+    let repaired = result.normalizedText;
+    const issue = freshOutlineProblem(repaired);
+    if (issue) throw new Error(`The model did not produce the required two-level outline after one repair. ${issue} Retry or check the encyclopedic system prompt.`);
+    // Original provider offsets refer to the pre-repair body. Match the source
+    // text again rather than reusing those offsets in a differently sized outline.
+    const missing = webSources.filter(s => body.includes(`⟦${s.n}⟧`) && !repaired.includes(`⟦${s.n}⟧`));
+    if (missing.length) repaired = placeCitationMarkersReliable(repaired, citations
+      .filter(c => missing.some(s => s.url === c.url))
+      .map(c => ({ ...c, startIndex: undefined, endIndex: undefined })), missing);
+    const webMarks = (s: string) => new Set(s.match(/⟦\d+⟧/g) ?? []);
+    const before = webMarks(body), after = webMarks(repaired);
+    if (before.size !== after.size || [...before].some(key => !after.has(key))
+      || internalSources.some(s => body.includes(`(${s.n})`) !== repaired.includes(`(${s.n})`))) {
+      onAcc(body);
+      throw new Error('The outline repair changed source markers. The repaired text was not used. Retry to generate a new outline.');
+    }
+    return repaired;
+  } finally {
+    if (retryArgs.get(nodeId)?.variant === variant && originalRetry) retryArgs.set(nodeId, originalRetry);
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────
@@ -2073,9 +2045,8 @@ async function runWholeRewrite(opts: {
   maxOutputTokens?: number;
   /** Encyclopedic level-1 bullet cap for THIS generation's `base` prompt. */
   maxLevel1?: number;
-  /** Run pass-2 chip marking on the committed body (default true). Callers that
-   *  need a corrective restructure FIRST (regenerate) pass false and run the
-   *  chip pass themselves afterward, so chips land on the final structure. */
+  /** Run term marking after committing the checked outline. A caller may
+   *  handle term marking and final citation numbering itself. */
   runChips?: boolean;
   /** Part F — aura status label for the pass-1 phase (e.g. EXPANDING WHOLE).
    *  Defaults to statusVerb(variant.kind). */
@@ -2264,7 +2235,18 @@ async function runWholeRewrite(opts: {
         citationCtx.googleSearchSuggestions,
       );
     }
-    const citedBody = useRewriteStore.getState().workingBody[nodeId] ?? '';
+    let citedBody = useRewriteStore.getState().workingBody[nodeId] ?? '';
+    if (STRUCTURE_CHECK_KINDS.has(variant.kind)) {
+      citedBody = await checkFreshOutline(nodeId, parentIdForContext, citedBody, controller.signal, text => {
+        store.setWorkingBody(nodeId, text);
+        mirrorRewriteDraft(nodeId, text);
+      }, [...citationCtx.oldSources, ...citationCtx.newSources], streamRes.citations, citationCtx.internalSources);
+      if (controller.signal.aborted) {
+        finishRewrite(nodeId, rewriteId, 'aborted', newVersionMeta);
+        return null;
+      }
+      store.setWorkingBody(nodeId, citedBody);
+    }
     const presentCitationNumbers = new Set(
       [...citedBody.matchAll(/⟦(\d+)⟧/g)].map((m) => Number(m[1])),
     );
@@ -2286,9 +2268,7 @@ async function runWholeRewrite(opts: {
       deferGeneratingOff: runChips,
     });
     if (!res?.committed) return null;
-    // Callers that pass runChips:false run their own restructure + chip pass, then
-    // call finalizeRewriteCitations themselves (after chips). When we own the chip
-    // pass, finalize here.
+    // When the caller owns term marking, it finalizes citation numbering afterward.
     if (runChips) {
       await addChipsToCurrentVersion(nodeId, res.versionIndex);
       finalizeRewriteCitations(nodeId, res.versionIndex, citationCtx);
@@ -2926,12 +2906,7 @@ export async function regenerateNode(nodeId: string): Promise<void> {
       runChips: false,
       maxLevel1: DEFAULT_MAX_L1_BULLETS,
     });
-    // Skip the corrective restructure when web-search markers were exact-placed
-    // (it regenerates from scratch and would wipe them).
     if (!ctx) return;
-    if (!ctx.newSources.length) {
-      await correctStructureAfterRegen(nodeId, variant.kind, parentIdForContext, ctx.versionIndex);
-    }
     // Term-marking (pass 2) runs for BOTH encyclopedic and explain — explain
     // prose gets clickable terms too, matching a fresh explain spawn.
     await addChipsToCurrentVersion(nodeId, ctx.versionIndex);
@@ -3003,9 +2978,6 @@ export async function generateTextVersionFromHeader(
     maxLevel1: DEFAULT_MAX_L1_BULLETS,
   });
   if (!ctx) return;
-  if (ct !== 'answer' && !ctx.newSources.length) {
-    await correctStructureAfterRegen(nodeId, variant.kind, incoming?.fromNodeId ?? null, ctx.versionIndex);
-  }
   await addChipsToCurrentVersion(nodeId, ctx.versionIndex);
   finalizeRewriteCitations(nodeId, ctx.versionIndex, ctx);
   completeGenerationSession(nodeId);
@@ -3074,9 +3046,6 @@ export async function retypeNodeToText(nodeId: string, target: 'encyclopedic' | 
       maxLevel1: DEFAULT_MAX_L1_BULLETS,
     });
     if (!ctx) return;
-    if (!ctx.newSources.length) {
-      await correctStructureAfterRegen(nodeId, variant.kind, parentIdForContext, ctx.versionIndex);
-    }
     await addChipsToCurrentVersion(nodeId, ctx.versionIndex);
     finalizeRewriteCitations(nodeId, ctx.versionIndex, ctx);
     completeGenerationSession(nodeId);

@@ -275,6 +275,21 @@ describe('onboarding settings import', () => {
 });
 
 describe('onboarding copy and entry controls', () => {
+  it('uses all four visit colors in the linked wordmark across setup steps', () => {
+    render(<WelcomeScreenA />);
+    const logo = screen.getByRole('link', {name: 'Scatter landing page (opens in a new tab)'});
+    const colors = () => new Set([...logo.querySelectorAll<HTMLElement>('.app-wordmark-letter')].map(letter => letter.style.color));
+    const palette = colors();
+    expect(palette.size).toBe(4);
+    expect(logo).toHaveAttribute('target', '_blank');
+    expect(logo).toHaveAttribute('href', 'https://www.scatter.study/?landing=1');
+    fireEvent.click(screen.getByRole('button', {name: /Quick setup/}));
+    expect(colors()).toEqual(palette);
+    expect(screen.getByText(/Later, you can see what you’ve spent/)).toBeInTheDocument();
+    expect(screen.queryByText(/separate from chat subscriptions/)).not.toBeInTheDocument();
+    expect(screen.getByText(/any other data you enter in the app/)).toBeInTheDocument();
+  });
+
   it('explains later provider changes and omits settings-only guidance from onboarding', () => {
     render(<WelcomeScreenA />);
     expect(screen.getByText('You can change models or add more API providers later.')).toBeInTheDocument();

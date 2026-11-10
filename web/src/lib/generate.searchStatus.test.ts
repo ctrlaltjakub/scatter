@@ -9,13 +9,19 @@ import { regenerateNode, retryGeneration, spawnExplain, spawnTermClick } from '.
 vi.mock('./termPreviews', () => ({ generateTermPreviews: vi.fn(async () => {}) }));
 
 const BODY = `A compact opening paragraph.
+Alpha is the first category.
+Beta is the second category.
+Gamma completes the outline.
 
 - Alpha
   - one: First detail
   - two: Second detail
 - Beta
   - one: Third detail
-  - two: Fourth detail`;
+  - two: Fourth detail
+- Gamma
+  - one: Fifth detail.
+  - two: Sixth detail.`;
 
 const fake = vi.hoisted(() => ({
   used: false,
@@ -23,6 +29,7 @@ const fake = vi.hoisted(() => ({
   suggestions: undefined as string[] | undefined,
   error: undefined as string | undefined,
   body: '',
+  repairedBody: '',
   citations: [] as Array<{ url: string; title?: string; startIndex?: number; endIndex?: number; offsetKind?: 'claim' | 'citation-label' }>,
   finishReason: undefined as string | null | undefined,
   calls: 0,
@@ -44,7 +51,7 @@ vi.mock('@/providers/registry', async (importOriginal) => {
           return;
         }
         if (opts.webSearch === false) {
-          yield { delta: BODY, done: false };
+          yield { delta: fake.repairedBody, done: false };
           yield { delta: '', done: true };
           return;
         }
@@ -79,6 +86,7 @@ beforeEach(() => {
   fake.suggestions = undefined;
   fake.error = undefined;
   fake.body = BODY;
+  fake.repairedBody = BODY;
   fake.citations = [];
   fake.finishReason = undefined;
   fake.calls = 0;
@@ -255,6 +263,33 @@ describe('generation web-search provenance', () => {
     expect(version.body).toContain('paragraph⟦1⟧.');
     expect(version.body).not.toContain('https://');
     expect(version.sources?.map((source) => source.url)).toEqual([url]);
+  });
+
+  it('stops after one unsuccessful repair and retries the original task, not the repair', async () => {
+    fake.body = fake.repairedBody = BODY.replace('Beta is the second category.\n', '');
+    const id = await spawnTermClick('parent', 'retained topic');
+    expect(fake.calls).toBe(2);
+    expect(useGraphStore.getState().project!.nodes[id]!.generationError).toContain('4–6');
+    fake.body = BODY;
+    await retryGeneration(id);
+    expect(fake.messages[2]?.at(-1)).toContain('The user clicked the reference "retained topic"');
+    expect(useGraphStore.getState().project!.nodes[id]!.generationError).toBeFalsy();
+  });
+
+  it('checks the limits on a searched regeneration without overwriting the previous version', async () => {
+    const id = await spawnTermClick('parent', 'fresh topic');
+    const before = useGraphStore.getState().project!.nodes[id]!.versions[0]!.body;
+    fake.used = true;
+    fake.requests = 1;
+    fake.body = 'One sentence instead of four. [Study](https://example.org/study)';
+    fake.citations = [{url: 'https://example.org/study', title: 'Study', offsetKind: 'citation-label'}];
+    await regenerateNode(id);
+    const node = useGraphStore.getState().project!.nodes[id]!;
+    expect(node.generationError).toBeFalsy();
+    expect(node.versions[0]!.body).toBe(before);
+    expect(node.versions[1]!.body).toContain('- Gamma');
+    expect(node.versions[1]!.sources?.map(s => s.url)).toEqual(['https://example.org/study']);
+    expect(fake.calls).toBe(5); // two for spawn, then answer, one repair, and terms
   });
 
   it('repairs a complete searched answer that omitted the required bullets without dropping its source', async () => {

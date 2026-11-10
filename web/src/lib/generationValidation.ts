@@ -1,5 +1,5 @@
 import { GenerationOutputLimitError, isOutputLimit } from './generationLimits';
-import { isValidStructure } from './bulletParse';
+import { freshOutlineProblem } from './bulletParse';
 import { friendlyErrorMessage, ProviderError } from '@/providers/errors';
 
 export type ResponseProblem = 'empty_output' | 'invalid_structure' | 'invalid_json' | 'tool_call' | 'interrupted' | 'refused' | 'wrong_result';
@@ -19,9 +19,10 @@ export function requireVisibleText(text: string, role: 'main' | 'secondary' | 'i
   if (!text.trim()) throw new GenerationResponseError('empty_output', `The ${role} model returned no answer text.`,
     'Retry once. If this repeats, lower reasoning effort, increase the generation token limit, or choose a text-generation model.');
 }
-export function validateEncyclopedicOutput(text: string): void {
-  if (!isValidStructure(text)) throw new GenerationResponseError('invalid_structure',
-    'The response does not have the required two-level encyclopedic outline (at least two sections, each with two subpoints).',
+export function validateEncyclopedicOutput(text: string, maxSections?: number): void {
+  const issue = freshOutlineProblem(text, maxSections);
+  if (issue) throw new GenerationResponseError('invalid_structure',
+    `The response does not match the two-level encyclopedic outline. ${issue}`,
     'Retry once; if it repeats, restore the relevant system prompts or choose a model with stronger structured output.');
 }
 export function parseResponseJson(text: string): Record<string, unknown> {

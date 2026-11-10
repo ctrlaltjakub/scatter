@@ -1,3 +1,4 @@
+import { DEFAULT_MAX_L1_BULLETS } from './nodeContentType';
 import { sliceWithInlineEmphasis } from './inlineEmphasis';
 
 /** A level-2 child as parsed out of `name: description` markdown. */
@@ -198,15 +199,49 @@ export function parseBody(markdown: string): ParsedBody | null {
   return { freeText, bullets };
 }
 
-/**
- * Does a node body satisfy the required two-level structure — at least 2
- * level-1 bullets, each with at least 2 level-2 children? Used after a fresh
- * generation to decide whether to auto-trigger one corrective re-generation.
- */
-export function isValidStructure(body: string): boolean {
-  const parsed = parseBody(body);
-  if (!parsed) return false;
-  return parsed.bullets.filter((b) => b.children.length >= 2).length >= 2;
+/** Validate newly generated outlines, never stored or manually edited nodes.
+ * Sentence boundaries are the model's source lines, not language-specific punctuation. */
+export function freshOutlineProblem(body: string, maxSections = DEFAULT_MAX_L1_BULLETS): string | null {
+  let opening = 0;
+  let openingEnded = false;
+  let description = 0;
+  let childIndent = '';
+  const sections: number[] = [];
+  for (const line of body.trimEnd().split(/\r\n|[\r\n\u2028\u2029]/u)) {
+    if (!line.trim()) {
+      if (opening) openingEnded = true;
+      description = 0;
+      continue;
+    }
+    const bullet = BULLET_RE.exec(line);
+    if (bullet) {
+      const [, indent, , text] = bullet;
+      if (!indent) {
+        sections.push(0);
+        description = 0;
+        childIndent = '';
+      } else {
+        if (!sections.length) return 'A sub-bullet appears before the first main bullet.';
+        if (childIndent && indent !== childIndent) return 'Use only two levels of bullets.';
+        childIndent = indent;
+        const colon = separatorColonIndex(text!);
+        if (colon < 1 || !text!.slice(colon + 1).trim()) return 'Each sub-bullet needs a name and a one- or two-sentence description.';
+        sections[sections.length - 1]!++;
+        description = 1;
+      }
+    } else if (!sections.length) {
+      if (openingEnded) return 'Keep the opening sentences in one paragraph.';
+      opening++;
+    } else if (description && /^\s+\S/u.test(line)) {
+      if (++description > 2) return 'A sub-bullet description has more than two sentence lines.';
+    } else {
+      return 'After the opening, put prose inside a sub-bullet description.';
+    }
+  }
+  if (opening < 4 || opening > 6) return `The opening has ${opening} sentence lines; it needs 4–6.`;
+  if (sections.length < 3 || sections.length > maxSections) return `The outline has ${sections.length} main bullets; it needs 3–${maxSections}.`;
+  const outside = sections.findIndex(count => count < 2 || count > 10);
+  return outside < 0 ? null : `Main bullet ${outside + 1} has ${sections[outside]} sub-bullets; each needs 2–10.`;
 }
 
 /** Strip `[[chip]]` markers down to their plain term (`[[X]]` → `X`). */

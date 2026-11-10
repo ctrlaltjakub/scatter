@@ -14,7 +14,7 @@ import { useImageSelectionStore } from '@/store/useImageSelectionStore';
 
 const fake = vi.hoisted(() => ({ route: 'explore', calls: [] as StreamChatOpts[], fail: false, routingWait: null as Promise<void> | null,
   titleWait: null as Promise<void> | null, failTitle: false }));
-const BODY = 'The **green circle** is a round shape.\n\n- Shape\n  - Edge: It curves continuously.\n  - Corners: There are none.\n- Color\n  - Fill: It is green.\n  - Background: It is pale.';
+const BODY = 'The **green circle** is a round shape.\nIts edge is curved.\nIts fill contrasts with the background.\nThe image contains no other shapes.\n\n- Shape\n  - Edge: It curves continuously.\n  - Corners: There are none.\n- Color\n  - Fill: It is green.\n  - Background: It is pale.\n- Position\n  - Center: The circle is centered.\n  - Border: The border surrounds it.';
 vi.mock('./termPreviews', () => ({ generateTermPreviews: vi.fn(async () => {}) }));
 vi.mock('./wikimediaDiscovery', () => ({ startWikimediaDiscovery: vi.fn(async () => {}) }));
 vi.mock('./imageRegionInput', () => ({ prepareImageQuestion: vi.fn(async (_projectId: string, context: ImageQuestionContext) => ({

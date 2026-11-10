@@ -12,7 +12,7 @@ import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { saveManualEdit, spawnTermClick } from './generate';
 
-const INTRO = 'Alpha is a synthetic concept used to exercise the streaming commit gate.';
+const INTRO = 'Alpha is a synthetic concept used to exercise the streaming commit gate.\nIts opening streams first.\nThe outline follows.\nEach complete section becomes visible together.';
 const PLAIN =
   `${INTRO}\n\n` +
   '- **First area**\n  - one: detail sentence here\n  - two: another detail sentence\n' +

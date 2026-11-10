@@ -15,6 +15,7 @@ const TOKEN_REQUEST_TIMEOUT_MS = 30_000;
 const IDENTITY_LOAD_TIMEOUT_MS = 15_000;
 const RECONNECT_REQUIRED_ERRORS = new Set([
   'access_denied',
+  'account_selection_required',
   'consent_required',
   'interaction_required',
   'invalid_client',
@@ -230,7 +231,15 @@ function requestLoadedGoogleDriveToken(prompt?: GooglePrompt): Promise<void> {
           window.location.origin,
         )!,
         scope: DRIVE_SCOPE,
-        error_callback: error => finish(() => reject(googlePopupError(error.type))),
+        error_callback: error => finish(() => {
+          // A no-prompt grant can return popup_closed instead of login_required.
+          // There was no sign-in screen for the user to cancel.
+          if (prompt === 'none' && (error.type === 'popup_closed' || error.type === 'popup_failed_to_open')) {
+            reject(new GoogleDriveAuthorizationRejected(error.type === 'popup_failed_to_open'
+              ? 'Google could not open its renewal window. Allow pop-ups for this site, then reconnect Google Drive.'
+              : 'Google could not renew access automatically. Reconnect Google Drive to continue syncing.'));
+          } else reject(googlePopupError(error.type));
+        }),
         callback: (response) => finish(() => {
           try { storeToken(response); resolve(); } catch (error) { reject(error); }
         }),
@@ -320,7 +329,8 @@ export function clearGoogleDriveSourceAccessToken(): void {
  * Keep a browser-only Drive connection alive without a backend refresh token.
  * Google requires every replacement access token to begin from a user gesture,
  * so the identity library is prepared ahead of time and an already-approved
- * grant is renewed (`prompt: ''`) on the next click/key press near expiry.
+ * grant is renewed without a sign-in or consent screen on the next click/key press.
+ * If the Google session needs interaction, only an explicit Reconnect opens sign-in.
  */
 export async function installGoogleDriveGestureRefresh(callbacks: {
   onRefreshed: () => void;
@@ -345,7 +355,7 @@ export async function installGoogleDriveGestureRefresh(callbacks: {
       || navigator.onLine === false
       || !googleDriveTokenNeedsRefresh()) return;
     requesting = true;
-    void requestGoogleDriveToken('').then(() => {
+    void requestGoogleDriveToken('none').then(() => {
       retryAfter = 0;
       callbacks.onRefreshed();
     }).catch((cause) => {

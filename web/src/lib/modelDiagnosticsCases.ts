@@ -8,6 +8,7 @@ import { applyTermSelection, markedTerms, stripTermMarkers } from './termMarking
 import { previewRequest, previewTerms, inspectTermPreviews } from './termPreviewCore';
 import { GenerationResponseError, parseResponseJson, validateEncyclopedicOutput } from './generationValidation';
 import { parseFactCheckFinding } from './factCheckCore';
+import { parseBody } from './bulletParse';
 import { languageInfo, languageDirection } from './languages';
 import { factCheckMessages } from './factCheckRequest';
 import { imageQuestionInstructions } from './imageQuestionPrompt';
@@ -25,7 +26,7 @@ export interface ModelDiagnosticCase {
   modify?: boolean;
   repair?: boolean;
 }
-export const DIAGNOSTIC_TEXT = '**Triangle perimeter** is the **distance around** a triangle.\n**Prof. A. B. Rao** calculates it by **adding all three side lengths**.\n\n- Calculation\n  - Addition: Add all three side lengths.\n  - Units: Use the same unit for every side.\n- Examples\n  - Equilateral triangle: Three equal sides give three times one side.\n  - Scalene triangle: Sides of 3, 4 and 5 cm give a perimeter of 12 cm.';
+export const DIAGNOSTIC_TEXT = '**Triangle perimeter** is the **distance around** a triangle.\n**Prof. A. B. Rao** calculates it by **adding all three side lengths**.\nThe **unit of length** is the same for the result and each **side**.\nTwo triangles can have the **same perimeter** but different **areas**.\n\n- Calculation\n  - Addition: Add all three side lengths.\n  - Units: Use the same unit for every side.\n- Examples\n  - Equilateral triangle: Three equal sides give three times one side.\n  - Scalene triangle: Sides of 3, 4 and 5 cm give a perimeter of 12 cm.\n- Uses\n  - Fencing: The perimeter gives the length of a boundary fence.\n  - Framing: Add the three edges to find the frame length.';
 const context = { parent: { header: 'Triangle perimeter', body: DIAGNOSTIC_TEXT }, grandparent: null };
 export function assertDiagnostic(condition: unknown, message: string): asserts condition {
   if (!condition) throw new GenerationResponseError('wrong_result', message, 'Retry once; if it repeats, check the system prompt or choose a stronger model.');
@@ -79,11 +80,15 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
     ['fact-rewrite-markdown', 'Evidence-guided Markdown correction', { kind: 'fact-rewrite', previousBody: '| Triangle | Perimeter |\n| --- | --- |\n| 3, 4, 5 cm | 11 cm |', evidenceReport: 'Incorrect: the perimeter is 12 cm. Keep the table.', sourceCatalog: '⟪E1⟫: 3+4+5 = 12.', answerChunking: false }, 'table'],
   ];
   for (const [id, label, variant, shape] of variants) cases.push({ id, label, role: 'main', kind: 'text', requests: 1,
-    messages: buildMessages({ variant, context: variant.kind === 'root' ? { parent: null, grandparent: null } : context, maxLevel1: 2 })
+    messages: buildMessages({ variant, context: variant.kind === 'root' ? { parent: null, grandparent: null } : context, maxLevel1: 3 })
       .map(message => message.role === 'system' && ['root', 'term-click', 'follow-up', 'explain', 'answer'].includes(variant.kind)
         ? { ...message, content: message.content + '\n\n' + languagePrompt } : message),
     validate: text => {
-      if (shape === 'outline') validateEncyclopedicOutput(text);
+      if (shape === 'outline') {
+        if (variant.kind === 'elaborate' || variant.kind === 'modify') {
+          assertDiagnostic(parseBody(text)?.bullets.some(b => b.children.length) === true, 'The edit lost the two-level outline.');
+        } else validateEncyclopedicOutput(text, 3);
+      }
       if (shape === 'prose') prose(text);
       if (shape === 'table') table(text);
       if (variant.kind === 'fact-rewrite') assertDiagnostic(text.includes('12') && text.includes('⟪E1⟫'), 'The correction lost the fact or evidence marker.');

@@ -1,3 +1,15 @@
+import { assignGroupColorHex, hexToHue } from './groupColorAssign';
+
+/** A new visitor has no project yet. Pick four unrelated top-level group colors. */
+export function createFirstLevelWordmarkPalette(rng = Math.random): string[] {
+  const hues: number[] = [];
+  return Array.from({ length: 4 }, () => {
+    const color = assignGroupColorHex({ firstGenHues: hues, used: hues, rng });
+    hues.push(hexToHue(color));
+    return color;
+  });
+}
+
 export interface WordmarkGlyphStyle {
   color: string;
   brightness: number;
@@ -34,6 +46,7 @@ function validNextColor(colors: readonly string[], candidate: string): boolean {
 export function generateWordmarkPattern(
   palette: readonly string[],
   rng: () => number = Math.random,
+  showEveryColor = false,
 ): WordmarkGlyphStyle[] {
   const colors = uniqueColors(palette);
   if (colors.length === 0) {
@@ -52,7 +65,9 @@ export function generateWordmarkPattern(
 
   const chosen: string[] = [];
   while (chosen.length < WORDMARK_LENGTH) {
-    const candidates = colors.filter((color) => validNextColor(chosen, color));
+    const unseen = showEveryColor ? colors.filter(color => !chosen.includes(color)) : [];
+    const pool = unseen.length === WORDMARK_LENGTH - chosen.length ? unseen : colors;
+    const candidates = pool.filter((color) => validNextColor(chosen, color));
     chosen.push(candidates[Math.floor(rng() * candidates.length)]!);
   }
   return chosen.map((color) => ({ color, brightness: 1 }));

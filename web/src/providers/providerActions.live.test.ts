@@ -19,7 +19,7 @@ import { FACT_CHECK_SEARCH_POLICY } from '@/lib/factCheckRequest';
 import { secondaryTaskCompletion, sourceQueryAlternates, transcribeSourceImage } from '@/lib/secondaryTaskCompletion';
 import { markTerms, stripTermMarkers } from '@/lib/termMarking';
 import { previewRequest, parseTermPreviews } from '@/lib/termPreviewCore';
-import { parseBody } from '@/lib/bulletParse';
+import { freshOutlineProblem, parseBody } from '@/lib/bulletParse';
 import { runChatToolLoop } from '@/lib/chat/toolRuntime';
 import { runInteractiveHarness } from '@/lib/interactiveHarness';
 import { interactiveTools } from '@/lib/interactiveActions';
@@ -128,7 +128,8 @@ it.skipIf(!['openai', 'anthropic', 'ollama', 'lm-studio'].includes(preset ?? '')
         ['fact-evidence-rewrite', { kind: 'fact-rewrite', previousBody: 'A triangle with sides 3, 4 and 5 cm has perimeter 11 cm.', evidenceReport: 'Contradicted: adding these sides gives 12 cm.', sourceCatalog: '⟪E1⟫: Adding all three side lengths gives 12 cm.', freeText: true }, 'prose'],
       ];
       for (const [name, variant, shape] of variants) await run(name, async () => {
-        const output = await collect({ messages: buildMessages({ variant, context: variant.kind === 'root' ? { parent: null, grandparent: null } : context, maxLevel1: 2 }) });
+        const output = await collect({ messages: buildMessages({ variant, context: variant.kind === 'root' ? { parent: null, grandparent: null } : context, maxLevel1: 3 }) });
+        if (['root', 'term-click', 'follow-up', 'restructure'].includes(variant.kind)) expect(freshOutlineProblem(output.body, 3)).toBeNull();
         if (shape === 'outline') { const parsed = parseBody(output.body); expect(parsed?.bullets.length).toBeGreaterThanOrEqual(name === 'expand-section' ? 1 : 2); expect(parsed?.bullets.every(b => b.children.length >= 2)).toBe(true); }
         if (shape === 'prose') expect(output.body).not.toMatch(/^\s*(?:#{1,6} |[-*] )/m);
         if (shape === 'markdown') expect(output.body).toContain('|');

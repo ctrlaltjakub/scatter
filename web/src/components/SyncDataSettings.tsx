@@ -435,5 +435,5 @@ function GoogleDrivePopupNote() {
 function GoogleDriveRenewalNote() {
   return <><GoogleDrivePopupNote />{' '}Google’s access token usually lasts <strong>1 hour</strong>.
     The app renews it on your <strong>next click or keypress within 5 minutes of expiry</strong>, or after it expires.
-    A <strong>Google popup</strong> opens and normally closes quickly. Google may ask you to sign in again.</>;
+    A <strong>Google popup</strong> may appear briefly. If Google needs you to sign in or approve access, the app asks you to <strong>reconnect</strong>.</>;
 }

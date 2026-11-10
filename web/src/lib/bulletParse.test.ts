@@ -1,38 +1,35 @@
 import { describe, expect, test } from 'vitest';
-import { parseBody, sanitizeBody, isValidStructure, separatorColonIndex, bulletsToPlainText, stabilizeParsed } from './bulletParse';
+import { LANGUAGES } from './languages';
+import { parseBody, sanitizeBody, freshOutlineProblem, separatorColonIndex, bulletsToPlainText, stabilizeParsed } from './bulletParse';
 
-describe('isValidStructure — ≥2 L1 bullets each with ≥2 L2 children', () => {
-  test('accepts a well-formed two-level body', () => {
-    const md = `intro.
-- One
-  - a: x
-  - b: y
-- Two
-  - c: x
-  - d: y`;
-    expect(isValidStructure(md)).toBe(true);
+describe('fresh encyclopedic outlines', () => {
+  const outline = (opening = 4, sections = 3, children = 2, second = false) =>
+    [Array.from({ length: opening }, () => 'Dr. A. B. Rao measures **2.5 cm**.').join('\n'), '',
+      ...Array.from({ length: sections }, (_, n) => [`- Section ${n}`,
+        ...Array.from({ length: children }, () => '  - Term: A definition.' + (second ? '\n    A distinction.' : ''))].join('\n'))].join('\n');
+  test('accepts the minimum and maximum, including two-sentence descriptions', () => {
+    expect(freshOutlineProblem(outline())).toBeNull();
+    expect(freshOutlineProblem(outline(6, 10, 10, true))).toBeNull();
   });
-  test('rejects a single level-1 bullet (even if it has children)', () => {
-    const md = `intro.
-- Only
-  - a: x
-  - b: y`;
-    expect(isValidStructure(md)).toBe(false);
+  test.each([[3,3,2], [7,3,2], [4,2,2], [4,11,2], [4,3,1], [4,3,11]])(
+    'rejects out-of-bounds counts (%i, %i, %i)', (i, m, c) => expect(freshOutlineProblem(outline(i,m,c))).not.toBeNull());
+  test('checks each section and description, not only the first two', () => {
+    expect(freshOutlineProblem(outline().replace('cm**.\nDr.', 'cm**.\n\nDr.'))).toContain('one paragraph');
+    expect(freshOutlineProblem(outline() + '\n- Another\n  - Single: Only one.')).toContain('Main bullet 4');
+    expect(freshOutlineProblem(outline() + '\n  - No description')).toContain('description');
+    expect(freshOutlineProblem(outline() + '\n    Second.\n    Third.')).toContain('two sentence');
+    expect(freshOutlineProblem(outline().replace('  - Term:', '  - [[A: B]]:'))).toBeNull();
   });
-  test('rejects when a level-1 bullet has fewer than 2 children', () => {
-    const md = `intro.
-- One
-  - a: x
-- Two
-  - c: x`;
-    expect(isValidStructure(md)).toBe(false);
+  test.each(LANGUAGES)('accepts the source-line format in $name', ({sample}) => {
+    const localized = outline(4, 3, 2, true)
+      .replaceAll('Dr. A. B. Rao measures **2.5 cm**.', sample)
+      .replaceAll('A definition.', sample).replaceAll('A distinction.', sample);
+    expect(freshOutlineProblem(localized)).toBeNull();
   });
-  test('rejects a flat list with no level-2 children', () => {
-    expect(isValidStructure('intro.\n- One\n- Two\n- Three')).toBe(false);
-  });
-  test('rejects a body with no bullets', () => {
-    expect(isValidStructure('just a paragraph, no bullets')).toBe(false);
-  });
+  test.each(['أجرى د. علي الاختبار.', '水には H₂O が含まれる。', 'डॉ. राव ने `x.y` मापा।', 'L’eau gèle à 0 °C.'])(
+    'counts source lines without splitting on punctuation: %s', sentence => {
+      expect(freshOutlineProblem(outline().replaceAll('Dr. A. B. Rao measures **2.5 cm**.', sentence))).toBeNull();
+    });
 });
 
 describe('sanitizeBody — strips markdown the renderer cannot display', () => {

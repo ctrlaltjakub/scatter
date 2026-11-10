@@ -1224,7 +1224,8 @@ export async function initializeSyncCoordinator(): Promise<() => void> {
     driveRefreshSetupPending = true;
     const generation = ++driveRefreshGeneration;
     void installGoogleDriveGestureRefresh({
-      shouldRefresh: googleSyncEnabled,
+      // Leave the Reconnect click to the interactive grant; don't race it on pointerdown.
+      shouldRefresh: () => googleSyncEnabled() && !useSyncStore.getState().googleDriveReconnectRequired,
       onRefreshed: () => {
         if (!googleSyncEnabled()) return;
         useSyncStore.getState().setRuntime({ error: null, googleDriveReconnectRequired: false });

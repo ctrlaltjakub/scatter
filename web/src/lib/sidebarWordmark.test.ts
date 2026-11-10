@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { generateWordmarkPattern } from './sidebarWordmark';
+import { createFirstLevelWordmarkPalette, generateWordmarkPattern } from './sidebarWordmark';
 
 function seeded(seed: number): () => number {
   let state = seed >>> 0;
@@ -8,6 +8,13 @@ function seeded(seed: number): () => number {
     return state / 0x1_0000_0000;
   };
 }
+
+test('each onboarding visit gets a distinct palette of four top-level group colors', () => {
+  const first = createFirstLevelWordmarkPalette(seeded(1));
+  expect(new Set(first).size).toBe(4);
+  expect(first.every(color => /^#[a-f\d]{6}$/i.test(color))).toBe(true);
+  expect(createFirstLevelWordmarkPalette(seeded(90_000))).not.toEqual(first);
+});
 
 describe('generateWordmarkPattern', () => {
   test('obeys the repeated-colour rules for every multi-colour pattern', () => {
