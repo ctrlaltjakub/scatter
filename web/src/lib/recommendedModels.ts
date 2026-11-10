@@ -3,17 +3,17 @@ import type { ImageModelInfo, ModelInfo } from '@/providers/types';
 import { mainModelCompatible, secondaryModelCompatible, interactiveModelCompatible, resolveCaps } from './modelMeta';
 import { listSwitchableModels } from '@/store/providerSelectors';
 
-// Keep the last shared revision for unchanged roles. An image-only upgrade
-// must not reset someone’s list of main models or reassign a text role.
+// Only bump the revision of the role whose recommendation changed.
 const previousRevision = '2026-10-25-interactive-kimi';
 export const RECOMMENDATION_VERSIONS: Record<ModelRole, string> = {
-  main: previousRevision, secondary: previousRevision, interactive: previousRevision, image: '2026-11-08-sunburst-2.6',
+  main: previousRevision, secondary: previousRevision, interactive: '2026-11-10-sol-6.1', image: '2026-11-08-sunburst-2.6',
 };
 const sunburst = 'gpt-image-2.6-sunburst';
+const sol = 'gpt-6.1-sol';
 export const RECOMMENDED_MODELS = {
   main: { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash', label: 'Main model', purpose: 'Nodes and conversations' },
   secondary: { id: 'openai/gpt-6-luna', name: 'GPT-6 Luna', label: 'Secondary model', purpose: 'Terms, previews, and source assistance' },
-  interactive: { id: 'moonshotai/kimi-k3.1-pro', name: 'Kimi K3.1 Pro', label: 'Interactive model', purpose: 'Interactive programs and screenshot review' },
+  interactive: { id: `openai/${sol}`, name: 'GPT-6.1 Sol', label: 'Interactive model', purpose: 'Interactive programs and screenshot review' },
   image: { id: `openai/${sunburst}`, name: 'GPT Image 2.6 Sunburst', label: 'Image model', purpose: 'Image generation and editing · optional' },
 } as const;
 export const MODEL_ROLES = Object.keys(RECOMMENDED_MODELS) as ModelRole[];
@@ -50,14 +50,14 @@ export function recommendedModelIds(role: ModelRole, preset: ProviderPreset): re
   if (preset === 'gemini') return role === 'main' ? ['gemini-3.8-flash'] : [];
   if (preset === 'openai') {
     if (role === 'secondary') return ['gpt-6-luna'];
-    if (role === 'interactive') return ['gpt-6.1-sol'];
+    if (role === 'interactive') return [sol];
     if (role === 'image') return [sunburst];
     return [];
   }
   if (preset === 'custom') {
     if (role === 'main') return ['google/gemini-3.8-flash', 'gemini-3.8-flash'];
     if (role === 'secondary') return ['openai/gpt-6-luna', 'gpt-6-luna'];
-    if (role === 'interactive') return ['moonshotai/kimi-k3.1-pro', 'kimi-k3.1-pro', 'openai/gpt-6.1-sol', 'gpt-6.1-sol'];
+    if (role === 'interactive') return [RECOMMENDED_MODELS.interactive.id, sol];
   }
   return [];
 }

@@ -9,9 +9,23 @@ const empty = (): Settings => ({ ...DEFAULT_SETTINGS, providers: [{ id: 'or', pr
 const enrolled = () => planRecommendedModels(empty(), 'or', text, images, true).settings;
 
 describe('curated model updates', () => {
-  it('defaults OpenRouter interactive builds to Kimi K3.1 Pro with vision and tools', () => {
-    expect(RECOMMENDED_MODELS.interactive.id).toBe('moonshotai/kimi-k3.1-pro');
-    expect(enrolled().interactiveModelRef?.model).toBe('moonshotai/kimi-k3.1-pro');
+  it('defaults OpenRouter interactive builds to GPT-6.1 Sol with vision and tools', () => {
+    expect(RECOMMENDED_MODELS.interactive.id).toBe('openai/gpt-6.1-sol');
+    expect(enrolled().interactiveModelRef?.model).toBe('openai/gpt-6.1-sol');
+  });
+  it('upgrades only eligible interactive assignments from the previous recommendation', () => {
+    const previous = { providerId: 'or', model: 'moonshotai/kimi-k3.1-pro' };
+    const source = { ...enrolled(), interactiveModelRef: previous };
+    source.modelRecommendations = { ...source.modelRecommendations!, interactive: {
+      autoUpdate: true, ref: previous, version: '2026-10-25-interactive-kimi',
+    } };
+    expect(pendingRecommendedRoles(source)).toEqual(['interactive']);
+    expect(planRecommendedModels(source, 'or', [], []).settings).toBe(source);
+    const plan = planRecommendedModels(source, 'or', text, images);
+    expect(plan.changed).toEqual(['interactive']);
+    expect(plan.settings.interactiveModelRef).toEqual({ ...previous, model: 'openai/gpt-6.1-sol' });
+    const manual = { ...source, modelRecommendations: manualModelChoice(source, 'interactive') };
+    expect(planRecommendedModels(manual, 'or', text, images).settings).toBe(manual);
   });
   it('uses the native Gemini recommendation without moving the connection or assigning unapproved roles', () => {
     let source: Settings = { ...DEFAULT_SETTINGS, providers: [{ id: 'google', preset: 'gemini', apiKey: 'test', enabledModels: ['gemini-3.5-flash'] }],
