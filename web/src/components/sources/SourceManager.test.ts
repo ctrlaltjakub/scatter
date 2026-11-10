@@ -1,7 +1,9 @@
 import { createElement } from 'react';
+import { readFileSync } from 'node:fs';
+import { parse } from 'postcss';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
 import { useSourceRuntimeStore } from '@/store/useSourceRuntimeStore';
 import { useSourceUiStore } from '@/store/useSourceUiStore';
@@ -9,6 +11,18 @@ import type { ProjectSource } from '@/store/types';
 import { SourceManager, stageLabel } from './SourceManager';
 
 describe('SourceManager deletion', () => {
+  // Both dialogs share a stylesheet. Test what a pointer user can actually see.
+  let popupStyles: HTMLStyleElement;
+  beforeAll(() => {
+    popupStyles = document.createElement('style');
+    parse(readFileSync(process.cwd() + '/src/app/globals.css', 'utf8')).walkRules(rule => {
+      if (rule.selector === '.project-delete-confirmation' || rule.selector === '.source-delete-confirmation') {
+        popupStyles.append(rule.toString());
+      }
+    });
+    document.head.append(popupStyles);
+  });
+  afterAll(() => popupStyles.remove());
   it.each([true, false])('confirms a pointer click in the separate dialog (embedded: %s)', async (embedded) => {
     const project = createBlankProject('Source deletion', 'root');
     const source: ProjectSource = {
@@ -23,6 +37,7 @@ describe('SourceManager deletion', () => {
     const remove = () => user.click(screen.getByRole('button', { name: 'Delete Ready source' }));
     const confirmation = () => within(screen.getByRole('dialog', { name: 'Delete source?' }));
     await remove();
+    expect(screen.getByRole('dialog', { name: 'Delete source?' })).toBeVisible();
     await user.click(confirmation().getByRole('button', { name: 'No' }));
     expect(useGraphStore.getState().project?.sourceLibrary?.sources.source).toBeDefined();
     await remove();

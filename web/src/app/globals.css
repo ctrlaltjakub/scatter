@@ -8285,7 +8285,8 @@ select.input {
 .source-manager-empty strong { color: var(--text); font-size: 14px; }
 .source-manager-empty button { height: 34px; display: flex; align-items: center; gap: 5px; border: 1px solid var(--ui-line); border-radius: var(--r-lg); padding: 0 11px; background: transparent; color: var(--text); font: 14px var(--font-atkinson), sans-serif; }
 .source-manager-empty button:hover { background: var(--tint-1); }
-.source-delete-confirmation { position: fixed; z-index: 90; }
+/* Unlike the project-row popup, this one is already positioned when it mounts. */
+.source-delete-confirmation { position: fixed; visibility: visible; z-index: 90; }
 .source-draft-discard {
   position: absolute;
   z-index: 4;
