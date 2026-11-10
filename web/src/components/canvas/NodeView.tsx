@@ -650,7 +650,7 @@ function NodeViewImpl(p: Props) {
       setDragTop('linger');
       if (dragTopTimer.current) clearTimeout(dragTopTimer.current);
       dragTopTimer.current = setTimeout(() => setDragTop(null), DRAG_TOP_LINGER_MS);
-    } else {
+    } else if (e.type !== 'pointercancel') {
       p.onSelect();
     }
     dragRef.current = null;

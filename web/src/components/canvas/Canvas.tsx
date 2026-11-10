@@ -46,6 +46,7 @@ import { useDragHintStore } from '@/store/useDragHintStore';
 import { useDragArmStore } from '@/store/useDragArmStore';
 import type { Arrow, ScatterNode } from '@/store/types';
 import { pinchZoomDelta } from './pinchZoomDelta';
+import { installCanvasPinch } from './canvasPinch';
 import { useArrowLabelStore } from '@/store/useArrowLabelStore';
 import { useGroupLabelStore } from '@/store/useGroupLabelStore';
 import { hitTestGroupLabels } from '@/lib/asciiAura/groupLabelHit';
@@ -1095,11 +1096,25 @@ export function Canvas(props: Props) {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const pinch = installCanvasPinch(el, {
+      read: () => useLiveViewportStore.getState(),
+      write: next => useLiveViewportStore.getState().setViewport(next),
+      start: () => {
+        dragRef.current = null;
+        labelPressRef.current = null;
+        setPanning(false);
+        setAsciiLabelHovered(false);
+        userPannedRef.current = true;
+        if (useGraphStore.getState().panTo) requestPanTo(null);
+      },
+      finish: scheduleWheelZoomCommit,
+    });
     const onForceZoom = (e: WheelEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       // Pinch / modifier-wheel always belongs to the camera, including over
       // chat and table scrollports. Ordinary wheel input still scrolls them.
       e.preventDefault();
+      if (pinch.active()) return; // WebKit can report the gesture in both event streams
       userPannedRef.current = true;
       const viewport = useLiveViewportStore.getState();
       const effectiveDeltaY = pinchZoomDelta({
@@ -1118,8 +1133,8 @@ export function Canvas(props: Props) {
       scheduleWheelZoomCommit();
     };
     el.addEventListener('wheel', onForceZoom, { passive: false });
-    return () => el.removeEventListener('wheel', onForceZoom);
-  }, [scheduleWheelZoomCommit]);
+    return () => { el.removeEventListener('wheel', onForceZoom); pinch.dispose(); };
+  }, [project?.id, requestPanTo, scheduleWheelZoomCommit]);
 
   if (!project) return null;
 
@@ -1320,6 +1335,8 @@ export function Canvas(props: Props) {
     }
   };
   const onPointerCancel = (e: React.PointerEvent) => {
+    dragRef.current = null;
+    setPanning(false);
     if (labelPressRef.current?.pointerId === e.pointerId) {
       labelPressRef.current = null;
       setAsciiLabelHovered(false);
