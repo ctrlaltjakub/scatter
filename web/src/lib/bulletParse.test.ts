@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import { LANGUAGES } from './languages';
-import { parseBody, sanitizeBody, freshOutlineProblem, separatorColonIndex, bulletsToPlainText, stabilizeParsed } from './bulletParse';
+import { parseBody, sanitizeBody, freshOutlineProblem, unboldFreshDescriptions, separatorColonIndex, bulletsToPlainText, stabilizeParsed } from './bulletParse';
 
 describe('fresh encyclopedic outlines', () => {
-  const outline = (opening = 4, sections = 3, children = 2, second = false) =>
+  const outline = (opening = 4, sections = 3, children = 2) =>
     [Array.from({ length: opening }, () => 'Dr. A. B. Rao measures **2.5 cm**.').join('\n'), '',
       ...Array.from({ length: sections }, (_, n) => [`- Section ${n}`,
-        ...Array.from({ length: children }, () => '  - Term: A definition.' + (second ? '\n    A distinction.' : ''))].join('\n'))].join('\n');
-  test('accepts the minimum and maximum, including two-sentence descriptions', () => {
+        ...Array.from({ length: children }, () => '  - Term: A definition.')].join('\n'))].join('\n');
+  test('accepts the minimum and maximum, with one plain sentence per description', () => {
     expect(freshOutlineProblem(outline())).toBeNull();
-    expect(freshOutlineProblem(outline(6, 10, 10, true))).toBeNull();
+    expect(freshOutlineProblem(outline(6, 10, 10))).toBeNull();
   });
   test.each([[3,3,2], [7,3,2], [4,2,2], [4,11,2], [4,3,1], [4,3,11]])(
     'rejects out-of-bounds counts (%i, %i, %i)', (i, m, c) => expect(freshOutlineProblem(outline(i,m,c))).not.toBeNull());
@@ -17,14 +17,35 @@ describe('fresh encyclopedic outlines', () => {
     expect(freshOutlineProblem(outline().replace('cm**.\nDr.', 'cm**.\n\nDr.'))).toContain('one paragraph');
     expect(freshOutlineProblem(outline() + '\n- Another\n  - Single: Only one.')).toContain('Main bullet 4');
     expect(freshOutlineProblem(outline() + '\n  - No description')).toContain('description');
-    expect(freshOutlineProblem(outline() + '\n    Second.\n    Third.')).toContain('two sentence');
+    expect(freshOutlineProblem(outline().replace('A definition.', '⟦2⟧.'))).toContain('description');
+    expect(freshOutlineProblem(outline() + '\n    Second.\n    Third.')).toContain('one sentence');
     expect(freshOutlineProblem(outline().replace('  - Term:', '  - [[A: B]]:'))).toBeNull();
   });
   test.each(LANGUAGES)('accepts the source-line format in $name', ({sample}) => {
-    const localized = outline(4, 3, 2, true)
+    const localized = outline(4, 3, 2)
       .replaceAll('Dr. A. B. Rao measures **2.5 cm**.', sample)
-      .replaceAll('A definition.', sample).replaceAll('A distinction.', sample);
+      .replaceAll('A definition.', sample);
     expect(freshOutlineProblem(localized)).toBeNull();
+  });
+  test.each(['An extra fact. Another fact.', '水是液体。冰是固体。', 'पानी जमता है। बर्फ पिघलती है।', 'ما الفرق؟ يتغير السائل.'])(
+    'rejects clear extra sentences on one bullet line: %s', text => {
+      expect(freshOutlineProblem(outline().replace('A definition.', text))).toContain('one sentence');
+    });
+  test.each(['Dr. A. B. Rao measured 2.5 cm.', 'Dr. Richard D. Stith Jr. studied U.S. birds.',
+    'According to Prof. H. G. Wells, it is solid.⟦2⟧', 'The question “What happens?” motivates the experiment.', 'At 10:30 a.m. Elm St. opens.',
+    'أجرى د. علي الاختبار.', 'डॉ. राव ने परिणाम मापा।', 'Compare `x.y` at https://example.org/a.b.'])(
+    'does not request paid repair for an abbreviation, citation or literal: %s', text => {
+      expect(freshOutlineProblem(outline().replace('A definition.', text))).toBeNull();
+    });
+  test('removes only bold in generated descriptions; keeps titles, clickable terms, emphasis and citations', () => {
+    const decorated = outline().replace('Term: A definition.', '**Term:** A **[[definition]]** and __a fact__⟦2⟧.');
+    expect(freshOutlineProblem(decorated)).toContain('bold');
+    const plain = unboldFreshDescriptions(decorated);
+    expect(plain).toBe(decorated.replace('**[[definition]]** and __a fact__', '[[definition]] and a fact'));
+    expect(freshOutlineProblem(plain)).toBeNull();
+    expect(unboldFreshDescriptions('  - **Name: fact** and `**literal**`.')).toBe('  - **Name**: fact and `**literal**`.');
+    expect(unboldFreshDescriptions('  - Name: ***emphasis*** remains.')).toBe('  - Name: *emphasis* remains.');
+    expect(unboldFreshDescriptions(plain)).toBe(plain);
   });
   test.each(['أجرى د. علي الاختبار.', '水には H₂O が含まれる。', 'डॉ. राव ने `x.y` मापा।', 'L’eau gèle à 0 °C.'])(
     'counts source lines without splitting on punctuation: %s', sentence => {

@@ -67,7 +67,7 @@ import {
   semanticHeaderText,
 } from './nodeHeaderText';
 import { newId } from './ids';
-import { freshOutlineProblem, stripChips } from './bulletParse';
+import { freshOutlineProblem, stripChips, unboldFreshDescriptions } from './bulletParse';
 import { EmbeddedImageText } from './embeddedImageText';
 import { unchipHeaders } from './parser';
 import { makeBulletCommitGate, type CommitGate } from './streamCommitGate';
@@ -1243,6 +1243,8 @@ async function checkFreshOutline(
   onAcc: (text: string) => void,
   webSources: readonly NodeSource[], citations: readonly Citation[], internalSources: readonly InternalNodeSource[],
 ): Promise<string> {
+  const plain = unboldFreshDescriptions(body);
+  if (plain !== body) { body = plain; onAcc(body); }
   if (!freshOutlineProblem(body)) return body;
   const originalRetry = retryArgs.get(nodeId);
   const variant: TaskVariant = { kind: 'restructure', previousBody: body };
@@ -1254,7 +1256,7 @@ async function checkFreshOutline(
     if (signal.aborted) return body;
     const incomplete = generationCompletionError(result.rawText, result.finishReason, result.citations);
     if (incomplete) throw new Error(incomplete);
-    let repaired = result.normalizedText;
+    let repaired = unboldFreshDescriptions(result.normalizedText);
     const issue = freshOutlineProblem(repaired);
     if (issue) throw new Error(`The model did not produce the required two-level outline after one repair. ${issue} Retry or check the encyclopedic system prompt.`);
     // Original provider offsets refer to the pre-repair body. Match the source
@@ -1270,6 +1272,7 @@ async function checkFreshOutline(
       onAcc(body);
       throw new Error('The outline repair changed source markers. The repaired text was not used. Retry to generate a new outline.');
     }
+    if (repaired !== result.normalizedText) onAcc(repaired);
     return repaired;
   } finally {
     if (retryArgs.get(nodeId)?.variant === variant && originalRetry) retryArgs.set(nodeId, originalRetry);

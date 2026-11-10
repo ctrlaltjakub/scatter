@@ -96,7 +96,10 @@ describe('model diagnostics', () => {
       expect(check.requests).toBe(1);
       expect(check.messages[0]?.content).toContain('4–6 complete sentences');
       expect(check.messages[0]?.content).toContain('3–3 main bullets'); // keep this paid diagnostic small
+      expect(check.messages[0]?.content).toContain('exactly one complete sentence after the colon');
       expect(() => check.validate!(DIAGNOSTIC_TEXT)).not.toThrow();
+      expect(() => check.validate!(DIAGNOSTIC_TEXT.replace('Add all three side lengths.', 'Add all three side lengths. Use the same units.'))).toThrow('one sentence');
+      expect(() => check.validate!(DIAGNOSTIC_TEXT.replace('Add all three side lengths.', 'Add **all three** side lengths.'))).toThrow('bold');
       expect(() => check.validate!(DIAGNOSTIC_TEXT + '\n- Extra section')).toThrow('main bullets');
     }
   });

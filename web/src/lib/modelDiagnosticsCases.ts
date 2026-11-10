@@ -72,7 +72,7 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
     ['elaborate', 'Expand an encyclopedic node', { kind: 'elaborate', previousBody: DIAGNOSTIC_TEXT }, 'outline'],
     ['expand-section', 'Expand one section', { kind: 'expand-part', markedBody: DIAGNOSTIC_TEXT.replace('- Calculation\n  - Addition: Add all three side lengths.\n  - Units: Use the same unit for every side.', '<<<EXPAND>>>- Calculation\n  - Addition: Add all three side lengths.\n  - Units: Use the same unit for every side.<<<END>>>') }, 'fragment'],
     ['expand-explain', 'Expand an explanation', { kind: 'expand-part', mode: 'explain', markedBody: '<<<EXPAND>>>Perimeter is distance around a shape.<<<END>>>' }, 'prose'],
-    ['structure-repair', 'Repair an outline', { kind: 'restructure', previousBody: DIAGNOSTIC_TEXT.replaceAll('  - ', '- ') }, 'outline'],
+    ['structure-repair', 'Repair an encyclopedic outline', { kind: 'restructure', previousBody: DIAGNOSTIC_TEXT.replaceAll('  - ', '- ').replace('Add all three side lengths.', 'Add the **side lengths**. Use all three sides.') }, 'outline'],
     ['selection-edit', 'Modify selected text', { kind: 'modify-selection', markedBody: 'Perimeter is <<<SELECTED>>>distance around a shape<<<END_SELECTED>>>.', selectedText: 'distance around a shape', instruction: 'Give a precise definition.', mode: 'explain' }, 'fragment'],
     ['answer', 'Answer node / Markdown table', { kind: 'answer', instruction: 'Compare perimeter and area in a two-row Markdown table.', informationChunking: false }, 'table'],
     ['answer-chunking', 'Answer with information chunking', { kind: 'answer', instruction: 'Compare perimeter and area in a two-row Markdown table.', informationChunking: true }, 'table'],

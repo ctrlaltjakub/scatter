@@ -276,6 +276,26 @@ describe('generation web-search provenance', () => {
     expect(useGraphStore.getState().project!.nodes[id]!.generationError).toBeFalsy();
   });
 
+  it('keeps opening emphasis and removes description bold without a paid repair', async () => {
+    fake.body = BODY.replace('compact opening', '**compact opening**').replace('First detail', '**First detail**');
+    const id = await spawnTermClick('parent', 'formatting only');
+    const node = useGraphStore.getState().project!.nodes[id]!;
+    expect(node.generationError).toBeFalsy();
+    expect(node.versions[0]!.body).toContain('**compact opening**');
+    expect(node.versions[0]!.body).toContain(': First detail');
+    expect(fake.calls).toBe(2); // content, then term marking
+  });
+
+  it('repairs two sentences once and removes bold even when it is introduced by the repair', async () => {
+    fake.body = BODY.replace('First detail', 'One important fact. Another fact belongs elsewhere.');
+    fake.repairedBody = BODY.replace('First detail', 'The **repaired sentence** keeps both facts.');
+    const id = await spawnTermClick('parent', 'repair description');
+    const node = useGraphStore.getState().project!.nodes[id]!;
+    expect(node.generationError).toBeFalsy();
+    expect(node.versions[0]!.body).toContain(': The repaired sentence keeps both facts.');
+    expect(fake.calls).toBe(3); // content, one repair, term marking
+  });
+
   it('checks the limits on a searched regeneration without overwriting the previous version', async () => {
     const id = await spawnTermClick('parent', 'fresh topic');
     const before = useGraphStore.getState().project!.nodes[id]!.versions[0]!.body;

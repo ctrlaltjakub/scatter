@@ -1,5 +1,5 @@
 import { DEFAULT_MAX_L1_BULLETS } from './nodeContentType';
-import { sliceWithInlineEmphasis } from './inlineEmphasis';
+import { inlineEmphasis, sliceWithInlineEmphasis } from './inlineEmphasis';
 
 /** A level-2 child as parsed out of `name: description` markdown. */
 export interface BulletChild {
@@ -199,18 +199,68 @@ export function parseBody(markdown: string): ParsedBody | null {
   return { freeText, bullets };
 }
 
+function descriptionHasBold(text: string, colon: number): boolean {
+  if (!text.includes('**') && !text.includes('__')) return false;
+  return [...inlineEmphasis(text).values()].some(span => span.tag === 'strong'
+    && span.contentEnd > colon + 1 && text.slice(Math.max(span.contentStart, colon + 1), span.contentEnd).trim() !== '');
+}
+
+/** CommonMark delimiters only: preserve citations, chips and literal asterisks
+ * in code. Never run on saved nodes or hand edits. No model call for styling. */
+export function unboldFreshDescriptions(body: string): string {
+  if (!body.includes('**') && !body.includes('__')) return body;
+  return body.replace(/^([^\S\r\n]+[-*+][\t ]+)([^\r\n]+)$/gm, (line, prefix: string, text: string) => {
+    const colon = separatorColonIndex(text);
+    if (colon < 1 || !descriptionHasBold(text, colon)) return line;
+    const crossesColon = [...inlineEmphasis(text).entries()].some(([start, span]) => start <= colon && span.contentEnd > colon + 1);
+    const desc = crossesColon ? sliceWithInlineEmphasis(text, colon + 1) : text.slice(colon + 1);
+    const exclude = new Set<number>();
+    for (const [start, span] of inlineEmphasis(desc)) {
+      if (span.tag !== 'strong') continue;
+      for (let i = start; i < span.contentStart; i++) exclude.add(i);
+      for (let i = span.contentEnd; i < span.end; i++) exclude.add(i);
+    }
+    let plain = '';
+    for (let i = 0; i < desc.length; i++) if (!exclude.has(i)) plain += desc[i];
+    return prefix + (crossesColon ? sliceWithInlineEmphasis(text, 0, colon) + ': ' : text.slice(0, colon + 1)) + plain;
+  });
+}
+
+let sentenceSegmenter: Intl.Segmenter | undefined;
+/** The source line is the primary boundary. Catch clear extra sentences on
+ * a single generated bullet, not periods in initials, abbreviations or URLs.
+ * This is validation only; it never splits displayed text or discards facts. */
+function hasExtraSentence(description: string): boolean {
+  if (typeof Intl.Segmenter !== 'function') return false;
+  const prose = description.replace(/⟦\d+⟧|\[\d+\]|\(\d+\)/gu, '')
+    .replace(/“[^”]*”|«[^»]*»|「[^」]*」|『[^』]*』|"[^"]*"/gu, 'quotation')
+    .replace(/`[^`]*`/g, 'code').replace(/https?:\/\/[^\s)<>]+/gi, url => 'URL' + (url.match(/[.!?]+$/)?.[0] ?? ''));
+  sentenceSegmenter ??= new Intl.Segmenter('und', { granularity: 'sentence' });
+  const parts = Array.from(sentenceSegmenter.segment(prose), ({segment}) => segment.trim())
+    .filter(part => /[\p{L}\p{N}]/u.test(part));
+  return parts.slice(0, -1).some(part => {
+    const end = part.replace(/[\s"'’”»」』)\]]+$/gu, '');
+    if (!end.endsWith('.')) return true;
+    // Periods in abbreviated names, titles, units and dotted initialisms are
+    // too ambiguous to justify a paid repair; trust the authored line there.
+    if (/(?:^|[^\p{L}])(?:\p{L}\.)+$/u.test(end)) return false;
+    const lastWord = /([\p{L}\p{M}]+)\.$/u.exec(end)?.[1];
+    if (!lastWord) return true;
+    if (lastWord.length <= 2 || /^\p{Lu}/u.test(lastWord)) return false;
+    return !/^(?:approx|appt|dept|fig|etc|inc|ltd|est|corresp|addl|prof|mrs|डॉ)$/iu.test(lastWord);
+  });
+}
+
 /** Validate newly generated outlines, never stored or manually edited nodes.
- * Sentence boundaries are the model's source lines, not language-specific punctuation. */
+ * Count opening sentences using the model's explicit source lines. */
 export function freshOutlineProblem(body: string, maxSections = DEFAULT_MAX_L1_BULLETS): string | null {
   let opening = 0;
   let openingEnded = false;
-  let description = 0;
   let childIndent = '';
   const sections: number[] = [];
   for (const line of body.trimEnd().split(/\r\n|[\r\n\u2028\u2029]/u)) {
     if (!line.trim()) {
       if (opening) openingEnded = true;
-      description = 0;
       continue;
     }
     const bullet = BULLET_RE.exec(line);
@@ -218,22 +268,23 @@ export function freshOutlineProblem(body: string, maxSections = DEFAULT_MAX_L1_B
       const [, indent, , text] = bullet;
       if (!indent) {
         sections.push(0);
-        description = 0;
         childIndent = '';
       } else {
         if (!sections.length) return 'A sub-bullet appears before the first main bullet.';
         if (childIndent && indent !== childIndent) return 'Use only two levels of bullets.';
         childIndent = indent;
         const colon = separatorColonIndex(text!);
-        if (colon < 1 || !text!.slice(colon + 1).trim()) return 'Each sub-bullet needs a name and a one- or two-sentence description.';
+        const description = text!.slice(colon + 1);
+        if (colon < 1 || !/[\p{L}\p{N}]/u.test(description.replace(/⟦\d+⟧|\[\d+\]|\(\d+\)/g, ''))) return 'Each sub-bullet needs a name and a one-sentence description.';
+        if (descriptionHasBold(text!, colon)) return 'Do not use bold in sub-bullet descriptions.';
+        if (hasExtraSentence(description)) return 'Write exactly one sentence per sub-bullet description.';
         sections[sections.length - 1]!++;
-        description = 1;
       }
     } else if (!sections.length) {
       if (openingEnded) return 'Keep the opening sentences in one paragraph.';
       opening++;
-    } else if (description && /^\s+\S/u.test(line)) {
-      if (++description > 2) return 'A sub-bullet description has more than two sentence lines.';
+    } else if (/^\s+\S/u.test(line)) {
+      return 'Write exactly one sentence per sub-bullet description, on the bullet line.';
     } else {
       return 'After the opening, put prose inside a sub-bullet description.';
     }
