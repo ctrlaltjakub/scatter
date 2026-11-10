@@ -49,6 +49,7 @@ import {
   ensureGoogleDriveAccessToken,
   googleDriveTokenNeedsRefresh,
   installGoogleDriveGestureRefresh,
+  renewGoogleDriveAccessToken,
 } from './providers/googleDrive';
 import { isBrowserOnline, subscribeNetworkStatus } from '@/lib/networkStatus';
 import { WebDavSyncProvider } from './providers/webdav';
@@ -213,6 +214,39 @@ function requireGoogleDriveReconnect(message: string): void {
     error: message,
     googleDriveReconnectRequired: true,
   });
+}
+
+function googleSyncEnabled(): boolean {
+  const { config } = useSyncStore.getState();
+  return config.enabled && config.provider === 'google-drive';
+}
+
+function onDriveRenewed(): void {
+  if (!googleSyncEnabled()) return;
+  useSyncStore.getState().setRuntime({ error: null, googleDriveReconnectRequired: false });
+  scheduleSync(0);
+}
+
+function onDriveRenewalError(error: Error): void {
+  if (!googleSyncEnabled() || !isBrowserOnline()) return;
+  if (error instanceof GoogleDriveAuthorizationRejected) requireGoogleDriveReconnect(error.message);
+  else useSyncStore.getState().setRuntime({ error: error.message });
+}
+
+/** Exercise real automatic renewal from a click, without expiring or clearing a working token. */
+export async function testAutomaticGoogleDriveRenewal(): Promise<void> {
+  if (!googleSyncEnabled()) throw new Error('Connect Google Drive and enable synchronization first.');
+  if (useSyncStore.getState().googleDriveReconnectRequired) throw new Error('Reconnect Google Drive first.');
+  if (!isBrowserOnline()) throw new Error('Go online to test renewal.');
+  try {
+    await renewGoogleDriveAccessToken();
+  } catch (cause) {
+    const error = cause instanceof Error ? cause : new Error(String(cause));
+    // An early diagnostic must not interrupt sync with a still-fresh grant.
+    if (googleDriveTokenNeedsRefresh()) onDriveRenewalError(error);
+    throw error;
+  }
+  onDriveRenewed();
 }
 
 /** Developer-only diagnostic entry point. It deliberately leaves the real
@@ -1206,10 +1240,6 @@ export async function initializeSyncCoordinator(): Promise<() => void> {
   let driveRefreshCleanup: (() => void) | null = null;
   let driveRefreshSetupPending = false;
   let driveRefreshGeneration = 0;
-  const googleSyncEnabled = () => {
-    const config = useSyncStore.getState().config;
-    return config.enabled && config.provider === 'google-drive';
-  };
   const updateDriveRefresh = () => {
     if (!googleSyncEnabled()) {
       driveRefreshGeneration += 1;
@@ -1226,22 +1256,8 @@ export async function initializeSyncCoordinator(): Promise<() => void> {
     void installGoogleDriveGestureRefresh({
       // Leave the Reconnect click to the interactive grant; don't race it on pointerdown.
       shouldRefresh: () => googleSyncEnabled() && !useSyncStore.getState().googleDriveReconnectRequired,
-      onRefreshed: () => {
-        if (!googleSyncEnabled()) return;
-        useSyncStore.getState().setRuntime({ error: null, googleDriveReconnectRequired: false });
-        scheduleSync(0);
-      },
-      onError: (error) => {
-        if (!googleSyncEnabled()) return;
-        if (!isBrowserOnline()) return;
-        if (error instanceof GoogleDriveAuthorizationRejected) {
-          requireGoogleDriveReconnect(error.message);
-          return;
-        }
-        // Loading Google Identity or reaching Google can fail temporarily.
-        // Keep local work pending and retry on a later real user gesture.
-        if (isBrowserOnline()) useSyncStore.getState().setRuntime({ error: error.message });
-      },
+      onRefreshed: onDriveRenewed,
+      onError: onDriveRenewalError,
     }).then((cleanup) => {
       driveRefreshSetupPending = false;
       if (generation !== driveRefreshGeneration || !googleSyncEnabled()) cleanup();

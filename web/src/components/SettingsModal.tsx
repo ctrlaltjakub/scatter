@@ -15,6 +15,7 @@ import {
   Pencil,
   CloudDownload,
   CloudOff,
+  RefreshCw,
   Search,
   Palette,
   Keyboard,
@@ -105,9 +106,10 @@ import {
 import { SyncDataSettings } from './SyncDataSettings';
 import { CameraSettings } from './settings/CameraSettings';
 import { useSyncStore } from '@/store/useSyncStore';
+import { useIsBrowserOnline } from '@/lib/networkStatus';
 import { applySettingsImport } from '@/lib/applySettingsImport';
 import { useGraphStore } from '@/store/useGraphStore';
-import { simulateGoogleDriveRenewalFailure, simulateRemoteProjectUpdateConflict } from '@/sync/coordinator';
+import { simulateGoogleDriveRenewalFailure, simulateRemoteProjectUpdateConflict, testAutomaticGoogleDriveRenewal } from '@/sync/coordinator';
 
 function keyPlaceholder(preset: ProviderPreset): string {
   if (preset === 'openai') return 'sk-…';
@@ -1438,6 +1440,15 @@ function DataTab({ onClose }: { onClose: () => void }) {
 /* ---- Dev tab ---- */
 function DevTab({ onClose }: { onClose: () => void }) {
   const activeProject = useGraphStore((s) => s.project);
+  const syncConfig = useSyncStore((s) => s.config);
+  const needsReconnect = useSyncStore((s) => s.googleDriveReconnectRequired);
+  const online = useIsBrowserOnline();
+  const [renewing, setRenewing] = useState(false);
+  const [renewalResult, setRenewalResult] = useState('');
+  const renewalUnavailable = syncConfig.provider !== 'google-drive' ? 'Connect Google Drive in Synchronization first.'
+    : !syncConfig.enabled ? 'Resume Google Drive synchronization first.'
+    : needsReconnect ? 'Reconnect Google Drive first.'
+    : !online ? 'Go online to test renewal.' : '';
   const setForceWelcomeA = useSettingsStore((s) => s.setForceWelcomeA);
   const simulateWebglFailure = useSettingsStore((s) => s.simulateWebglFailure);
   const setSimulateWebglFailure = useSettingsStore((s) => s.setSimulateWebglFailure);
@@ -1453,6 +1464,17 @@ function DevTab({ onClose }: { onClose: () => void }) {
   const testGoogleDriveRenewalFailure = () => {
     simulateGoogleDriveRenewalFailure();
     onClose();
+  };
+
+  const testRenewal = async () => {
+    setRenewing(true);
+    setRenewalResult('');
+    try {
+      await testAutomaticGoogleDriveRenewal();
+      setRenewalResult('Access renewed successfully.');
+    } catch (error) {
+      setRenewalResult(error instanceof Error ? `Renewal failed: ${error.message}` : 'Google Drive could not renew access.');
+    } finally { setRenewing(false); }
   };
 
   const testVersionConflict = () => {
@@ -1499,6 +1521,19 @@ function DevTab({ onClose }: { onClose: () => void }) {
 
           <div className="field-row">
             <label className="field-label">Google Drive renewal</label>
+            <button type="button" className="btn btn-secondary" disabled={!!renewalUnavailable || renewing}
+              onClick={() => void testRenewal()} aria-describedby="drive-renewal-help" aria-busy={renewing}>
+              <RefreshCw size={12} /> {renewing ? 'Renewing…' : 'Test automatic renewal'}
+            </button>
+          </div>
+          <p id="drive-renewal-help" className="field-help" style={{ marginBottom: 16 }}>
+            Requests a <strong>new access token from Google now</strong>, just as the app does shortly before expiry.
+            {renewalUnavailable && <> {renewalUnavailable}</>}
+            <span role="status">{renewalResult && <> {renewalResult}</>}</span>
+          </p>
+
+          <div className="field-row">
+            <label className="field-label">Google Drive recovery</label>
             <button type="button" className="btn btn-secondary" onClick={testGoogleDriveRenewalFailure}>
               <CloudOff size={12} /> Trigger renewal failure
             </button>

@@ -270,6 +270,11 @@ export function ensureGoogleDriveAccessToken(): Promise<void> {
   return googleDriveTokenNeedsRefresh() ? requestGoogleDriveToken('') : Promise.resolve();
 }
 
+/** Reuse the approved sync grant. Only an explicit reconnect may open a sign-in screen. */
+export function renewGoogleDriveAccessToken(): Promise<void> {
+  return requestGoogleDriveToken('none');
+}
+
 /** Request a short-lived, non-persisted token for files the user explicitly
  * selects in Google Picker. Keeping it separate prevents the broader picker
  * token from replacing Scatter sync's appData-only token. */
@@ -355,7 +360,7 @@ export async function installGoogleDriveGestureRefresh(callbacks: {
       || navigator.onLine === false
       || !googleDriveTokenNeedsRefresh()) return;
     requesting = true;
-    void requestGoogleDriveToken('none').then(() => {
+    void renewGoogleDriveAccessToken().then(() => {
       retryAfter = 0;
       callbacks.onRefreshed();
     }).catch((cause) => {
