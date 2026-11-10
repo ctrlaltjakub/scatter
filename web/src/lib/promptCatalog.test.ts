@@ -5,7 +5,7 @@ import { configuredPrompt } from './configuredPrompt';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { DEFAULT_SETTINGS, type NodeVersion } from '@/store/types';
 import { chatSystemPrompt } from './chat/context';
-import { buildMessages } from './promptBuilder';
+import { buildMessages, withNodeWebSearch } from './promptBuilder';
 import { termSelectionPrompt } from './termSelectionPrompt';
 import { previewRequest } from './termPreviewCore';
 import { formatSourceEvidenceBlock } from './sourceRetrieval';
@@ -17,6 +17,24 @@ const context = { parent: null, grandparent: null };
 beforeEach(() => useSettingsStore.setState({ ...DEFAULT_SETTINGS, customPrompts: undefined }));
 
 describe('prompt catalog and request wiring', () => {
+  it('separates node writing policy from citation mechanics, and keeps both prompts editable', () => {
+    const base = buildMessages({ variant: { kind: 'root', topic: 'Vision' }, context });
+    const messages = withNodeWebSearch(base, { nodeSearchProse: 'NODE WRITING POLICY', nodeWebSearch: 'CITATION TASK' });
+    expect(messages[0]?.role).toBe('system');
+    expect(messages[0]?.content).toContain('NODE WRITING POLICY');
+    expect(messages.at(-1)?.content).toContain('CITATION TASK');
+    expect(messages.at(-1)?.content).not.toContain('NODE WRITING POLICY');
+    expect(base[0]?.content).not.toContain('NODE WRITING POLICY');
+    expect(configuredPrompt('taskRestructure')).toContain('Omit commentary about the search process');
+    expect(configuredPrompt('localSearchAnswer')).not.toContain('be explicit if it is inadequate');
+    expect(configuredPrompt('sourcePolicyOnly')).toContain('Omit unsupported factual claims');
+  });
+  it.each([false, true])('allows relevant search limitations in chat, chunking=%s', chunked => {
+    const chat = chatSystemPrompt(chunked, '', true);
+    expect(chat).toContain('briefly mention a search limitation when the user asks');
+    expect(chat).not.toContain(configuredPrompt('nodeSearchProse'));
+    expect(chatSystemPrompt(chunked, '', false)).not.toContain(configuredPrompt('chatWebSearch'));
+  });
   it.each(['nodeWebSearch', 'chatWebSearch'] as const)('specifies Markdown citations instead of cite tags for %s', (key) => {
     expect(configuredPrompt(key)).toContain('[source](https://exact-returned-url)');
     expect(configuredPrompt(key)).toContain('Do not wrap citations in HTML/XML tags');

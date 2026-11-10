@@ -121,6 +121,14 @@ describe('model diagnostics', () => {
       expect(() => check.validate!(DIAGNOSTIC_TEXT + '\n- Extra section'.repeat(3))).toThrow('main bullets');
     }
   });
+  it('exercises the production node-search writing and citation prompts in the existing search check', () => {
+    const cfg = { ...settings(), customPrompts: { nodeSearchProse: 'NODE POLICY', nodeWebSearch: 'SEARCH AND CITE' } };
+    for (const role of ['main', 'secondary'] as const) {
+      const job = diagnosticPlan(cfg, role).find(job => job.test.id === 'search')!;
+      expect(job.test.messages[0]).toEqual({ role: 'system', content: 'NODE POLICY' });
+      expect(job.test.messages.at(-1)?.content).toContain('SEARCH AND CITE');
+    }
+  });
   it('checks breadth in one existing generation: unrelated or merged headings cannot substitute for a requested branch', () => {
     const check = diagnosticPlan(settings(), 'main').find(job => job.test.id === 'encyclopedic')!.test;
     const sample = ['JPEG', 'PNG', 'SVG', 'TIFF'].map(format =>

@@ -30,7 +30,7 @@ export type TaskVariant =
    *  unmarked portions of the body verbatim. */
   | { kind: 'expand-part'; markedBody: string; mode?: 'encyclopedic' | 'explain' }
   /** Internal corrective pass: the previous output broke the two-level bullet
-   *  outline contract (opening length, section/subpoint counts or descriptions).
+   *  outline contract (missing opening, section/subpoint counts or descriptions).
    *  Re-asks the model to rewrite `previousBody` into the correct structure,
    *  keeping all content. Fired automatically once after a failed generation. */
   | { kind: 'restructure'; previousBody: string; outlineIssue: string }
@@ -57,6 +57,21 @@ export type TaskVariant =
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+}
+
+/** Non-chat node search: keep writing policy in the system message and the
+ * concrete search/citation task in the final user message (important for Gemini). */
+export function withNodeWebSearch(messages: ChatMessage[], custom?: Partial<CustomPrompts>): ChatMessage[] {
+  const system = messages.findIndex(message => message.role === 'system');
+  const user = messages.findLastIndex(message => message.role === 'user');
+  if (user < 0) return messages;
+  const policy = effectivePrompt('nodeSearchProse', custom);
+  const task = effectivePrompt('nodeWebSearch', custom);
+  const next = messages.map((message, index) => {
+    const extra = index === system ? policy : index === user ? task : '';
+    return extra ? { ...message, content: [message.content, extra].filter(Boolean).join('\n\n') } : message;
+  });
+  return system < 0 && policy ? [{ role: 'system', content: policy }, ...next] : next;
 }
 
 interface ContextVars {

@@ -53,6 +53,7 @@ import {
 import {
   buildFollowUpClassifierPrompt,
   buildMessages,
+  withNodeWebSearch,
   type TaskVariant,
   type PromptContext,
   type ChatMessage,
@@ -196,17 +197,6 @@ function statusVerb(kind: TaskVariant['kind']): string {
 function setNodeStatus(nodeId: string, label: string, processId?: string): void {
   if (processId) useNodeStatusStore.getState().setProcessStatus(nodeId, processId, label);
   else useNodeStatusStore.getState().setStatus(nodeId, `STATUS: ${label}`);
-}
-
-/** Search tools are model-controlled on OpenRouter and Anthropic. Put strong,
- *  provider-neutral grounding guidance in the user request—the location
- *  Gemini 3.1 follows best—without returning to brittle per-model tool forcing. */
-function addWebSearchGuidance(messages: ChatMessage[]): ChatMessage[] {
-  const userIndex = messages.findLastIndex((message) => message.role === 'user');
-  if (userIndex < 0) return messages;
-  return messages.map((message, index) => index === userIndex
-    ? { ...message, content: `${message.content}\n\n${configuredPrompt('nodeWebSearch')}` }
-    : message);
 }
 
 function appendSourceEvidence(messages: ChatMessage[], evidence: string): ChatMessage[] {
@@ -495,7 +485,7 @@ async function streamChunks(opts: {
   const citationCleanMessages = sourceMode !== 'ignore'
     ? stripKnownInternalMarkers(sourceMessages, nodeId)
     : sourceMessages;
-  let messages = didWebSearch ? addWebSearchGuidance(citationCleanMessages) : citationCleanMessages;
+  let messages = didWebSearch ? withNodeWebSearch(citationCleanMessages, settings.customPrompts) : citationCleanMessages;
   let imageInputs;
   if (opts.imageContext && projectId) {
     const info = useModelCatalogStore.getState().catalog[provider.id]?.find((entry) => entry.id === model);

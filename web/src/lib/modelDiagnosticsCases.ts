@@ -1,6 +1,6 @@
 import type { ImageRegion, ModelRole, Settings } from '@/store/types';
 import type { ChatMessage, TaskVariant } from './promptBuilder';
-import { buildMessages, buildFollowUpClassifierPrompt } from './promptBuilder';
+import { buildMessages, buildFollowUpClassifierPrompt, withNodeWebSearch } from './promptBuilder';
 import { effectivePrompt, substitute } from './promptDefaults';
 import { chatFormattingPrompt } from './chatFormatting';
 import { termSelectionPrompt } from './termSelectionPrompt';
@@ -184,7 +184,7 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
         role === 'secondary' ? prompt('sourceTranscriptionTask', { label: 'test fixture' }) : 'Name the two colored shapes and read the test code.'),
       validate: text => { assertDiagnostic(/ORBIT\s*27/i.test(text), 'The model did not read the code in the supplied image.'); if (role === 'main') assertDiagnostic(/circle/i.test(text) && /triangle/i.test(text), 'The model did not identify both shapes.'); } });
     cases.push({ id: 'search', label: 'Web search and source links', role, kind: 'search', requests: 2, tokens: 4000,
-      messages: pair(prompt('nodeWebSearch'), 'Search once for the official NASA page explaining lunar eclipses. State one fact and cite the exact source URL.') });
+      messages: withNodeWebSearch([{ role: 'user', content: 'Explain a lunar eclipse in two short lines: one fact from an official NASA page with its source link, then a related fact you know. Search once.' }], settings.customPrompts) });
   }
   const imageRegions = [{ x: .5, y: 0, width: .5, height: .7 }];
   const imageReference = imageQuestionInstructions({ sourceMedia: { kind: 'image', source: 'link' }, regions: imageRegions }, settings.customPrompts);

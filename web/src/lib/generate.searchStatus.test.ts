@@ -108,6 +108,8 @@ afterEach(() => {
 describe('generation web-search provenance', () => {
   it('adds strong grounding guidance to a normal node user request', async () => {
     await spawnTermClick('parent', 'current research');
+    expect(fake.messages[0]?.[0]).toContain('Do not describe the search process');
+    expect(fake.messages[0]?.[0]).toContain('well-established knowledge unless the requested source policy forbids it');
     expect(fake.messages[0]?.at(-1)).toMatch(/ground this response in web search before writing/i);
     expect(fake.messages[0]?.at(-1)).toMatch(/wikipedia as a grounding source when relevant/i);
     expect(fake.messages[0]?.at(-1)).toMatch(/do not invent bare bracketed source names/i);
@@ -115,6 +117,7 @@ describe('generation web-search provenance', () => {
 
   it('adds the same search guidance to explanation requests', async () => {
     await spawnExplain('parent', 'current research');
+    expect(fake.messages[0]?.[0]).toContain('Do not add a sourcing disclaimer anywhere in the node');
     expect(fake.messages[0]?.at(-1)).toMatch(/ground this response in web search before writing/i);
   });
 
@@ -189,6 +192,7 @@ describe('generation web-search provenance', () => {
     expect(version.sources).toBeUndefined();
     expect(version.googleSearchSuggestions).toBeUndefined();
     expect(fake.messages[0]?.at(-1)).not.toMatch(/ground this response in web search/i);
+    expect(fake.messages[0]?.[0]).not.toContain('Do not describe the search process');
   });
 
   it('does not report failure when the active provider does not support hosted search', async () => {

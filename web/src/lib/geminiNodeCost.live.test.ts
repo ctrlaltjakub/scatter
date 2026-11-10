@@ -1,15 +1,14 @@
 /** Opt-in, paid measurement of one standard node with Scatter's search policy. */
 import { expect, it } from 'vitest';
 import { readFile, writeFile } from 'node:fs/promises';
-import { buildMessages } from './promptBuilder';
+import { buildMessages, withNodeWebSearch } from './promptBuilder';
 import { markTerms } from './termMarking';
 import { completeTermPreviews, previewTerms } from './termPreviewCore';
 import type { NodeVersion } from '@/store/types';
 
 it.skipIf(process.env.SCATTER_GEMINI_COST !== '1')('measures Gemini 3.8 Flash node text and web search', async () => {
   const key = (await readFile('../.agents/skills/openrouter-test/openrouter.key', 'utf8')).trim();
-  const messages = buildMessages({ variant: { kind: 'root', topic: 'Operating systems' }, context: { parent: null, grandparent: null } });
-  messages[messages.length - 1]!.content += '\n\nGround this response in web search before writing, and cite sources beside the claims they support. Use Wikipedia as a grounding source when relevant, alongside primary or authoritative sources where appropriate. Do not invent bare bracketed source names or numbered references; use only citation links backed by the returned search results.';
+  const messages = withNodeWebSearch(buildMessages({ variant: { kind: 'root', topic: 'Operating systems' }, context: { parent: null, grandparent: null } }));
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ model: 'google/gemini-3.8-flash', messages, max_tokens: 8000,
