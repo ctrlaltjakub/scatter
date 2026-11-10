@@ -5,7 +5,7 @@ import { useSyncStore } from '@/store/useSyncStore';
 import { useGraphStore } from '@/store/useGraphStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { defaultSyncConfig, defaultSyncLedger } from '@/sync/local';
-import { requestGoogleDriveToken, clearGoogleDriveToken } from '@/sync/providers/googleDrive';
+import { requestGoogleDriveToken, clearGoogleDriveToken, prepareGoogleDriveAccountHint } from '@/sync/providers/googleDrive';
 import { deleteSyncHistoryEntry, scheduleSync, requestSyncNow } from '@/sync/coordinator';
 import { preferencesSnapshotName } from '@/sync/codec';
 import { reconnectGoogleDriveSync } from '@/sync/actions';
@@ -13,7 +13,10 @@ import { reconnectGoogleDriveSync } from '@/sync/actions';
 vi.mock('@/opfs/settingsIO', async original => ({ ...await original<typeof import('@/opfs/settingsIO')>(), saveSettings: vi.fn(async () => {}) }));
 vi.mock('@/sync/local', async original => ({ ...await original<typeof import('@/sync/local')>(), saveSyncConfig: vi.fn(async () => {}) }));
 vi.mock('@/sync/coordinator', () => ({ scheduleSync: vi.fn(), stopScheduledSync: vi.fn(), requestSyncNow: vi.fn(), restorePreferencesHistory: vi.fn(), restoreProjectHistory: vi.fn(), deleteSyncHistoryEntry: vi.fn() }));
-vi.mock('@/sync/providers/googleDrive', () => ({ requestGoogleDriveToken: vi.fn(), clearGoogleDriveToken: vi.fn(), googleDriveTokenNeedsRefresh: () => false }));
+vi.mock('@/sync/providers/googleDrive', () => ({
+  requestGoogleDriveToken: vi.fn(), clearGoogleDriveToken: vi.fn(), googleDriveTokenNeedsRefresh: () => false,
+  prepareGoogleDriveAccountHint: vi.fn(async () => {}),
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -49,6 +52,7 @@ describe('sync connection and history controls', () => {
     useSyncStore.setState(state => ({ config: { ...state.config, provider: 'google-drive', enabled: false } }));
     await reconnectGoogleDriveSync();
     expect(requestGoogleDriveToken).toHaveBeenCalledOnce();
+    expect(prepareGoogleDriveAccountHint).toHaveBeenCalledOnce();
     expect(requestSyncNow).toHaveBeenCalledWith({ manual: true });
     expect(useSyncStore.getState().config.enabled).toBe(false);
   });
