@@ -1,5 +1,5 @@
 export type OnboardingPath = 'quick' | 'custom' | 'restore';
-export type OnboardingStep = 'choose' | 'connect' | 'review' | 'confirm';
+export type OnboardingStep = 'choose' | 'connect' | 'review' | 'confirm' | 'controls';
 const KEY = 'scatter.onboarding';
 export interface OnboardingSession {
   path: OnboardingPath;
@@ -13,7 +13,7 @@ export function readOnboardingSession(): OnboardingSession | null {
   try {
     const value = JSON.parse(sessionStorage.getItem(KEY) || 'null');
     return value && ['quick', 'custom', 'restore'].includes(value.path)
-      && ['choose', 'connect', 'review', 'confirm'].includes(value.step) ? {
+      && ['choose', 'connect', 'review', 'confirm', 'controls'].includes(value.step) ? {
         path: value.path, step: value.step,
         restoreSync: value.restoreSync === true,
         syncPicker: value.syncPicker === true,

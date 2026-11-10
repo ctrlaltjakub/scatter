@@ -176,6 +176,9 @@ describe('onboarding settings import', () => {
     expect(screen.getByRole('button', { name: 'Finish setup' })).toBeDisabled();
     fireEvent.click(confirmation);
     fireEvent.click(screen.getByRole('button', { name: 'Finish setup' }));
+    expect(await screen.findByRole('heading', { name: 'Canvas controls' })).toHaveFocus();
+    expect(readOnboardingSession()?.step).toBe('controls');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue to app' }));
     await waitFor(() => expect(useSettingsStore.getState().forceWelcomeA).toBe(false));
     expect(readOnboardingSession()).toBeNull();
     expect(initializeSyncCoordinator).toHaveBeenCalledOnce();
@@ -275,6 +278,15 @@ describe('onboarding settings import', () => {
 });
 
 describe('onboarding copy and entry controls', () => {
+  it('resumes the controls guide after reload without repeating account checks', async () => {
+    saveOnboardingSession('restore', 'controls');
+    render(<WelcomeScreenA />);
+    expect(await screen.findByRole('heading', {name: 'Canvas controls'})).toHaveFocus();
+    expect(initializeSyncCoordinator).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', {name: 'Continue to app'}));
+    expect(readOnboardingSession()).toBeNull();
+    expect(useSettingsStore.getState().forceWelcomeA).toBe(false);
+  });
   it('uses all four visit colors in the linked wordmark across setup steps', () => {
     render(<WelcomeScreenA />);
     const logo = screen.getByRole('link', {name: 'Scatter landing page (opens in a new tab)'});

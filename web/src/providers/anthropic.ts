@@ -1,6 +1,6 @@
 import type { TextAdapter, StreamChatOpts, ChatChunk, ModelInfo } from './types';
 import { sseEvents } from './sse';
-import { normalizeProviderError, ProviderError } from './errors';
+import { normalizeProviderError, ProviderError, streamProviderError } from './errors';
 import { inferModelCaps } from '@/lib/modelMeta';
 import { effectiveReasoningEffort, REASONING_LEVELS } from '@/lib/modelReasoning';
 import { anthropicMessagesWithImages } from './multimodal';
@@ -47,7 +47,7 @@ async function listModels(apiKey: string, baseUrl?: string): Promise<ModelInfo[]
   const base = baseUrl ?? DEFAULT_BASE;
   const r = await fetch(`${base}/models`, { headers: buildHeaders(apiKey) });
   if (!r.ok) {
-    throw normalizeProviderError(r.status, await r.text().catch(() => ''), r.headers?.get?.('Retry-After'));
+    throw normalizeProviderError(r.status, await r.text().catch(() => ''), r.headers?.get?.('Retry-After'), base);
   }
   const json = (await r.json()) as { data: Record<string, unknown>[] };
   return json.data.map(parseAnthropicModel);
@@ -131,7 +131,7 @@ async function* streamChat(apiKey: string, opts: StreamChatOpts, baseUrl?: strin
       signal: opts.signal,
     });
     if (!r.ok || !r.body) {
-      throw normalizeProviderError(r.status, await r.text().catch(() => ''), r.headers?.get?.('Retry-After'));
+      throw normalizeProviderError(r.status, await r.text().catch(() => ''), r.headers?.get?.('Retry-After'), base);
     }
 
     opts.onActivity?.({ phase: 'waiting' });
@@ -152,7 +152,7 @@ async function* streamChat(apiKey: string, opts: StreamChatOpts, baseUrl?: strin
       const index = typeof data.index === 'number' ? data.index : 0;
       if (type === 'error') {
         const error = data.error as Record<string, unknown> | undefined;
-        throw new Error(typeof error?.message === 'string' ? error.message : 'Anthropic interrupted the response.');
+        throw streamProviderError(error, base, 'Anthropic interrupted the response.');
       }
 
       if (type === 'content_block_start') {

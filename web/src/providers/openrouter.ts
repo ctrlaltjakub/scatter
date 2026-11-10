@@ -83,7 +83,7 @@ export async function listOpenRouterTextEndpoints(
     throw normalizeProviderError(
       response.status,
       await response.text().catch(() => ''),
-      response.headers?.get?.('Retry-After'),
+      response.headers?.get?.('Retry-After'), baseUrl,
     );
   }
   return parseOpenRouterTextEndpoints(await response.json());

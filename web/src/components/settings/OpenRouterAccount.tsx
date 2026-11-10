@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ExternalLink, RefreshCw } from 'lucide-react';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { openRouterKeyLinks, readOpenRouterAccount, type OpenRouterAccountInfo } from '@/lib/openRouterAccount';
+import { OpenRouterFundingNotice } from './OpenRouterFundingNotice';
 import { SettingsSection } from './SettingsSection';
 import { CollapsibleSection } from '../dev/CollapsibleSection';
 
@@ -53,6 +54,7 @@ export function OpenRouterAccount() {
       </button>
     </div>
     {error && <p role="alert" className="sync-settings-error">{error}{data ? ' Previously fetched figures are shown below.' : ''}</p>}
+    <OpenRouterFundingNotice account={data} />
     <SettingsSection title="Spending allowance" description={<>This is the <strong>limit for this API key</strong>, not your account’s credit balance. A shared key includes usage from other apps and devices.</>}>
       <dl className="openrouter-metrics">
         <div><dt>Spending limit</dt><dd>{data?.limit === null ? 'No limit set' : money(data?.limit)}</dd></div>

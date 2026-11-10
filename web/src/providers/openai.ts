@@ -1,6 +1,6 @@
 import type { TextAdapter, StreamChatOpts, ChatChunk, ModelInfo, ModelPricing, ModelCaps, Citation } from './types';
 import { sseEvents } from './sse';
-import { normalizeProviderError, ProviderError } from './errors';
+import { normalizeProviderError, ProviderError, streamProviderError } from './errors';
 import { openAiMessagesWithImages } from './multimodal';
 import { compatConversation, providerMessages, responsesConversation, ToolCallAccumulator, ReasoningDetailAccumulator } from './conversation';
 import { openaiModelSupportsSearch } from './modelSearch';
@@ -91,7 +91,7 @@ export async function listModelsCompat(
     headers: { Authorization: `Bearer ${apiKey}`, ...extraHeaders },
   });
   if (!r.ok) {
-    throw normalizeProviderError(r.status, await r.text().catch(() => ''), r.headers?.get?.('Retry-After'));
+    throw normalizeProviderError(r.status, await r.text().catch(() => ''), r.headers?.get?.('Retry-After'), base);
   }
   const json = (await r.json()) as { data?: unknown };
   if (!Array.isArray(json?.data)) throw new ProviderError('The model catalog has an unexpected format. Check that the base URL points to an OpenAI-compatible /v1 API.', { kind: 'bad_request' });
@@ -153,7 +153,7 @@ export async function* streamChatCompat(
     signal: opts.signal,
   });
   if (!r.ok) {
-    throw normalizeProviderError(r.status, await r.text().catch(() => ''), r.headers?.get?.('Retry-After'));
+    throw normalizeProviderError(r.status, await r.text().catch(() => ''), r.headers?.get?.('Retry-After'), base);
   }
   if (!r.body) {
     throw new ProviderError('The provider returned an empty response.', { kind: 'server', retryable: true });
@@ -195,11 +195,7 @@ export async function* streamChatCompat(
     // 504 web-search timeout). Surface it instead of silently ending empty —
     // otherwise the node body comes out blank with no explanation.
     if (data.error) {
-      const code = typeof data.error.code === 'number' ? data.error.code : undefined;
-      throw new ProviderError(
-        data.error.message || `Provider error${code != null ? ` (${code})` : ''}`,
-        { kind: code != null && code >= 500 ? 'server' : 'unknown', status: code },
-      );
+      throw streamProviderError(data.error, base, 'The provider interrupted this response.');
     }
     const fr = data.choices?.[0]?.finish_reason;
     if (fr) finishReason = fr; // last non-null wins (appears on the final chunk)
@@ -299,7 +295,7 @@ async function* streamResponses(
     body: JSON.stringify(body),
     signal: opts.signal,
   });
-  if (!r.ok) throw normalizeProviderError(r.status, await r.text().catch(() => ''), r.headers?.get?.('Retry-After'));
+  if (!r.ok) throw normalizeProviderError(r.status, await r.text().catch(() => ''), r.headers?.get?.('Retry-After'), base);
   if (!r.body) {
     throw new ProviderError('The provider returned an empty response.', { kind: 'server', retryable: true });
   }
@@ -346,7 +342,7 @@ async function* streamResponses(
     }
     if (type === 'error' || type === 'response.failed') {
       const error = (data.error ?? (data.response as Record<string, unknown> | undefined)?.error) as Record<string, unknown> | undefined;
-      throw new ProviderError(String(error?.message ?? data.message ?? 'OpenAI response failed.'), { kind: 'server' });
+      throw streamProviderError(error ?? data, base, 'The provider interrupted this response.');
     }
     if (type === 'response.output_text.delta' && typeof data.delta === 'string') {
       opts.onActivity?.({ phase: 'responding' });

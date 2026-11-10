@@ -14,6 +14,7 @@ export interface OpenRouterAccountInfo {
   byok_usage_monthly?: number;
   include_byok_in_limit?: boolean;
   is_free_tier?: boolean;
+  effective_budget?: { scope: string; remaining_usd: number };
   expires_at?: string | null;
   is_management_key?: boolean;
   is_provisioning_key?: boolean;
@@ -45,8 +46,12 @@ export async function readOpenRouterAccount(key: string, signal?: AbortSignal): 
   for (const field of ['limit', 'limit_remaining', 'usage', 'usage_daily', 'usage_weekly', 'usage_monthly',
     'byok_usage', 'byok_usage_daily', 'byok_usage_weekly', 'byok_usage_monthly']) {
     const value = raw[field];
-    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) data[field] = value;
+    if (typeof value === 'number' && Number.isFinite(value) && (field === 'limit_remaining' || value >= 0)) data[field] = value;
     else if (value === null && (field === 'limit' || field === 'limit_remaining')) data[field] = null;
+  }
+  const budget = raw.effective_budget as { scope?: unknown; remaining_usd?: unknown } | null;
+  if (budget && typeof budget.scope === 'string' && typeof budget.remaining_usd === 'number' && Number.isFinite(budget.remaining_usd)) {
+    data.effective_budget = {scope: budget.scope, remaining_usd: budget.remaining_usd};
   }
   if (typeof raw.label === 'string') data.label = raw.label.slice(0, 200);
   if (typeof raw.limit_reset === 'string' || raw.limit_reset === null) data.limit_reset = raw.limit_reset;

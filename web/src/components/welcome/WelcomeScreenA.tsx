@@ -21,7 +21,8 @@ import { getAdapter, getImageAdapter, resolveBaseUrl } from '@/providers/registr
 import { friendlyErrorMessage } from '@/providers/errors';
 import { applySettingsUiPreferences, parseSettingsFile, SettingsImportError } from '@/lib/settingsTransfer';
 import { applySettingsImport } from '@/lib/applySettingsImport';
-import { readOpenRouterAccount } from '@/lib/openRouterAccount';
+import { readOpenRouterAccount, type OpenRouterAccountInfo } from '@/lib/openRouterAccount';
+import { OpenRouterFundingNotice } from '../settings/OpenRouterFundingNotice';
 import { beginOpenRouterConnection } from '@/lib/openRouterConnect';
 import { clearOnboardingSession, readOnboardingSession, saveOnboardingSession, type OnboardingPath, type OnboardingStep } from '@/lib/onboardingSession';
 import { MODEL_ROLES, RECOMMENDED_MODELS, recommendedModelAvailable, roleRef } from '@/lib/recommendedModels';
@@ -33,6 +34,7 @@ import { modelDisplayName } from '@/lib/modelDisplay';
 import { ThemeToggleButton } from '@/components/ThemeToggleButton';
 import { isProviderEnabled } from '@/providers/providerPolicy';
 import { LANDING_URL } from '@/lib/deployment';
+import { CanvasControlsGuide } from './CanvasControlsGuide';
 
 export function WelcomeScreenA() {
   const [brandPalette, setBrandPalette] = useState<string[]>([]);
@@ -62,6 +64,7 @@ export function WelcomeScreenA() {
   const imageCatalogs = useImageModelCatalogStore(s => s.catalog);
   const imagePricing = useImageModelCatalogStore(s => s.pricing);
   const openRouter = providers.find(p => p.preset === 'openrouter' && p.apiKey.trim());
+  const [funding, setFunding] = useState<{account: NonNullable<typeof openRouter>; info: OpenRouterAccountInfo}>();
 
   useEffect(() => {
     setBrandPalette(createFirstLevelWordmarkPalette());
@@ -84,7 +87,10 @@ export function WelcomeScreenA() {
     const accounts = useSettingsStore.getState().providers.filter(p => isProviderEnabled(p.preset) && p.apiKey.trim());
     if (!accounts.length) throw new Error('Connect at least one AI provider to continue.');
     await Promise.all(accounts.map(async account => {
-      if (account.preset === 'openrouter') await readOpenRouterAccount(account.apiKey, AbortSignal.timeout(20_000));
+      if (account.preset === 'openrouter') {
+        const info = await readOpenRouterAccount(account.apiKey, AbortSignal.timeout(20_000));
+        setFunding({account, info});
+      }
       const key = modelCatalogRequestKey(account);
       const base = resolveBaseUrl(account.preset, account.baseUrl);
       await useModelCatalogStore.getState().refreshCatalog(account.id, key,
@@ -177,8 +183,7 @@ export function WelcomeScreenA() {
       // previous welcome screen, this flow finishes without reloading the app.
       await initializeSyncCoordinator();
       if (resumeSyncOnFinish && useSyncStore.getState().config.provider) await resumeSync();
-      clearOnboardingSession();
-      state.setForceWelcomeA(false);
+      navigate('controls');
     } catch (cause) { setError(friendlyErrorMessage(cause)); }
     finally { setBusy(false); }
   };
@@ -189,6 +194,10 @@ export function WelcomeScreenA() {
     catch (cause) { setError(friendlyErrorMessage(cause)); }
     finally { setBusy(false); }
   };
+  if (step === 'controls') return <CanvasControlsGuide onContinue={() => {
+    clearOnboardingSession();
+    useSettingsStore.getState().setForceWelcomeA(false);
+  }} />;
   const steps: Array<{ id: OnboardingStep; title: string; detail: string }> = [
     { id: 'choose', title: 'Choose your setup', detail: 'Quick, custom, or restore' },
     { id: 'connect', title: path === 'restore' ? 'Restore and connect' : 'Connect your AI', detail: path === 'quick' ? 'One OpenRouter connection' : 'Your providers and keys' },
@@ -275,6 +284,7 @@ export function WelcomeScreenA() {
             <ProvidersTab onboarding />
           </>)}
           {step === 'review' && <>
+            {openRouter && funding?.account.id === openRouter.id && funding.account.apiKey === openRouter.apiKey && <OpenRouterFundingNotice account={funding.info} />}
             {busy && !catalogReady && <p role="status" className="field-help">Checking your connection and available models… No paid request is made.</p>}
             {incomplete.length > 0 && <p role="alert" className="sync-settings-error">These recommendations are currently unavailable: {incomplete.map(role => RECOMMENDED_MODELS[role].name).join(', ')}. No replacement was selected. Choose another model below{incomplete.includes('image') ? ', or turn image generation off' : ''}.</p>}
             {showRecommendations && <div className="onboarding-models">

@@ -279,7 +279,7 @@ describe('redesigned settings', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const onClose = vi.fn();
     render(<SettingsModal open onClose={onClose} />);
-    go('Backups');
+    go('Backup and local data');
     for (const name of ['Export project', 'Import project', 'Export settings', 'Import settings'])
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Erase project data' }));

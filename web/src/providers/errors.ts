@@ -4,6 +4,8 @@
  * the node / in the connect form. This normalizes an HTTP status + body into a
  * short, human message the UI can show directly.
  */
+import { billingFailure } from './billing';
+
 export type ProviderErrorKind =
   | 'auth'
   | 'rate_limit'
@@ -45,6 +47,7 @@ export function normalizeProviderError(
   status: number | undefined,
   bodyText: string,
   retryAfter?: string | null,
+  endpoint?: string,
 ): ProviderError {
   const detail = extractProviderMessage(bodyText);
   const retrySeconds = retryAfter == null ? Number.NaN : Number(retryAfter);
@@ -54,13 +57,12 @@ export function normalizeProviderError(
     : Number.isFinite(retryDate)
       ? Math.max(0, retryDate - Date.now())
       : undefined;
+  const billing = billingFailure(status, bodyText, endpoint);
+  if (billing) return new ProviderError(billing.message, {
+    kind: billing.temporary ? 'rate_limit' : 'insufficient_credits', status, retryAfterMs,
+  });
   if (status === 401 || status === 403) {
     return new ProviderError('The API key was rejected — check it in Settings.', { kind: 'auth', status });
-  }
-  // OpenAI uses HTTP 429 for exhausted billing quota as well as transient
-  // throttling. Waiting/retrying cannot repair an empty balance or budget.
-  if (status === 402 || (status === 429 && /insufficient_quota|billing_hard_limit_reached|exceeded.*(?:current )?quota|no credits remaining|credit balance.*(?:low|insufficient)/i.test(bodyText))) {
-    return new ProviderError('This provider has no available credits or has reached its spending limit — check its API billing and project budget.', { kind: 'insufficient_credits', status });
   }
   if (status === 429) {
     return new ProviderError('Rate limit hit — wait a moment and try again.', {
@@ -84,6 +86,22 @@ export function normalizeProviderError(
     return new ProviderError("Couldn't reach the provider — check your connection, and the Base URL for local/custom providers.", { kind: 'network' });
   }
   return new ProviderError(detail ? `Provider error (${status}): ${detail}` : `Provider error (${status}).`, { kind: 'unknown', status });
+}
+
+/** Streaming providers may report a billing failure inside HTTP 200. */
+export function streamProviderError(error: unknown, endpoint: string, fallback: string): ProviderError {
+  const e = error as { code?: unknown; type?: string; message?: string } | undefined;
+  const types: Record<string, number> = {
+    invalid_request_error: 400, authentication_error: 401, permission_error: 403,
+    billing_error: 402, rate_limit_error: 429, rate_limit_exceeded: 429,
+    api_error: 500, overloaded_error: 529, timeout_error: 504,
+  };
+  const httpCode = typeof e?.code === 'string' && /^[45]\d{2}$/.test(e.code) ? Number(e.code) : e?.code;
+  const status = typeof httpCode === 'number' ? httpCode : types[e?.type ?? String(e?.code)];
+  const raw = JSON.stringify({error});
+  if (billingFailure(status, raw, endpoint) || status === 400 || status === 401 || status === 403 || status === 429)
+    return normalizeProviderError(status, raw, undefined, endpoint);
+  return new ProviderError(e?.message || fallback, { kind: status == null || status >= 500 ? 'server' : 'unknown', status });
 }
 
 /** Turn any thrown value into a short message safe to show the user. A

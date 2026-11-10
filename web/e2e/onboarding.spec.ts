@@ -22,6 +22,10 @@ async function confirmSetup(page: Page, info?: TestInfo) {
   await expect(finish).toBeDisabled();
   await confirmations.check();
   await finish.click();
+  const guide = page.getByRole('region', {name: 'Canvas controls'});
+  await expect(guide.getByRole('heading', {name: 'Use the reading ruler'})).toBeVisible();
+  if (info) await page.screenshot({path: info.outputPath('canvas-controls.png')});
+  await guide.getByRole('button', {name: 'Continue to app'}).click();
 }
 
 test.beforeEach(async ({ page }) => {

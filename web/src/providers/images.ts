@@ -105,7 +105,7 @@ async function postImage(
     signal: opts.signal,
   });
   if (!response.ok) {
-    throw normalizeProviderError(response.status, await response.text().catch(() => ''));
+    throw normalizeProviderError(response.status, await response.text().catch(() => ''), response.headers?.get?.('retry-after'), url);
   }
   return parseGeneratedImage(await response.json(), mimeForFormat(opts.outputFormat));
 }
@@ -178,7 +178,7 @@ export const openaiImageAdapter: ImageAdapter = {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
     if (!response.ok) {
-      throw normalizeProviderError(response.status, await response.text().catch(() => ''));
+      throw normalizeProviderError(response.status, await response.text().catch(() => ''), response.headers?.get?.('retry-after'), base);
     }
     const json = await response.json() as { data?: { id?: unknown }[] };
     return (json.data ?? [])
@@ -221,7 +221,7 @@ export const openaiImageAdapter: ImageAdapter = {
       signal: opts.signal,
     });
     if (!response.ok) {
-      throw normalizeProviderError(response.status, await response.text().catch(() => ''));
+      throw normalizeProviderError(response.status, await response.text().catch(() => ''), response.headers?.get?.('retry-after'), baseUrl ?? OPENAI_BASE);
     }
     return parseGeneratedImage(await response.json(), mimeForFormat(opts.outputFormat));
   },
@@ -307,7 +307,7 @@ export const openrouterImageAdapter: ImageAdapter = {
       headers: { Authorization: `Bearer ${apiKey}`, ...OPENROUTER_ATTRIBUTION_HEADERS },
     });
     if (!response.ok) {
-      throw normalizeProviderError(response.status, await response.text().catch(() => ''));
+      throw normalizeProviderError(response.status, await response.text().catch(() => ''), response.headers?.get?.('retry-after'), base);
     }
     const json = await response.json() as { data?: Record<string, unknown>[] };
     return (json.data ?? [])
@@ -321,7 +321,7 @@ export const openrouterImageAdapter: ImageAdapter = {
       headers: { Authorization: `Bearer ${apiKey}`, ...OPENROUTER_ATTRIBUTION_HEADERS },
     });
     if (!response.ok) {
-      throw normalizeProviderError(response.status, await response.text().catch(() => ''));
+      throw normalizeProviderError(response.status, await response.text().catch(() => ''), response.headers?.get?.('retry-after'), base);
     }
     return parseOpenRouterImagePricing(await response.json());
   },
