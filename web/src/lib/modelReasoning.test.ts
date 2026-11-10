@@ -3,6 +3,7 @@ import { effectiveReasoningEffort, reasoningLevels } from './modelReasoning';
 import { parseCompatModel } from '@/providers/openai';
 import { parseAnthropicModel } from '@/providers/anthropic';
 import { modelDisplayName } from './modelDisplay';
+import { DEFAULT_SETTINGS, type ReasoningEffort } from '@/store/types';
 
 describe('model-specific reasoning', () => {
   it('does not offer unsupported Off reasoning for GPT-6.1 Sol', () => {
@@ -12,8 +13,23 @@ describe('model-specific reasoning', () => {
   it('reads reported levels in order and respects mandatory reasoning', () => {
     const info = parseCompatModel({ id: 'test', reasoning: { supported_efforts: ['high', 'low', 'none', 'unknown'], mandatory: true } });
     expect(reasoningLevels('openrouter', 'test', info)).toEqual(['low', 'high']);
-    expect(effectiveReasoningEffort('openrouter', 'test', 'medium', info)).toBe('low');
+    expect(effectiveReasoningEffort('openrouter', 'test', 'medium', info)).toBe('high');
     expect(effectiveReasoningEffort('openrouter', 'test', 'max', info)).toBe('high');
+  });
+  it.each<[ReasoningEffort[], ReasoningEffort | undefined]>([
+    [['off', 'minimal', 'low', 'medium', 'high'], 'medium'],
+    [['high', 'off', 'low'], 'high'],
+    [['high', 'minimal', 'off', 'low'], 'low'],
+    [['max', 'high', 'xhigh'], 'xhigh'],
+    [['off', 'high'], 'high'],
+    [['minimal'], 'minimal'],
+    [['off'], 'off'],
+    [[], undefined],
+  ])('resolves the main default against supported levels %j', (supportedEfforts, expected) => {
+    const info = { id: 'fixture', reasoning: { supportedEfforts } };
+    expect(DEFAULT_SETTINGS.reasoningEffort).toBe('medium');
+    expect(effectiveReasoningEffort('custom', info.id, DEFAULT_SETTINGS.reasoningEffort, info)).toBe(expected);
+    for (const explicit of supportedEfforts) expect(effectiveReasoningEffort('custom', info.id, explicit, info)).toBe(explicit);
   });
   it('distinguishes unrestricted efforts from an omitted selector and non-reasoning models', () => {
     expect(reasoningLevels('openrouter', 'test', parseCompatModel({ id: 'test', reasoning: { supported_efforts: null } }))).toContain('max');

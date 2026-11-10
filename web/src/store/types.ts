@@ -1030,10 +1030,8 @@ export const DEFAULT_SETTINGS: Settings = {
   asciiOpacity: DEFAULT_ASCII_OPACITY,
   asciiLabelOpacityEnabled: false,
   asciiLabelOpacity: DEFAULT_ASCII_OPACITY,
-  // Default 'low': today the main pass sends no effort, so reasoning models run
-  // at their OWN default (often higher/costlier). 'low' is a deliberate, cheaper
-  // baseline the user can raise. Reasoning is billed as output tokens.
-  reasoningEffort: 'low',
+  // The main-model gauge and provider requests resolve Medium against the model's supported levels.
+  reasoningEffort: 'medium',
   // Reasoning shares the output budget: a measured Gemini 3.8 Flash node used
   // 5,986 hidden reasoning tokens before its ~1,500-token visible answer.
   // Leave room for both, without asking the model to make its answer longer.

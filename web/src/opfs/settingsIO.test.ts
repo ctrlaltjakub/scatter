@@ -103,7 +103,7 @@ describe('settingsIO', () => {
     expect(loaded.interactiveReasoningEffort).toBe('xhigh');
     const { writeJSON } = await import('./storage');
     await writeJSON('settings.json', { providers: [], interactiveReasoningEffort: 'bogus' });
-    expect((await loadSettings()).interactiveReasoningEffort).toBe('high');
+    expect(await loadSettings()).toMatchObject({ reasoningEffort: 'medium', interactiveReasoningEffort: 'high' });
   });
   it('preserves each server-managed search profile across settings export/import normalization', async () => {
     const profiles = [

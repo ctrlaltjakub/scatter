@@ -71,6 +71,20 @@ describe('model diagnostics', () => {
     });
     expect(received?.reasoningEffort).toBe(reasoningEffort);
   });
+  it('sends the displayed default through the provider adapter in a single capability check', async () => {
+    const cfg = settings();
+    cfg.providers[0]!.preset = 'openrouter';
+    const job = diagnosticPlan(cfg, 'main').find(job => job.test.id === 'term-node')!;
+    job.target.info = { id: job.target.model, reasoning: { supportedEfforts: ['off', 'low', 'high'] } };
+    const event = { choices: [{ delta: { content: DIAGNOSTIC_TEXT }, finish_reason: 'stop' }] };
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(`data: ${JSON.stringify(event)}\n\ndata: [DONE]\n\n`));
+    try {
+      const result = await runDiagnosticJob(job, cfg, new AbortController().signal, '');
+      expect(result.status).toBe('passed');
+      expect(fetch).toHaveBeenCalledOnce();
+      expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string).reasoning).toEqual({ exclude: true, effort: 'high' });
+    } finally { fetch.mockRestore(); }
+  });
   it('includes only the active main model and the effective role assignments', () => {
     expect(diagnosticTargets(settings()).map(t => `${t.role}:${t.model}`)).toEqual(['main:a', 'secondary:a', 'interactive:a']);
     const plan = diagnosticPlan(settings());

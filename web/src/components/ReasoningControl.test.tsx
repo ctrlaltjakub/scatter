@@ -38,6 +38,7 @@ describe('reasoning controls', () => {
     expect(menu.parentElement).toBe(document.body);
     const range = screen.getByRole('slider', { name: 'Reasoning effort' });
     expect(range).toHaveAttribute('max', '2');
+    expect(range).toHaveAttribute('aria-valuetext', 'Medium');
     fireEvent.change(range, { target: { value: '2' } });
     expect(useSettingsStore.getState().reasoningEffort).toBe('high');
     expect((container.querySelector('.sc-reasoning-needle') as SVGElement).style.getPropertyValue('--needle-angle')).toBe('45deg');
@@ -138,6 +139,8 @@ describe('reasoning controls', () => {
     expect(menu.querySelector('.sc-reasoning-size-label')).toBeNull();
   });
   it('opens below the topic-picker row inside its overlay, not behind the backdrop', () => {
+    useModelCatalogStore.getState().setCatalog('p', [{ id: 'google/gemini-3.8-flash',
+      reasoning: { supportedEfforts: ['off', 'low', 'high'] } }]);
     const { container } = render(<div className="welcome welcome--picker"><SidebarModelPicker placement="down" /></div>);
     const picker = container.querySelector('.sc-modelpicker')!;
     vi.spyOn(picker, 'getBoundingClientRect').mockReturnValue({ left: 700, right: 1000, top: 200, bottom: 232, width: 300 } as DOMRect);
@@ -147,8 +150,9 @@ describe('reasoning controls', () => {
     expect(menu.style.top).toBe('236px');
     expect(menu.style.left).toBe('700px');
     fireEvent.pointerDown(screen.getByRole('slider'));
-    fireEvent.change(screen.getByRole('slider'), { target: { value: '2' } });
-    expect(useSettingsStore.getState().reasoningEffort).toBe('high');
+    expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', 'High');
+    fireEvent.change(screen.getByRole('slider'), { target: { value: '1' } });
+    expect(useSettingsStore.getState().reasoningEffort).toBe('low');
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reasoning effort' })).toHaveFocus();

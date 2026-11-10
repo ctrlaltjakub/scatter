@@ -41,6 +41,12 @@ export function effectiveReasoningEffort(
   const levels = reasoningLevels(preset, model, info);
   if (!levels.length) return undefined;
   if (levels.includes(requested)) return requested;
+  if (requested === 'medium') {
+    // Some models skip Medium. Take one step above their lowest *enabled*
+    // effort; Off isn't a reasoning level, and binary models have just On.
+    const enabled = levels.filter(level => level !== 'off');
+    return enabled[1] ?? enabled[0] ?? levels[0];
+  }
   const index = REASONING_LEVELS.indexOf(requested);
   return [...levels].reverse().find((level) => REASONING_LEVELS.indexOf(level) <= index && level !== 'off')
     ?? levels.find((level) => level !== 'off') ?? levels[0];
