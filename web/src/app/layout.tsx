@@ -59,9 +59,19 @@ const atkinson = Atkinson_Hyperlegible({
   display: 'swap',
 });
 
+// Link previews never include a visitor's projects. The public landing page
+// hosts one static capture for both releases; no client-side request is needed.
+const shareImage = {
+  url: 'https://www.scatter.study/media/scatter-mind-map.png', width: 1200, height: 630, type: 'image/png',
+  alt: 'Scatter’s Music theory mind map, with arrows from the opening explanation to intervals and polymeter.',
+};
+const shareTitle = 'Scatter — AI-powered mind maps';
+const description = 'Explore knowledge through AI-assisted mind maps on an interactive canvas.';
 export const metadata: Metadata = {
   title: 'Scatter',
-  description: 'Explore knowledge through AI-assisted mind maps on an interactive canvas.',
+  description,
+  openGraph: { type: 'website', siteName: 'Scatter', title: shareTitle, description, images: [shareImage] },
+  twitter: { card: 'summary_large_image', title: shareTitle, description, images: [shareImage] },
   robots: { index: false, follow: false },
   icons: { icon: { url: appPath('/favicon.svg'), type: 'image/svg+xml', sizes: 'any' } },
 };
