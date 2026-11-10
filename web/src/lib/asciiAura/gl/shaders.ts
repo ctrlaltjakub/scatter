@@ -61,6 +61,7 @@ import {
   WAVE_RECEDE,
 } from './recordPacking';
 import { MAX_PALETTE } from './paletteGL';
+import { LABEL_TILE, LABEL_COLUMNS } from './labelAtlas';
 import { boldRayGlyphIndex } from './atlasLayout';
 import { CELL_STAGE_MASK, CELL_FULL_OPACITY_BIT } from './coolingEncode';
 
@@ -399,6 +400,7 @@ uniform float uCellCssPx;
 uniform vec3 uViewport;
 uniform float uCanvasHpx;       // canvas height in device px
 uniform ivec2 uCellsMax;        // cellsX - 1, cellsY - 1
+uniform sampler2D uLabelAtlas;
 uniform sampler2D uOverlay;     // RGBA8, one texel/cell: R = status glyph
                                 // index (0 = none), G = arrow stage-demote
                                 // amount, B = status colour index,
@@ -437,6 +439,8 @@ void main() {
   vec4 ov = texelFetch(uOverlay, ivec2(col, row), 0);
   int statusG = int(ov.r * 255.0 + 0.5);
   int demote = int(ov.g * 255.0 + 0.5);
+  int labelSlot = demote >= 128 ? (demote - 128) * 255 + statusG - 1 : -1;
+  if (labelSlot >= 0) demote = 0;
   int statusColorIdx = int(ov.b * 255.0 + 0.5);
   int overlayMode = int(ov.a * 255.0 + 0.5);
   bool inheritOverlayOpacity = overlayMode != 0;
@@ -601,7 +605,14 @@ void main() {
   // the neighbouring atlas glyph).
   float inX = clamp(gl_FragCoord.x - float(col) * uDeviceCellPx, 0.0, uDeviceCellPx - 1.0);
   float inY = clamp(yTop - float(row) * uDeviceCellPx, 0.0, uDeviceCellPx - 1.0);
-  float glyphA = texelFetch(uAtlas, ivec2(int(float(glyphIdx) * uDeviceCellPx + inX), int(inY)), 0).a;
+  float glyphA;
+  if (labelSlot >= 0) {
+    ivec2 tile = ivec2(labelSlot % ${LABEL_COLUMNS}, labelSlot / ${LABEL_COLUMNS});
+    ivec2 ink = ivec2((vec2(inX, inY) + 0.5) * ${LABEL_TILE}.0 / uDeviceCellPx);
+    glyphA = texelFetch(uLabelAtlas, tile * ${LABEL_TILE} + min(ink, ivec2(${LABEL_TILE - 1})), 0).a;
+  } else {
+    glyphA = texelFetch(uAtlas, ivec2(int(float(glyphIdx) * uDeviceCellPx + inX), int(inY)), 0).a;
+  }
 
   // Increase the assembled ink once, including status floors and inherited
   // label alpha. Keep fully opaque ink at 1 and empty/antialiased pixels intact.

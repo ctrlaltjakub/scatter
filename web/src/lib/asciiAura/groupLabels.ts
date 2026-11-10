@@ -1,3 +1,4 @@
+import { labelClusters, labelWidth } from './labelGlyphs';
 import { SpatialHash } from '@/physics/spatialHash';
 import {
   buildLabelCells,
@@ -57,11 +58,12 @@ export function groupLabelMode(zoom: number): 'group' | 'arrow' {
 
 export function sanitizeGroupLabel(raw: string): string {
   const text = sanitizeHeader(raw);
-  if (text.length <= GROUP_LABEL_MAX_CHARS) return text;
+  if (labelWidth(text) <= GROUP_LABEL_MAX_CHARS) return text;
   const contentBudget = GROUP_LABEL_MAX_CHARS - GROUP_LABEL_CONTINUATION.length;
-  let prefix = text.slice(0, contentBudget);
-  const next = text[contentBudget];
-  const last = prefix[prefix.length - 1];
+  const chars = labelClusters(text);
+  let prefix = chars.slice(0, contentBudget).join('');
+  const next = chars[contentBudget];
+  const last = chars[contentBudget - 1];
   // If the cap cuts through a word, retreat to the preceding complete word.
   if (next && last && !/\s/.test(next) && !/\s/.test(last)) {
     const boundary = prefix.lastIndexOf(' ');
@@ -79,7 +81,7 @@ export function sanitizeGroupLabel(raw: string): string {
   prefix = cleanTail(prefix);
   // A single unusually long word has no boundary to retreat to. Keep a hard
   // cap rather than returning an empty label.
-  if (!prefix) prefix = text.slice(0, contentBudget).trimEnd();
+  if (!prefix) prefix = chars.slice(0, contentBudget).join('').trimEnd();
   return prefix + GROUP_LABEL_CONTINUATION;
 }
 
@@ -276,7 +278,7 @@ export function computeGroupLabels(input: GroupLabelInput): GroupLabelPlacement[
     let chosen: { lines: string[]; rect: Rect } | null = null;
     for (const side of ['above', 'below'] as const) {
       for (const lines of wraps) {
-        const widthCols = Math.max(...lines.map((line) => line.length));
+        const widthCols = Math.max(...lines.map((line) => labelWidth(line)));
         const boxW = widthCols * cellPx;
         const boxH = lines.length * cellPx;
         const preferredX = visibleBounds.x + visibleBounds.w / 2 - boxW / 2;

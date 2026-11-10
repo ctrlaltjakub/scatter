@@ -8,6 +8,19 @@ export const GROUP_COLOR_RECORD_HIGH_BYTE = 253;
  * the canvas cell they replace. */
 export const PROJECT_COLOR_INHERIT_OPACITY_BYTE = 252;
 
+/** G normally holds a small halo strength. Its high bit tags extended glyphs:
+ * R stays nonzero for collision checks; B and A still carry color and opacity. */
+export function writeOverlayIndex(data: Uint8Array, base: number, glyph: number) {
+  if (glyph >= 256) {
+    const slot = glyph - 256;
+    data[base] = 1 + slot % 255;
+    data[base + 1] = 128 + Math.floor(slot / 255);
+  } else {
+    data[base] = glyph;
+    if (data[base + 1]! >= 128) data[base + 1] = 0;
+  }
+}
+
 /**
  * Write a label glyph that borrows the underlying aura cell's color and alpha.
  * By default an already-written status or higher-priority label is preserved.
@@ -21,7 +34,7 @@ export function placeBorrowedOverlayGlyph(
   options: { replaceExisting?: boolean } = {},
 ): boolean {
   if (!options.replaceExisting && data[base] !== 0) return false;
-  data[base] = glyphIndex;
+  writeOverlayIndex(data, base, glyphIndex);
   data[base + 2] = 0;
   data[base + 3] = INHERIT_OVERLAY_OPACITY_BYTE;
   return true;
@@ -49,7 +62,7 @@ export function placeGroupOverlayGlyph(
   if (options.protectedCell) return false;
   if (!options.replaceExisting && data[base] !== 0) return false;
   if (!Number.isInteger(recordIndex) || recordIndex < 0 || recordIndex > 511) return false;
-  data[base] = glyphIndex;
+  writeOverlayIndex(data, base, glyphIndex);
   data[base + 2] = recordIndex & 0xff;
   data[base + 3] = recordIndex >= 256
     ? GROUP_COLOR_RECORD_HIGH_BYTE
@@ -67,7 +80,7 @@ export function placeProjectColorOverlayGlyph(
 ): boolean {
   if (options.protectedCell || (!options.replaceExisting && data[base] !== 0)) return false;
   if (!Number.isInteger(colorIndex) || colorIndex < 0 || colorIndex > 255) return false;
-  data[base] = glyphIndex;
+  writeOverlayIndex(data, base, glyphIndex);
   data[base + 2] = colorIndex;
   data[base + 3] = PROJECT_COLOR_INHERIT_OPACITY_BYTE;
   return true;

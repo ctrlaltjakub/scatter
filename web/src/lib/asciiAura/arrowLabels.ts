@@ -18,7 +18,8 @@
 import type { GroupColor, ScatterNode } from '@/store/types';
 import { IMAGE_TITLE_PLACEHOLDER, isImageTitlePending } from '@/lib/imageQuestionTitle';
 import { distanceToRectBorder } from './geometry';
-import { statusGlyphIndex, wrapStatus } from './statusText';
+import { labelLine, labelWidth, type LabelInk } from './labelGlyphs';
+import { wrapStatus } from './statusText';
 import {
   AURA_RADIUS_UNFOCUSED,
   AURA_RADIUS_FOCUSED,
@@ -51,12 +52,10 @@ export const LABEL_AURA_RADII = {
 
 export interface Pt { x: number; y: number; }
 
-export interface LabelCell {
+export interface LabelCell extends LabelInk {
   /** Screen grid cell (col*cellPx, row*cellPx). */
   col: number;
   row: number;
-  /** Absolute atlas glyph index (≥ RAMP_FLAT.length). */
-  glyphIndex: number;
   /** World position of the cell centre — used to sample the aura colour. */
   worldX: number;
   worldY: number;
@@ -92,7 +91,7 @@ export function nodeArrowLabelHeader(node: ScatterNode | undefined): string {
 
 /** Uppercase + collapse runs of whitespace to single spaces + trim. */
 export function sanitizeHeader(s: string): string {
-  return s.toUpperCase().replace(/\s+/g, ' ').trim();
+  return s.normalize('NFC').toUpperCase().replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -442,23 +441,21 @@ export function buildLabelCells(opts: {
   const baseCol = Math.round(opts.boxX / cellPx);
   const baseRow = Math.round(opts.boxY / cellPx);
   let maxLen = 0;
-  for (const l of lines) if (l.length > maxLen) maxLen = l.length;
+  for (const l of lines) if (labelWidth(l) > maxLen) maxLen = labelWidth(l);
 
   const out: LabelCell[] = [];
   for (let li = 0; li < lines.length; li++) {
     const line = lines[li]!;
     const row = baseRow + li;
-    const lineStart = baseCol + Math.floor((maxLen - line.length) / 2);
-    for (let ci = 0; ci < line.length; ci++) {
-      const gi = statusGlyphIndex(line[ci]!);
-      if (gi == null) continue; // space → gap, the aura field shows through
+    const lineStart = baseCol + Math.floor((maxLen - labelWidth(line)) / 2);
+    for (const {offset: ci, ...ink} of labelLine(line).letters) {
       const col = lineStart + ci;
       const cxScreen = (col + 0.5) * cellPx;
       const cyScreen = (row + 0.5) * cellPx;
       out.push({
         col,
         row,
-        glyphIndex: gi,
+        ...ink,
         worldX: (cxScreen - viewport.x) / viewport.zoom,
         worldY: (cyScreen - viewport.y) / viewport.zoom,
       });
@@ -527,7 +524,7 @@ export function labelWrapCandidates(text: string, maxCols: number, maxLines: num
   const words = text.split(/\s+/).filter(Boolean);
   if (words.length === 0) return [];
   let longest = 1;
-  for (const w of words) if (w.length > longest) longest = w.length;
+  for (const w of words) if (labelWidth(w) > longest) longest = labelWidth(w);
   const lo = Math.min(maxCols, longest);
 
   const out: string[][] = [];
@@ -720,7 +717,7 @@ export function computeArrowLabels(input: ArrowLabelInput): ArrowLabelPlacement[
     let chosen: { lines: string[]; x: number; y: number; boxW: number; boxH: number } | null = null;
     for (const lines of candidates) {
       let maxLen = 0;
-      for (const l of lines) if (l.length > maxLen) maxLen = l.length;
+      for (const l of lines) if (labelWidth(l) > maxLen) maxLen = labelWidth(l);
       const boxW = maxLen * cellPx;
       const boxH = lines.length * cellPx;
       const placed = layoutLabelBox({
@@ -746,7 +743,7 @@ export function computeArrowLabels(input: ArrowLabelInput): ArrowLabelPlacement[
       cellAccent(cell.worldX, cell.worldY, parentAccent, input.owners, LABEL_AURA_RADII),
     );
     reserved.push({ x: chosen.x, y: chosen.y, w: chosen.boxW, h: chosen.boxH });
-    const maxLineLength = chosen.lines.reduce((max, line) => Math.max(max, line.length), 0);
+    const maxLineLength = chosen.lines.reduce((max, line) => Math.max(max, labelWidth(line)), 0);
     const hitRect = {
       x: Math.round(chosen.x / cellPx) * cellPx,
       y: Math.round(chosen.y / cellPx) * cellPx,

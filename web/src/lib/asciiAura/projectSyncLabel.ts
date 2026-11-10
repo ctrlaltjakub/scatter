@@ -1,6 +1,6 @@
+import { labelLine, labelWidth } from './labelGlyphs';
 import type { ScreenRect, StatusCell } from './statusText';
 import { labelWrapCandidates } from './arrowLabels';
-import { statusGlyphIndex } from './statusText';
 
 export interface ProjectSyncLabelLayout {
   cells: StatusCell[];
@@ -46,7 +46,7 @@ export function layoutProjectSyncLabel(opts: {
   if (candidates.length === 0) return null;
 
   for (const lines of candidates) {
-    const widthCells = Math.max(...lines.map((line) => line.length));
+    const widthCells = Math.max(...lines.map((line) => labelWidth(line)));
     const heightCells = lines.length;
     const anchorRow = Math.round(opts.anchorY / opts.cellPx);
     const startRow = Math.max(
@@ -71,14 +71,12 @@ export function layoutProjectSyncLabel(opts: {
     const cells: StatusCell[] = [];
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
       const line = lines[lineIndex]!;
-      const lineStart = startCol + Math.floor((widthCells - line.length) / 2);
-      for (let charIndex = 0; charIndex < line.length; charIndex++) {
-        const glyphIndex = statusGlyphIndex(line[charIndex]!);
-        if (glyphIndex == null) continue;
+      const lineStart = startCol + Math.floor((widthCells - labelWidth(line)) / 2);
+      for (const {offset: charIndex, ...ink} of labelLine(line).letters) {
         cells.push({
           col: lineStart + charIndex,
           row: startRow + lineIndex,
-          glyphIndex,
+          ...ink,
         });
       }
     }

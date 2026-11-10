@@ -1,5 +1,5 @@
+import { labelLine, labelWidth } from './labelGlyphs';
 import {
-  statusGlyphIndex,
   type ScreenRect,
   type StatusCell,
 } from './statusText';
@@ -30,13 +30,13 @@ export function layoutDragHint(opts: {
 }): DragHintLayout | null {
   const text = opts.text.toUpperCase().replace(/\s+/g, ' ').trim();
   const startCol = Math.floor((opts.node.x + opts.node.w) / opts.cellPx) + 2;
-  const balancedTwoLine = labelWrapCandidates(text, Math.max(1, text.length), 2)
+  const balancedTwoLine = labelWrapCandidates(text, Math.max(1, labelWidth(text)), 2)
     .find((candidate) => candidate.length === 2);
   // The 32px pin button starts 6px below the card top, so its centre is 22px
   // down. Align the hint block to that centre rather than the node border.
   const pinRow = Math.floor((opts.node.y + 22) / opts.cellPx);
   const rectFor = (candidate: readonly string[]): ScreenRect => {
-    const maxLength = Math.max(0, ...candidate.map((line) => line.length));
+    const maxLength = Math.max(0, ...candidate.map((line) => labelWidth(line)));
     const row = pinRow - Math.floor(candidate.length / 2);
     return {
       x: startCol * opts.cellPx,
@@ -75,13 +75,11 @@ export function layoutDragHint(opts: {
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const line = lines[lineIndex]!;
     const row = startRow + lineIndex;
-    const lineStart = startCol + Math.floor((maxLineLength - line.length) / 2);
-    for (let charIndex = 0; charIndex < line.length; charIndex++) {
-      const glyphIndex = statusGlyphIndex(line[charIndex]!);
-      if (glyphIndex == null) continue;
+    const lineStart = startCol + Math.floor((maxLineLength - labelWidth(line)) / 2);
+    for (const {offset: charIndex, ...ink} of labelLine(line).letters) {
       const col = lineStart + charIndex;
       if (col < 0 || col >= opts.cols || row < 0 || row >= opts.rows) continue;
-      cells.push({ col, row, glyphIndex });
+      cells.push({ col, row, ...ink });
     }
   }
 

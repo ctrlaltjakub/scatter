@@ -1,5 +1,6 @@
 import './globals.css';
 import '@fontsource/noto-sans/400.css';
+import './ascii-label-font.css';
 import '@fontsource/noto-sans/700.css';
 import '@fontsource/noto-sans-sc/400.css';
 import '@fontsource/noto-sans-sc/700.css';

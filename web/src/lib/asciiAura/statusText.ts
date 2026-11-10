@@ -14,16 +14,8 @@
  * depends on them — are untouched. `statusGlyphIndex` returns the
  * ABSOLUTE atlas index for a character.
  */
-import { RAMP_FLAT } from './ramp';
-
-/** Renderable status / label characters, in atlas order (placed AFTER
- *  RAMP_FLAT). Uppercase only — Press Start 2P reads best in caps, so callers
- *  uppercase their text first. Space is absent on purpose: a space produces NO
- *  override cell, so the aura field shows through the gaps between words. The
- *  trailing punctuation ( , ' ( ) / & ? ! ~ ) lets the ASCII labels render
- *  real titles; it is appended at the END so every existing glyph index — and
- *  the TS↔GLSL atlas parity that rides on it — stays unchanged. */
-export const STATUS_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:-.,'()/&?!~+_\\|";
+import { labelClusters, labelLine, labelWidth, statusGlyphIndex, type LabelInk } from './labelGlyphs';
+export { STATUS_CHARS, statusGlyphIndex } from './labelGlyphs';
 
 /** ms between successive characters appearing (type-on, left to right). */
 export const STATUS_REVEAL_MS_PER_CHAR = 18;
@@ -48,11 +40,9 @@ export interface ScreenRect {
   h: number;
 }
 
-export interface StatusCell {
+export interface StatusCell extends LabelInk {
   col: number;
   row: number;
-  /** Absolute atlas glyph index (≥ RAMP_FLAT.length). */
-  glyphIndex: number;
 }
 
 export interface StatusProcessInput {
@@ -61,22 +51,11 @@ export interface StatusProcessInput {
   clearedAt: number | null;
 }
 
-/** Absolute atlas glyph index for a status character, or null when the
- *  character isn't renderable (space / unknown / lowercase). */
-export function statusGlyphIndex(ch: string): number | null {
-  const i = STATUS_CHARS.indexOf(ch);
-  return i < 0 ? null : RAMP_FLAT.length + i;
-}
 
 /** Number of renderable (non-space, known) characters in `text`,
  *  case-insensitively. Drives the animation ordinals. */
 export function renderableCount(text: string): number {
-  const up = text.toUpperCase();
-  let n = 0;
-  for (const ch of up) {
-    if (STATUS_CHARS.indexOf(ch) >= 0) n++;
-  }
-  return n;
+  return labelLine(text.toUpperCase()).letters.length;
 }
 
 /**
@@ -109,14 +88,16 @@ export function wrapStatus(text: string, maxCells: number): string[] {
   for (const w of words) {
     let word = w;
     // Hard-split a word that can never fit on one line.
-    while (word.length > limit) {
+    if (labelWidth(word) > limit) {
       if (cur) { lines.push(cur); cur = ''; }
-      lines.push(word.slice(0, limit));
-      word = word.slice(limit);
+      const chars = labelClusters(word);
+      let i = 0;
+      for (; i + limit < chars.length; i += limit) lines.push(chars.slice(i, i + limit).join(''));
+      word = chars.slice(i).join('');
     }
     if (!word) continue;
     if (!cur) cur = word;
-    else if (cur.length + 1 + word.length <= limit) cur += ' ' + word;
+    else if (labelWidth(cur) + 1 + labelWidth(word) <= limit) cur += ' ' + word;
     else { lines.push(cur); cur = word; }
   }
   if (cur) lines.push(cur);
@@ -177,15 +158,13 @@ export function layoutStatus(opts: {
   for (let li = 0; li < numLines; li++) {
     const line = lines[li]!;
     const row = rowForLine(li);
-    const startCol = startColFor(line.length, li === numLines - 1);
-    for (let ci = 0; ci < line.length; ci++) {
-      const gi = statusGlyphIndex(line[ci]!);
-      if (gi == null) continue; // a space inside a line: keep the column gap
+    const startCol = startColFor(labelWidth(line), li === numLines - 1);
+    for (const {offset: ci, ...ink} of labelLine(line).letters) {
       const k = ord++;
       if (!isCharShown(k, total, startedAt, clearedAt, now)) continue;
       const col = startCol + ci;
       if (col < 0 || col >= cols || row < 0 || row >= rows) continue;
-      out.push({ col, row, glyphIndex: gi });
+      out.push({ col, row, ...ink });
     }
   }
 
@@ -198,7 +177,7 @@ export function layoutStatus(opts: {
     const dotGlyph = statusGlyphIndex('.')!;
     const lastLine = lines[numLines - 1]!;
     const row = rowForLine(numLines - 1);
-    const startCol = startColFor(lastLine.length, true) + lastLine.length;
+    const startCol = startColFor(labelWidth(lastLine), true) + labelWidth(lastLine);
     const dotCount = (Math.floor(now / STATUS_DOT_PERIOD_MS) % 3) + 1;
     for (let d = 0; d < dotCount; d++) {
       const col = startCol + d;
@@ -246,14 +225,12 @@ export function layoutStatusProcesses(opts: {
     total: number,
     reserveDots: boolean,
   ) => {
-    const startCol = Math.round(centerCol - (line.length + (reserveDots ? STATUS_DOT_RESERVE : 0)) / 2);
-    for (let i = 0; i < line.length; i++) {
-      const glyphIndex = statusGlyphIndex(line[i]!);
-      if (glyphIndex == null) continue;
+    const startCol = Math.round(centerCol - (labelWidth(line) + (reserveDots ? STATUS_DOT_RESERVE : 0)) / 2);
+    for (const {offset: i, ...ink} of labelLine(line).letters) {
       const k = ordinal.value++;
       if (!isCharShown(k, total, process.startedAt, process.clearedAt, now)) continue;
       const col = startCol + i;
-      if (col >= 0 && col < cols && row >= 0 && row < rows) out.push({ col, row, glyphIndex });
+      if (col >= 0 && col < cols && row >= 0 && row < rows) out.push({ col, row, ...ink });
     }
   };
 
@@ -274,7 +251,7 @@ export function layoutStatusProcesses(opts: {
         && block.process.clearedAt == null
         && now - block.process.startedAt >= total * STATUS_REVEAL_MS_PER_CHAR
       ) {
-        const startCol = Math.round(centerCol - (line.length + STATUS_DOT_RESERVE) / 2) + line.length;
+        const startCol = Math.round(centerCol - (labelWidth(line) + STATUS_DOT_RESERVE) / 2) + labelWidth(line);
         const dots = (Math.floor(now / STATUS_DOT_PERIOD_MS) % 3) + 1;
         for (let d = 0; d < dots; d++) {
           const col = startCol + d;

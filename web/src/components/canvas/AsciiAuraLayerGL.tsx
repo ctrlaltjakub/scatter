@@ -52,6 +52,9 @@ import {
 } from '@/lib/asciiAura/gl/recordPacking';
 import { COOL_STAGES_PER_SEC } from '@/lib/asciiAura/gl/coolingEncode';
 import { buildBaselinePaletteVec4, MAX_PALETTE } from '@/lib/asciiAura/gl/paletteGL';
+import { LabelAtlas } from '@/lib/asciiAura/gl/labelAtlas';
+import type { LabelInk } from '@/lib/asciiAura/labelGlyphs';
+import { writeOverlayIndex } from '@/lib/asciiAura/gl/overlay';
 import { buildAtlasCanvas } from '@/lib/asciiAura/gl/atlas';
 import {
   VERTEX_SRC,
@@ -149,6 +152,7 @@ interface GLState {
   vao: WebGLVertexArrayObject;
   recordsTex: WebGLTexture;
   atlasTex: WebGLTexture;
+  labels: LabelAtlas;
   /** RG8 per-cell overlay: R = status glyph index, G = arrow-dim factor. */
   overlayTex: WebGLTexture;
   stateTexA: WebGLTexture;
@@ -175,6 +179,7 @@ interface GLState {
   bCellState: WebGLUniformLocation | null;
   bRecords: WebGLUniformLocation | null;
   bAtlas: WebGLUniformLocation | null;
+  bLabelAtlas: WebGLUniformLocation | null;
   bPalette: WebGLUniformLocation | null;
   bPaletteCount: WebGLUniformLocation | null;
   bNeutral: WebGLUniformLocation | null;
@@ -426,6 +431,7 @@ export function AsciiAuraLayerGL({
       const u = (p: WebGLProgram, name: string) => gl.getUniformLocation(p, name);
       return {
         gl, progA, progB, vao,
+        labels: new LabelAtlas(() => { stateRef.current.dirty = true; }),
         recordsTex, atlasTex, overlayTex, stateTexA, stateTexB, opacityTexA, opacityTexB, fboA, fboB,
         writeA: true,
         aRecords: u(progA, 'uRecords'),
@@ -441,6 +447,7 @@ export function AsciiAuraLayerGL({
         bCellState: u(progB, 'uCellState'),
         bRecords: u(progB, 'uRecords'),
         bAtlas: u(progB, 'uAtlas'),
+        bLabelAtlas: u(progB, 'uLabelAtlas'),
         bPalette: u(progB, 'uPalette[0]'),
         bPaletteCount: u(progB, 'uPaletteCount'),
         bNeutral: u(progB, 'uNeutral'),
@@ -673,6 +680,9 @@ export function AsciiAuraLayerGL({
       const sc = scene.state;
       const cellsX = s.cellsX;
       const cellsY = s.cellsY;
+      const labels = glRef.current!.labels;
+      labels.beginFrame();
+      const indexOf = (cell: LabelInk) => cell.fallback ? labels.index(cell.fallback) : cell.glyphIndex;
       const data = s.overlayData;
       data.fill(0); // R=0 (no status), G=0 (no demote), B=0
       const v = sc.viewport;
@@ -746,7 +756,7 @@ export function AsciiAuraLayerGL({
         for (const c of cells) {
           const cellIndex = c.row * cellsX + c.col;
           const base = cellIndex * 4;
-          data[base] = c.glyphIndex; // R
+          writeOverlayIndex(data, base, indexOf(c));
           data[base + 2] = colorIdx; // B
           protectedLabelCellIndices.add(cellIndex);
         }
@@ -842,7 +852,7 @@ export function AsciiAuraLayerGL({
           const cell = cells[k]!;
           const cellIndex = cell.row * cellsX + cell.col;
           const base = cellIndex * 4;
-          if (!placeBorrowedOverlayGlyph(data, base, cell.glyphIndex)) continue;
+          if (!placeBorrowedOverlayGlyph(data, base, indexOf(cell))) continue;
           protectedLabelCellIndices.add(cellIndex);
           shown.push({ col: cell.col, row: cell.row });
         }
@@ -906,7 +916,7 @@ export function AsciiAuraLayerGL({
             const cell = layout.cells[k]!;
             const cellIndex = cell.row * cellsX + cell.col;
             const base = cellIndex * 4;
-            if (!placeProjectColorOverlayGlyph(data, base, cell.glyphIndex, colorIdx, {
+            if (!placeProjectColorOverlayGlyph(data, base, indexOf(cell), colorIdx, {
               protectedCell: protectedLabelCellIndices.has(cellIndex),
               replaceExisting: entry.clearedAt == null,
             })) continue;
@@ -1165,7 +1175,7 @@ export function AsciiAuraLayerGL({
                 if (cell.col < 0 || cell.col >= cellsX || cell.row < 0 || cell.row >= cellsY) continue;
                 const cellIndex = cell.row * cellsX + cell.col;
                 const base = cellIndex * 4;
-                if (!placeArrowOverlayGlyph(data, base, cell.glyphIndex, {
+                if (!placeArrowOverlayGlyph(data, base, indexOf(cell), {
                   dragHintOccupied: protectedLabelCellIndices.has(cellIndex),
                 })) continue;
                 allShown.push({ col: cell.col, row: cell.row });
@@ -1188,7 +1198,7 @@ export function AsciiAuraLayerGL({
                 if (cell.col < 0 || cell.col >= cellsX || cell.row < 0 || cell.row >= cellsY) continue;
                 const cellIndex = cell.row * cellsX + cell.col;
                 const base = cellIndex * 4;
-                if (!placeGroupOverlayGlyph(data, base, cell.glyphIndex, recordIndex, {
+                if (!placeGroupOverlayGlyph(data, base, indexOf(cell), recordIndex, {
                   protectedCell: protectedLabelCellIndices.has(cellIndex),
                   replaceExisting: true,
                 })) continue;
@@ -1340,6 +1350,12 @@ export function AsciiAuraLayerGL({
       gl.activeTexture(gl.TEXTURE2);
       gl.bindTexture(gl.TEXTURE_2D, g.atlasTex);
       gl.uniform1i(g.bAtlas, 2);
+      if (renderAppOverlays) {
+        gl.activeTexture(gl.TEXTURE5);
+        g.labels.upload(gl);
+        gl.bindTexture(gl.TEXTURE_2D, g.labels.texture ?? g.atlasTex);
+      }
+      gl.uniform1i(g.bLabelAtlas, renderAppOverlays ? 5 : 2);
       gl.activeTexture(gl.TEXTURE3);
       gl.bindTexture(gl.TEXTURE_2D, g.overlayTex);
       gl.uniform1i(g.bOverlay, 3);
@@ -1490,6 +1506,7 @@ export function AsciiAuraLayerGL({
         g.gl.deleteVertexArray(g.vao);
         g.gl.deleteTexture(g.recordsTex);
         g.gl.deleteTexture(g.atlasTex);
+        g.gl.deleteTexture(g.labels.texture);
         g.gl.deleteTexture(g.overlayTex);
         g.gl.deleteTexture(g.stateTexA);
         g.gl.deleteTexture(g.stateTexB);
