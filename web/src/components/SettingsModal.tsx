@@ -1,6 +1,7 @@
 'use client';
 import { MAX_ASCII_OPACITY } from '@/lib/asciiAura/opacity';
 import { ReleaseFooter } from './settings/ReleaseFooter';
+import { CanvasControlsCards } from './CanvasControlsCards';
 import { Fragment, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { colorToCss } from '@/lib/groupColor';
 import {
@@ -1007,6 +1008,9 @@ function ShortcutsTab() {
 
   return (
     <>
+      <SettingsSection title="Canvas controls">
+        <CanvasControlsCards variant="settings" />
+      </SettingsSection>
       <SettingsSection title="App and canvas">
       <input
         className="input settings-model-search"

@@ -1,3 +1,5 @@
+import { controlsAndShortcutsPage } from './controlsAndShortcutsPage';
+
 export const SETTINGS_PAGES = [
   {
     id: 'theme',
@@ -14,14 +16,7 @@ export const SETTINGS_PAGES = [
     keywords:
       'camera automatic pan zoom movement focus selecting group branch project drag edge create generation expand bullets panels reading ruler delete follow-up enter sends newline selection toolbar web search engine google bing duckduckgo yahoo brave ecosia startpage yandex baidu custom URL query normal chat instructions new chat nodes information chunking default',
   },
-  {
-    id: 'shortcuts',
-    group: 'Personalize',
-    label: 'Shortcuts',
-    description: 'Look up shortcuts and customize app keybindings.',
-    keywords:
-      'keyboard keys bindings shortcuts hotkeys navigation focus select undo redo pin zoom wasd pan reset',
-  },
+  controlsAndShortcutsPage,
   {
     id: 'providers',
     group: 'Artificial intelligence',

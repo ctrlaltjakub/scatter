@@ -282,6 +282,9 @@ describe('onboarding copy and entry controls', () => {
     saveOnboardingSession('restore', 'controls');
     render(<WelcomeScreenA />);
     expect(await screen.findByRole('heading', {name: 'Canvas controls'})).toHaveFocus();
+    expect(screen.getAllByRole('heading', { level: 2 }).map(el => el.textContent)).toEqual([
+      'Move and zoom', 'Place a node', 'Explore a term', 'Use the reading ruler',
+    ]);
     expect(initializeSyncCoordinator).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', {name: 'Continue to app'}));
     expect(readOnboardingSession()).toBeNull();

@@ -135,11 +135,28 @@ describe('redesigned settings', () => {
   });
   it('documents contextual shortcuts including editors, image regions, and chat stop', () => {
     render(<SettingsModal open onClose={() => {}} />);
-    go('Shortcuts');
+    go('Controls and shortcuts');
     const table = screen.getByRole('table', { name: 'Contextual shortcuts' });
     expect(table).toHaveTextContent('Stop generating the focused chat answer');
     expect(table).toHaveTextContent('Select image parts over annotations');
     expect(table).toHaveTextContent('Demote a bullet');
+  });
+  it('opens the canvas guide above the shortcut editor without onboarding actions', () => {
+    render(<SettingsModal open onClose={() => {}} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search settings' }), { target: { value: 'trackpad' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Open Controls and shortcuts' }));
+    expect(screen.getByRole('heading', { name: 'Controls and shortcuts', level: 2 })).toBeInTheDocument();
+    const headings = screen.getAllByRole('heading', { level: 3 });
+    expect(headings.slice(0, 2).map(el => el.textContent)).toEqual(['Canvas controls', 'App and canvas']);
+    const guide = within(headings[0]!.closest('section')!);
+    expect(guide.getAllByRole('heading', { level: 4 }).map(el => el.textContent)).toEqual([
+      'Move and zoom', 'Place a node', 'Explore a term', 'Use the reading ruler',
+    ]);
+    expect(guide.queryByRole('button')).toBeNull();
+    expect(screen.queryByText('Setup complete')).toBeNull();
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Find a shortcut' }), { target: { value: 'fullscreen' } });
+    expect(screen.getByRole('button', { name: 'Change Fullscreen shortcut' })).toBeInTheDocument();
+    expect(guide.getByText('WASD')).toBeInTheDocument();
   });
   it('keeps all destinations reachable and identifies the selected page', () => {
     render(<SettingsModal open onClose={() => {}} />);
@@ -242,7 +259,7 @@ describe('redesigned settings', () => {
   it('keeps all shortcuts and does not close the dialog when cancelling rebinding', () => {
     const onClose = vi.fn();
     render(<SettingsModal open onClose={onClose} />);
-    go('Shortcuts');
+    go('Controls and shortcuts');
     for (const action of KEY_ACTIONS)
       expect(within(screen.getByRole('table', { name: 'Canvas and app shortcuts' })).getByText(action.label, { exact: true })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Change Fullscreen shortcut' }));
@@ -325,7 +342,7 @@ describe('redesigned settings', () => {
   it('shows capture state for + alt, saves the second binding, and cancels without closing', () => {
     const onClose = vi.fn();
     render(<SettingsModal open onClose={onClose} />);
-    go('Shortcuts');
+    go('Controls and shortcuts');
     fireEvent.click(screen.getByRole('button', { name: 'Add alternative for Fullscreen' }));
     expect(screen.getByText('Press keys…')).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'j', altKey: true });

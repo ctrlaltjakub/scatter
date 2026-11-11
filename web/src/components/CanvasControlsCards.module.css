@@ -1,0 +1,68 @@
+.grid {
+  display: grid;
+  /* Never more than two columns; stack when the pane can't fit two readable cards. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(240px, 40%)), 1fr));
+  gap: 10px;
+}
+
+.grid > section {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--r-md);
+  background: var(--tint-1);
+}
+
+.grid :is(h2, h4) {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.grid svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--subtext0);
+}
+
+.grid p {
+  margin: 7px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.grid .note {
+  color: var(--subtext0);
+  font-size: 12px;
+}
+
+.grid kbd {
+  white-space: nowrap;
+  padding: 1px 4px;
+  border: 1px solid var(--ui-line);
+  border-radius: 4px;
+  background: var(--base);
+  color: var(--text);
+  font: 0.85em var(--font-mono, monospace);
+}
+
+.term {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.settings > section {
+  padding: 13px 15px;
+  border-color: var(--settings-section-line);
+  background: color-mix(in srgb, var(--base) 60%, transparent);
+}
+
+.settings h4 { font-size: 14px; }
+.settings p { color: var(--subtext1); font-size: 13px; }
+.settings strong { color: var(--text); }
+.settings svg { width: 16px; height: 16px; color: color-mix(in srgb, var(--settings-accent) 45%, var(--text)); }
