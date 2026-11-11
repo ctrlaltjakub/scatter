@@ -1443,7 +1443,7 @@ export function Canvas(props: Props) {
             node={n}
             selected={selected.has(n.id)}
             parentChoice={!parentPick ? undefined : parentPick.candidates.has(n.id) ? 'eligible' :
-              n.id === parentPick.nodeId || n.id === parentPick.fromNodeId ? 'cancel' : 'invalid'}
+              n.id === parentPick.nodeId ? 'cancel' : 'invalid'}
             multiSelected={batchSelected && selected.has(n.id)}
             onSelect={() => {
               const graph = useGraphStore.getState();

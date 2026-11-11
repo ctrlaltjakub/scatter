@@ -2,6 +2,7 @@
 import React, { memo, useId, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { useParentPickStore, type ParentPick } from '@/store/useParentPickStore';
 import { useLiveViewportStore } from '@/store/useLiveViewportStore';
+import { createTetherMotion, stepTetherMotion, tetherCurve, tetherPath } from '@/lib/parentArrowTether';
 import type { Project, Arrow, ScatterNode, ImageQuestionContext } from '@/store/types';
 import { nodeWidth, nodeRenderedH } from '@/lib/nodeSize';
 import { useArrowAnchorsStore } from '@/store/useArrowAnchorsStore';
@@ -85,9 +86,15 @@ interface Props {
  *
  * `smoothing` ∈ [0, 0.5]: 0 ⇒ polyline, 0.25 ≈ natural smooth, 0.4+ puffy.
  */
-function smoothPath(pts: { x: number; y: number }[], smoothing: number): string {
+function smoothPath(pts: { x: number; y: number }[], smoothing: number, controls?: { x: number; y: number }[]): string {
   if (pts.length < 2) return '';
+  controls?.push(pts[0]!);
   if (pts.length === 2) {
+    if (controls) {
+      const [a, b] = [pts[0]!, pts[1]!];
+      controls.push({ x: (2 * a.x + b.x) / 3, y: (2 * a.y + b.y) / 3 },
+        { x: (a.x + 2 * b.x) / 3, y: (a.y + 2 * b.y) / 3 }, b);
+    }
     return `M ${pts[0]!.x} ${pts[0]!.y} L ${pts[1]!.x} ${pts[1]!.y}`;
   }
 
@@ -135,6 +142,7 @@ function smoothPath(pts: { x: number; y: number }[], smoothing: number): string 
       c2y = p2.y - (ty / tn) * ctrlLen;
     }
 
+    controls?.push({ x: c1x, y: c1y }, { x: c2x, y: c2y }, p2);
     d += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
   }
   return d;
@@ -159,6 +167,9 @@ export function ArrowLayer({ project }: Props) {
             via `context-stroke`, so one marker serves every arrow colour. */}
         <marker id="sc-arrowhead-auto" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
+        </marker>
+        <marker id="sc-parent-grip" markerUnits="strokeWidth" viewBox="0 0 2 2" refX="1" refY="1" markerWidth="2" markerHeight="2">
+          <circle cx="1" cy="1" r="1" fill="context-stroke" />
         </marker>
         <marker id="sc-arrowhead-dotted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke" />
@@ -416,22 +427,21 @@ function ParentArrowPreview({ pick, stroke, opacity, smoothing }: {
     const oldPort = rectBorderToward(old, { x: target.x + target.width / 2, y: target.y + target.height / 2 });
     const stored = useArrowAnchorsStore.getState().anchors[arrowId] ?? project.arrows[arrowId]?.anchors;
     const initial = stored && stored.length >= 2 ? stored : [oldPort, rectBorderToward(target, oldPort)];
+    const controls: { x: number; y: number }[] = [];
+    smoothPath(initial, smoothing, controls);
     const start = performance.now(), box = host.getBoundingClientRect(), v = useLiveViewportStore.getState();
-    let x = box.left + v.x + initial[0]!.x * v.zoom, y = box.top + v.y + initial[0]!.y * v.zoom;
+    const motion = createTetherMotion({ x: box.left + v.x + initial[0]!.x * v.zoom, y: box.top + v.y + initial[0]!.y * v.zoom });
     let last = start, frame = 0, lastPath = '';
     const draw = (now: number) => {
       const view = useLiveViewportStore.getState(), bounds = host.getBoundingClientRect();
-      const k = 1 - Math.exp(-Math.max(0, now - last) / 36); last = now;
-      x += (pointer.x - x) * k; y += (pointer.y - y) * k;
+      stepTetherMotion(motion, pointer, now - last); last = now;
+      const { x, y } = motion.grip;
       const a = { x: (x - bounds.left - view.x) / view.zoom, y: (y - bounds.top - view.y) / view.zoom };
       const child = useGraphStore.getState().project?.nodes[nodeId];
       if (!child) return;
       const b = rectBorderToward(rectOf(child), a);
       const t = 1 - Math.pow(1 - Math.min(1, Math.max(0, now - start) / 150), 3);
-      const d = t === 1 ? `M ${a.x} ${a.y} L ${b.x} ${b.y}` : smoothPath(initial.map((p, i) => {
-        const fraction = i / (initial.length - 1);
-        return { x: p.x + (a.x + fraction * (b.x - a.x) - p.x) * t, y: p.y + (a.y + fraction * (b.y - a.y) - p.y) * t };
-      }), smoothing);
+      const d = tetherPath(tetherCurve(motion, a, b, view.zoom), controls, t);
       if (d !== lastPath) { el.setAttribute('d', d); lastPath = d; }
       frame = requestAnimationFrame(draw);
     };
@@ -439,5 +449,5 @@ function ParentArrowPreview({ pick, stroke, opacity, smoothing }: {
     return () => cancelAnimationFrame(frame);
   }, [arrowId, projectId, fromNodeId, nodeId, pointer, smoothing]);
   return <path ref={path} data-parent-preview={arrowId} fill="none" stroke={stroke} strokeWidth={3}
-    strokeOpacity={opacity} strokeLinecap="round" strokeLinejoin="round" markerEnd="url(#sc-arrowhead-auto)" pointerEvents="none" />;
+    strokeOpacity={opacity} strokeLinecap="round" strokeLinejoin="round" markerStart="url(#sc-parent-grip)" markerEnd="url(#sc-arrowhead-auto)" pointerEvents="none" />;
 }

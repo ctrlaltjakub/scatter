@@ -30,7 +30,8 @@ export function ChangeParentAction({ nodeId, nodeCount }: { nodeId: string; node
         <option value="" disabled>Choose a parent…</option>
         {[...pick.candidates].map(id => {
           const node = useGraphStore.getState().project?.nodes[id];
-          return <option key={id} value={id}>{node?.chat?.title || node?.versions[node.currentVersionIndex]?.header || 'Untitled node'}</option>;
+          const name = node?.chat?.title || node?.versions[node.currentVersionIndex]?.header || 'Untitled node';
+          return <option key={id} value={id}>{id === pick.fromNodeId ? `Keep current parent: ${name}` : name}</option>;
         })}
       </select>}
     </div>}

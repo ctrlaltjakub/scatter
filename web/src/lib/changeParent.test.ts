@@ -51,6 +51,16 @@ describe('change parent node', () => {
     useGraphStore.temporal.getState().redo();
     expect(useGraphStore.getState().project!.arrows.oc).toEqual(next.arrows.oc);
   });
+  it('pulses the old parent alongside alternatives; dropping there keeps the exact connection and adds no undo step', () => {
+    const p = fixture(); useGraphStore.getState().setProject(p); useGraphStore.temporal.getState().clear();
+    beginParentPick('child', { x: 1, y: 2 }, false);
+    const targets = useParentPickStore.getState().pick!.candidates;
+    expect([...targets].sort()).toEqual(['new', 'old', 'root']);
+    expect(chooseParent('old')).toBe(false);
+    expect(useParentPickStore.getState().pick).toBeNull();
+    expect(useGraphStore.getState().project!.arrows.oc).toBe(p.arrows.oc);
+    expect(useGraphStore.temporal.getState().pastStates).toHaveLength(0);
+  });
   it('preview/cancellation never touch the graph; changes to the relation invalidate an open picker', () => {
     const p = fixture(); useGraphStore.getState().setProject(p); useGraphStore.temporal.getState().clear();
     const stop = watchParentPick();

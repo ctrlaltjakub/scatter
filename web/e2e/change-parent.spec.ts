@@ -36,6 +36,57 @@ async function seed(page: Page) {
 }
 const parent = (page: Page) => page.evaluate(() => (window as any).pickState().arrows.incoming.fromNodeId);
 
+test('the loose end has a two-shaft-wide grip, trails real pointer turns and can return to the pulsing original parent', async ({ page }) => {
+  await seed(page);
+  await action(page).click();
+  const shaft = preview(page);
+  await expect(shaft).toHaveAttribute('marker-start', 'url(#sc-parent-grip)');
+  const marker = page.locator('marker#sc-parent-grip');
+  await expect(marker).toHaveAttribute('markerUnits', 'strokeWidth');
+  await expect(marker).toHaveAttribute('markerWidth', '2');
+  await expect(marker).toHaveAttribute('markerHeight', '2');
+  await expect(marker.locator('circle')).toHaveAttribute('r', '1');
+  await expect(card(page, 'root')).toHaveAttribute('data-parent-choice', 'eligible');
+  await expect(card(page, 'child')).toHaveAttribute('data-parent-choice', 'cancel');
+  await expect(card(page, 'leaf')).toHaveAttribute('data-parent-choice', 'invalid');
+  await page.mouse.move(1170, 340);
+  await expect.poll(() => shaft.evaluate((el: SVGPathElement) => {
+    const p = el.getPointAtLength(0).matrixTransform(el.getScreenCTM()!);
+    return Math.hypot(p.x - 1170, p.y - 340);
+  })).toBeLessThan(1);
+  await shaft.evaluate((el: SVGPathElement) => {
+    const w = window as any;
+    const displacement = () => {
+      const length = el.getTotalLength(), matrix = el.getScreenCTM()!;
+      const point = (t: number) => el.getPointAtLength(t * length).matrixTransform(matrix);
+      const a = point(0), b = point(1), dx = b.x - a.x, dy = b.y - a.y;
+      return Math.max(...[.25, .5, .75].map(t => {
+        const p = point(t);
+        return Math.abs(dx * (p.y - a.y) - dy * (p.x - a.x)) / (Math.hypot(dx, dy) || 1);
+      }));
+    };
+    w.bend = 0; w.measureBend = displacement;
+    const sample = () => { if (el.isConnected) { w.bend = Math.max(w.bend, displacement()); requestAnimationFrame(sample); } };
+    requestAnimationFrame(sample);
+  });
+  await page.mouse.move(1170, 610, { steps: 12 });
+  await page.mouse.move(1070, 230, { steps: 16 });
+  await expect.poll(() => page.evaluate(() => (window as any).bend)).toBeGreaterThan(6);
+  await expect.poll(() => page.evaluate(() => (window as any).measureBend())).toBeLessThan(.8);
+  // The child's side panel covers the middle of its old parent's header in this layout.
+  const exposed = await card(page, 'root').locator('.node-header').evaluate(header => {
+    const box = header.getBoundingClientRect(), y = box.top + box.height / 2;
+    for (let x = Math.max(0, box.left) + 8; x < Math.min(innerWidth, box.right); x += 8) {
+      if (header.contains(document.elementFromPoint(x, y))) return { x, y };
+    }
+    throw new Error('The original parent needs an exposed header in this fixture');
+  });
+  await page.mouse.click(exposed.x, exposed.y);
+  await expect(shaft).toHaveCount(0);
+  expect(await parent(page)).toBe('root');
+  expect(await page.evaluate(() => (window as any).pickState().arrows.incoming.parentScope)).toBeUndefined();
+});
+
 test('the incoming arrow follows real pointer input, camera gestures do not pick, and the branch moves only on click', async ({ page }) => {
   await seed(page);
   await action(page).click();

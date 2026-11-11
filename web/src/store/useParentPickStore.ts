@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { parentChoices } from '@/lib/changeParent';
 import { useGraphStore } from './useGraphStore';
+import type { Project } from './types';
 
 type Point = { x: number; y: number };
 export interface ParentPick {
@@ -12,11 +13,20 @@ export interface ParentPick {
 }
 export const useParentPickStore = create<{ pick: ParentPick | null }>(() => ({ pick: null }));
 
+function dropTargets(project: Project, nodeId: string) {
+  const { arrow, candidates } = parentChoices(project, nodeId);
+  if (!arrow || !candidates.size) return null; // still requires a real alternative
+  // Returning the loose end to its old parent is a valid drop, not a graph edit.
+  candidates.add(arrow.fromNodeId);
+  return { arrow, candidates };
+}
+
 export function beginParentPick(nodeId: string, pointer: Point, keyboard: boolean): void {
   const graph = useGraphStore.getState(), project = graph.project;
   if (!project || project.selection.length !== 1 || project.selection[0] !== nodeId) return;
-  const { arrow, candidates } = parentChoices(project, nodeId);
-  if (!arrow || !candidates.size) return;
+  const targets = dropTargets(project, nodeId);
+  if (!targets) return;
+  const { arrow, candidates } = targets;
   if (graph.panTo) graph.requestPanTo(null);
   useParentPickStore.setState({ pick: { projectId: project.id, nodeId, arrowId: arrow.id, fromNodeId: arrow.fromNodeId,
     candidates, startedAt: performance.now(), pointer: { ...pointer }, keyboard } });
@@ -43,8 +53,8 @@ export function watchParentPick(): () => void {
       || !project.nodes[pick.nodeId] || state.projectLoadRevision !== previous.projectLoadRevision) { cancelParentPick(); return; }
     if (previous.project?.arrows === project.arrows && (previous.project.nodes === project.nodes
       || Object.keys(previous.project.nodes).length === Object.keys(project.nodes).length)) return;
-    const { arrow, candidates } = parentChoices(project, pick.nodeId);
-    if (!arrow || arrow.id !== pick.arrowId || arrow.fromNodeId !== pick.fromNodeId || !candidates.size) { cancelParentPick(); return; }
-    useParentPickStore.setState({ pick: { ...pick, candidates } });
+    const targets = dropTargets(project, pick.nodeId);
+    if (!targets || targets.arrow.id !== pick.arrowId || targets.arrow.fromNodeId !== pick.fromNodeId) { cancelParentPick(); return; }
+    useParentPickStore.setState({ pick: { ...pick, candidates: targets.candidates } });
   });
 }
