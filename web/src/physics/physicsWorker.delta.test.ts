@@ -13,6 +13,7 @@ type TickMessage = {
   nodes: { id: string; x: number; y: number }[];
   arrowAnchors: Record<string, { x: number; y: number }[]>;
   removedArrowIds?: string[];
+  routeRevision?: number;
 };
 
 describe('physics worker delta output', () => {
@@ -57,6 +58,14 @@ describe('physics worker delta output', () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]!.arrowAnchors).toEqual({});
     expect(messages[0]!.removedArrowIds).toEqual(['ab']);
+  });
+  it('acknowledges a replaced route and publishes its fresh geometry even for frozen nodes', () => {
+    dispatchMessage({ type: 'remove-links', ids: ['ab'] });
+    dispatchMessage({ type: 'add-link', link: { arrowId: 'ab', source: 'b', target: 'a', kind: 'auto', gravitates: true, routeRevision: 3 } });
+    stopAutoTimer(); tickOnce();
+    expect(messages.at(-1)?.routeRevision).toBe(3);
+    const anchors = messages.at(-1)?.arrowAnchors.ab!;
+    expect(anchors[0]!.x).toBeGreaterThan(anchors.at(-1)!.x);
   });
   it('publishes image source geometry without moving nodes or waking layout forces', () => {
     dispatchMessage({ type: 'set-size', id: 'a', width: 624, height: 120 });

@@ -12,8 +12,7 @@ import { getActiveProvider } from '@/store/providerSelectors';
 import { getAdapter, resolveBaseUrl, modelSupportsWebSearch } from '@/providers/registry';
 import { newId } from '@/lib/ids';
 import { spawnNearParent } from '@/lib/generate';
-import { currentContentType } from '@/lib/nodeContentType';
-import { isEditableImageMedia } from '@/lib/imageEditActions';
+import { chatContextParentId, structuralParent } from '@/lib/changeParent';
 import { chatImageInput } from './imageInput';
 import { snapshotSourcePolicy, retrieveProjectSources, formatSourceEvidenceBlock,
   type RetrievedSourcePassage } from '@/lib/sourceRetrieval';
@@ -60,11 +59,9 @@ export function startChat(parentId: string, origin: Partial<Pick<Arrow, 'sourceA
   const project = graph.project;
   const parent = project?.nodes[parentId];
   if (!project || !parent) return null;
-  const usableContext = currentContentType(parent) !== 'media'
-    || isEditableImageMedia(parent.versions[parent.currentVersionIndex]?.media);
   const bodyHeight = chatInitialBodyHeight(typeof window === 'undefined' ? 900 : window.innerHeight);
   // Starting a chat never calls AI. Even a generating parent allows a draft.
-  const node = createChatNode({ id: newId(), createdAt: Date.now(), parentNodeId: usableContext ? parentId : undefined,
+  const node = createChatNode({ id: newId(), createdAt: Date.now(), parentNodeId: chatContextParentId(parent),
     parentSnapshot: origin.sourceImage ? captureChatImageParent(parent, origin.sourceImage, newId()) : undefined,
     informationChunking: useSettingsStore.getState().defaultChatInformationChunking,
     groupId: parent.groupId, position: spawnNearParent(parent, Object.values(project.nodes), CHAT_NODE_WIDTH,
@@ -253,15 +250,16 @@ export async function submitChat(nodeId: string, options: {
   if ((!question && !attachments?.length) || (regenerate && !lastRef)) return;
   const parent = node.chat.parentNodeId ? project.nodes[node.chat.parentNodeId] : undefined;
   const previousParent = previous?.chat?.parentSnapshotId ? node.chat.parentSnapshots[previous.chat.parentSnapshotId] : undefined;
+  const incoming = structuralParent(project, nodeId);
   // Older selection-created chats stored the region only on their arrow. Adopt
   // it once, then retain it independently of the arrow and mutable parent.
   const legacyOrigin = !node.chat.originSnapshotId && parent
-    ? Object.values(project.arrows).find(arrow => arrow.kind === 'auto' && arrow.toNodeId === nodeId && arrow.fromNodeId === parent.id)?.sourceImage
+    ? (incoming?.fromNodeId === parent.id ? incoming.sourceImage : undefined)
     : undefined;
   const originSnapshot = (node.chat.originSnapshotId ? node.chat.parentSnapshots[node.chat.originSnapshotId] : undefined)
     ?? (legacyOrigin && parent ? captureChatImageParent(parent, legacyOrigin, newId()) : undefined);
   const fixedSnapshot = options.parentSnapshot
-    ?? (options.regenerate && (previousParent?.selectedText || previousParent?.imageContext) ? previousParent : originSnapshot);
+    ?? (options.regenerate && incoming?.parentScope !== 'node' && (previousParent?.selectedText || previousParent?.imageContext) ? previousParent : originSnapshot);
   const availability = chatAvailability(fixedSnapshot ? undefined : parent);
   if (!availability.available) { runtime.view(nodeId, { error: availability.reason }); return; }
   const evidencePanel = useCitationPanelStore.getState();

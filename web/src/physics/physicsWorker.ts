@@ -221,6 +221,7 @@ type LinkInit = {
   kind: 'auto' | 'dotted';
   gravitates: boolean;
   arrowId: string;
+  routeRevision?: number;
   /** Optional persisted chain positions to seed the rope at last-saved shape. */
   anchors?: { x: number; y: number }[];
 };
@@ -252,11 +253,21 @@ type OutMsg = {
   arrowAnchors: Record<string /* arrowId */, { x: number; y: number }[]>;
   /** Chains removed since the previous message. */
   removedArrowIds?: string[];
+  routeRevision?: number;
   placedNodes?: PlacedNode[];
 };
 
 let nodes: SimNode[] = [];
 let links: SimLink[] = [];
+// Worker messages are ordered, but may arrive after the main thread has
+// committed a new endpoint for the same persistent arrow ID.
+let routeRevision = 0;
+function acceptRoute(link: LinkInit) {
+  if (link.routeRevision != null) {
+    routeRevision = Math.max(routeRevision, link.routeRevision);
+    lastEmittedAnchors.delete(link.arrowId);
+  }
+}
 let sim: Simulation<SimNode, SimLink> | null = null;
 
 /**
@@ -354,7 +365,7 @@ function runTickSideEffects(placedNodes?: PlacedNode[]): void {
   const arrowAnchors = verletRope.snapshot();
 
   if (forceEmitEveryTick) {
-    emit({ type: 'tick', nodes: realNodes, arrowAnchors, placedNodes } as OutMsg);
+    emit({ type: 'tick', nodes: realNodes, arrowAnchors, placedNodes, routeRevision } as OutMsg);
     return;
   }
 
@@ -401,6 +412,7 @@ function runTickSideEffects(placedNodes?: PlacedNode[]): void {
     type: 'tick',
     nodes: changedNodes,
     arrowAnchors: changedAnchors,
+    routeRevision,
     removedArrowIds: removedArrowIds.length > 0 ? removedArrowIds : undefined,
     ...(placedNodes?.length ? { placedNodes } : {}),
   } as OutMsg);
@@ -526,6 +538,7 @@ export function dispatchMessage(m: InMsg): void {
       draggingIds.clear();
       lastEmittedNode.clear();
       lastEmittedAnchors.clear();
+      routeRevision = 0;
       // Start each project (and each headless test) from a self-contained
       // configuration. Canvas supplies its hydrated settings here so restored
       // ropes are compacted and accepted under the same values the worker will
@@ -603,6 +616,7 @@ export function dispatchMessage(m: InMsg): void {
       for (const input of m.links) {
         if (links.some(l => l.arrowId === input.arrowId) || !realNode(input.source) || !realNode(input.target)) continue;
         links.push({ ...input, entranceTicks: 12 });
+        acceptRoute(input);
         ensureRopeChainFor(input.source, input.target, input.arrowId, input.anchors);
       }
       rebuildLinkedEdges();
@@ -623,6 +637,7 @@ export function dispatchMessage(m: InMsg): void {
       rebuild(null);
       break;
     case 'add-link':
+      acceptRoute(m.link);
       links.push({
         source: m.link.source, target: m.link.target,
         kind: m.link.kind, gravitates: m.link.gravitates, arrowId: m.link.arrowId,

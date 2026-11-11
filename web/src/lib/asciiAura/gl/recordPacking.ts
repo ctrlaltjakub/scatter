@@ -78,6 +78,8 @@ export const WAVE_RIPPLE = 1;
 export const WAVE_COLLAPSE = 2;
 /** 'unfocus' — the receding ripple (crest drains inward). */
 export const WAVE_RECEDE = 3;
+/** Same expanding wavelet as focus, at lower amplitude while choosing a parent. */
+export const WAVE_PARENT_CHOICE = 4;
 
 /** Numeric tint: rgb in [0, 1], plus the two steady alpha tiers.
  *  Resolved per accent by the renderer (DOM read, cached) and passed
@@ -102,6 +104,7 @@ export function packRecords(
   now: number,
   resolveTint: (accent: GroupColor | null) => ResolvedTintNumeric,
   out: Float32Array,
+  parentPick?: { candidates: ReadonlySet<string>; startedAt: number } | null,
 ): number {
   let n = 0;
   let truncated = false;
@@ -132,6 +135,10 @@ export function packRecords(
     out[o + 13] = -1;
     out[o + 14] = -1;
     out[o + 15] = -1;
+    if (!wave && parentPick?.candidates.has(a.id)) {
+      out[o + 11] = WAVE_PARENT_CHOICE;
+      out[o + 12] = Math.max(0, now - parentPick.startedAt) % 850;
+    }
     if (wave && wave.kind === 'focus') {
       const echoes = focusEchoes.get(a.id);
       if (echoes) {

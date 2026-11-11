@@ -13,6 +13,8 @@ import { ReadingHighlighter } from './ReadingHighlighter';
 import { SelectionToolbar } from './SelectionToolbar';
 import { NodeSelectionToolbar } from './NodeSelectionToolbar';
 import { useNodeMultiSelection, toggleNodeSelection } from './useNodeMultiSelection';
+import { useParentPickInput } from './useParentPickInput';
+import { useParentPickStore } from '@/store/useParentPickStore';
 import { RelationHoverPreview } from './RelationHoverPreview';
 import { NodeOverviewController } from './NodeOverviewController';
 import { CanvasToolbar } from './CanvasToolbar';
@@ -244,6 +246,7 @@ export function Canvas(props: Props) {
   const [physicsFailed, setPhysicsFailed] = useState(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const parentPick = useParentPickInput(containerRef);
   useNodeSelectionDismiss(containerRef);
   const multiSelection = useNodeMultiSelection(containerRef);
   const physicsRef = useRef<PhysicsClient | null>(null);
@@ -259,6 +262,7 @@ export function Canvas(props: Props) {
   sidebarCollapsedRef.current = props.sidebarCollapsed;
   const knownNodesRef = useRef<Set<string>>(new Set());
   const knownArrowsRef = useRef<Map<string, Arrow>>(new Map());
+  const prepareRerouteRef = useRef<((id: string) => number) | null>(null);
   const lastPhysicsNodeStateRef = useRef<Record<string, PhysicsNodeState>>({});
   // Drag-tracking: the kind of in-flight drag (so we know whether to apply
   // edge-pan), and the accumulated camera pan during this drag — used to
@@ -461,6 +465,17 @@ export function Canvas(props: Props) {
       placedNodes: PlacedNode[];
     };
     let pendingTick: TickPayload | null = null;
+    const awaitingRoute = new Map<string, number>();
+    let nextRouteRevision = 0;
+    prepareRerouteRef.current = id => {
+      awaitingRoute.set(id, ++nextRouteRevision);
+      if (pendingTick) {
+        pendingTick.arrowAnchors = { ...pendingTick.arrowAnchors };
+        delete pendingTick.arrowAnchors[id];
+        pendingTick.removedArrowIds = pendingTick.removedArrowIds.filter(key => key !== id);
+      }
+      return nextRouteRevision;
+    };
     let rafId: number | null = null;
     const hasRaf = typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function';
     const flushPendingTick = () => {
@@ -520,8 +535,15 @@ export function Canvas(props: Props) {
         onPhysicsTickRef.current(allPositions, useArrowAnchorsStore.getState().anchors);
       }
     };
-    const unsubscribeTick = phx.onTick((positions, arrowAnchors, removedArrowIds, placedNodes = []) => {
+    const unsubscribeTick = phx.onTick((positions, arrowAnchors, removedArrowIds, placedNodes = [], revision = 0) => {
       if (!isCurrentSnapshot()) return;
+      if (awaitingRoute.size) {
+        for (const [id, expected] of awaitingRoute) if (revision >= expected) awaitingRoute.delete(id);
+        if (awaitingRoute.size) {
+          arrowAnchors = Object.fromEntries(Object.entries(arrowAnchors).filter(([id]) => !awaitingRoute.has(id)));
+          removedArrowIds = removedArrowIds.filter(id => !awaitingRoute.has(id));
+        }
+      }
       pendingTick = pendingTick
         ? {
             positions: [...pendingTick.positions, ...positions],
@@ -552,6 +574,7 @@ export function Canvas(props: Props) {
       }
       onPhysicsReadyRef.current?.(null);
       unsubscribeTick();
+      prepareRerouteRef.current = null;
       unsubscribeImageGeometry();
       imageSourceSyncRef.current = null;
       phx.terminate();
@@ -653,13 +676,15 @@ export function Canvas(props: Props) {
       if (!previous || previous.kind !== a.kind || previous.fromNodeId !== a.fromNodeId || previous.toNodeId !== a.toNodeId) {
         // Promotion (and its undo) changes physics even though the arrow ID
         // survives. Preserve the routed shape while replacing its link type.
+        const rerouted = previous && (previous.fromNodeId !== a.fromNodeId || previous.toNodeId !== a.toNodeId);
         if (previous) phx.removeLinks([id]);
+        if (rerouted) useArrowAnchorsStore.getState().removeAnchors([id]);
         const currentPhysicsConfig = {
           ...DEFAULT_PHYSICS_CONFIG,
           ...(useSettingsStore.getState().physicsConfig ?? {}),
         };
         const compactAnchors = compactRopeAnchors(
-          (previous && useArrowAnchorsStore.getState().anchors[id]) || a.anchors,
+          (!rerouted && previous && useArrowAnchorsStore.getState().anchors[id]) || a.anchors,
           currentPhysicsConfig.ropeMaxSegmentLength,
           currentPhysicsConfig.ropeMaxAnchorCount,
         );
@@ -668,6 +693,7 @@ export function Canvas(props: Props) {
           kind: a.kind, gravitates: !!a.gravitates,
           arrowId: a.id,
           anchors: compactAnchors,
+          ...(rerouted ? { routeRevision: prepareRerouteRef.current?.(id) } : {}),
         };
         if (insertedIds.has(a.fromNodeId) || insertedIds.has(a.toNodeId)) connections.push(link);
         else phx.addLink(link);
@@ -1132,8 +1158,21 @@ export function Canvas(props: Props) {
       useLiveViewportStore.getState().setViewport(next);
       scheduleWheelZoomCommit();
     };
+    const onPickWheel = (e: WheelEvent) => {
+      const tgt = e.target instanceof Element ? e.target : null;
+      if (!useParentPickStore.getState().pick || !tgt?.closest('.node') || tgt.closest('.node-followup-bar')) return;
+      // A candidate's scrollport must not consume the picker's camera gesture.
+      if (e.ctrlKey || e.metaKey) onForceZoom(e);
+      else {
+        e.preventDefault();
+        const next = wheelZoomTarget(useLiveViewportStore.getState(), e.clientX, e.clientY, e.deltaY, el.getBoundingClientRect());
+        if (next) { userPannedRef.current = true; useLiveViewportStore.getState().setViewport(next); scheduleWheelZoomCommit(); }
+      }
+      e.stopPropagation();
+    };
+    el.addEventListener('wheel', onPickWheel, { capture: true, passive: false });
     el.addEventListener('wheel', onForceZoom, { passive: false });
-    return () => { el.removeEventListener('wheel', onForceZoom); pinch.dispose(); };
+    return () => { el.removeEventListener('wheel', onPickWheel, true); el.removeEventListener('wheel', onForceZoom); pinch.dispose(); };
   }, [project?.id, requestPanTo, scheduleWheelZoomCommit]);
 
   if (!project) return null;
@@ -1154,7 +1193,7 @@ export function Canvas(props: Props) {
     // Scrollports remain usable without focusing their node. Over those, the
     // selected node's body or either floating panel, ordinary wheel input
     // belongs to that UI rather than the canvas camera.
-    if (tgt?.closest('.chat-scroll, .interactive-build, .node.selected, .side-panel, .citations-panel')) return;
+    if (tgt?.closest(parentPick ? '.side-panel, .citations-panel, .node-followup-bar' : '.chat-scroll, .interactive-build, .node.selected, .side-panel, .citations-panel')) return;
     // User took camera control — cancel any active pan/follow loop.
     userPannedRef.current = true;
     e.preventDefault();
@@ -1173,6 +1212,7 @@ export function Canvas(props: Props) {
     scheduleWheelZoomCommit();
   };
   const asciiLabelTargetAt = (clientX: number, clientY: number): AsciiLabelTarget | null => {
+    if (parentPick) return null;
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return null;
     const x = clientX - rect.left;
@@ -1328,7 +1368,7 @@ export function Canvas(props: Props) {
     // any selected node AND any selected group so the empty canvas
     // is the universal "back out" gesture (C.5). Also clears the search
     // query (a click — not a drag/pan — dismisses search + its highlights).
-    if (!d.moved && d.onEmpty) {
+    if (!d.moved && d.onEmpty && !parentPick) {
       setSelection([]);
       selectGroup(null);
       useGraphStore.getState().setSearchQuery('');
@@ -1357,11 +1397,12 @@ export function Canvas(props: Props) {
       ref={containerRef}
       className={'canvas-host' + (panning ? ' panning' : '') + (asciiLabelHovered ? ' ascii-label-hover' : '')}
       data-node-multiselect={batchSelected ? '' : undefined}
+      data-choosing-parent={parentPick ? '' : undefined}
       style={{
         '--node-selection-sidebar-inset': props.sidebarCollapsed && !props.sidebarPeeking ? '0px' : '240px',
       } as React.CSSProperties}
       {...multiSelection.handlers}
-      onPointerDownCapture={event => { stopInitialRootFollow(); multiSelection.handlers.onPointerDownCapture(event); }}
+      onPointerDownCapture={event => { stopInitialRootFollow(); if (!parentPick) multiSelection.handlers.onPointerDownCapture(event); }}
       onWheelCapture={stopInitialRootFollow}
       onKeyDownCapture={stopInitialRootFollow}
       onPointerDown={onPointerDown}
@@ -1401,6 +1442,8 @@ export function Canvas(props: Props) {
             key={n.id}
             node={n}
             selected={selected.has(n.id)}
+            parentChoice={!parentPick ? undefined : parentPick.candidates.has(n.id) ? 'eligible' :
+              n.id === parentPick.nodeId || n.id === parentPick.fromNodeId ? 'cancel' : 'invalid'}
             multiSelected={batchSelected && selected.has(n.id)}
             onSelect={() => {
               const graph = useGraphStore.getState();

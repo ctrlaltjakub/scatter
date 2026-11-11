@@ -64,11 +64,13 @@ export function paintArrowDimming(
   project: Pick<Project, 'arrows' | 'selection'> | null,
   viewport: { x: number; y: number; zoom: number },
   cellPx: number, cellsX: number, cellsY: number,
+  hiddenArrowId?: string,
 ): void {
   if (!project) return;
   const radius = ARROW_DEMOTE_RADIUS_PX;
   const radiusSq = radius * radius;
   for (const id in anchors) {
+    if (id === hiddenArrowId) continue;
     const arrow = project.arrows[id];
     if (!arrow || !isArrowVisible(arrow, project.selection)) continue;
     const chain = anchors[id]!;

@@ -65,6 +65,7 @@ import { ChatContextUsage } from '@/components/chat/ChatContextUsage';
 interface Props {
   node: ScatterNode;
   selected: boolean;
+  parentChoice?: 'eligible' | 'invalid' | 'cancel';
   multiSelected?: boolean;
   onSelect: () => void;
   onReferenceClick: (term: string, opts: { withModifier: boolean }) => void;
@@ -1082,6 +1083,7 @@ function NodeViewImpl(p: Props) {
       // The floating side panel locates its anchor node by this id (it
       // lives in a sibling subtree, so it can't reach the node via refs).
       data-node-id={p.node.id}
+      data-parent-choice={p.parentChoice}
       data-node-birth={birth?.phase}
       lang={languageInfo(v?.language).locale}
       data-language-direction={p.node.chat ? undefined : languageDirection(v?.language)}
@@ -1390,6 +1392,7 @@ export const NodeView = memo(NodeViewImpl, (prev, next) => {
   return (
     prev.node === next.node
     && prev.selected === next.selected
+    && prev.parentChoice === next.parentChoice
     && prev.multiSelected === next.multiSelected
   );
 });

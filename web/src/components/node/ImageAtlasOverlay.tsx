@@ -9,6 +9,7 @@ import { imageArrowCandidates, imageArrowContext, imageMediaKey } from '@/lib/im
 import { isArrowVisible } from '@/lib/arrowPolicy';
 import { DEFAULT_PHYSICS_CONFIG } from '@/physics/defaults';
 import { ImageArrowItem } from '@/components/canvas/ArrowLayer';
+import { useParentPickStore } from '@/store/useParentPickStore';
 import { nodeWidth, nodeRenderedH } from '@/lib/nodeSize';
 
 const AtlasInk = memo(function AtlasInk({ arrow, context, projectId, smoothing }: {
@@ -17,8 +18,9 @@ const AtlasInk = memo(function AtlasInk({ arrow, context, projectId, smoothing }
   const from = useGraphStore((s) => s.project?.nodes[arrow.fromNodeId]);
   const to = useGraphStore((s) => s.project?.nodes[arrow.toNodeId]);
   const visible = useGraphStore((s) => isArrowVisible(arrow, s.project?.selection ?? []));
+  const picking = useParentPickStore(s => s.pick?.projectId === projectId && s.pick.arrowId === arrow.id);
   const highlighted = useGraphStore((s) => s.highlight?.arrowId === arrow.id && s.highlight.source !== 'node');
-  if (!visible) return null;
+  if (!visible || picking) return null;
   return <ImageArrowItem arrow={arrow} from={from} to={to} projectId={projectId}
     imageContext={context} ropeSmoothing={smoothing} isHighlighted={highlighted} overlayOnly />;
 });

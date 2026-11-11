@@ -59,6 +59,7 @@ import {
   WAVE_RIPPLE,
   WAVE_COLLAPSE,
   WAVE_RECEDE,
+  WAVE_PARENT_CHOICE,
 } from './recordPacking';
 import { MAX_PALETTE } from './paletteGL';
 import { LABEL_TILE, LABEL_COLUMNS } from './labelAtlas';
@@ -194,6 +195,7 @@ float singleRipple(float dist, bool receding, float elapsedMs) {
 // (elapsedMs, startRadius).
 float waveBonus(float dist, float kind, vec4 t3) {
   if (kind < 0.5) return 0.0;
+  if (abs(kind - ${fmt(WAVE_PARENT_CHOICE)}) < 0.5) return 0.42 * singleRipple(dist, false, t3.x);
   if (abs(kind - WAVE_COLLAPSE_K) < 0.5) {
     float elapsedMs = t3.x;
     float startRadius = t3.y;

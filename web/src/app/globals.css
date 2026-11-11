@@ -3446,6 +3446,17 @@ select.input {
 }
 /* faded-but-not-disabled (keeps the title tooltip working) shouldn't get the hover highlight */
 .side-action--disabled:hover { background: transparent; color: var(--subtext1); }
+.change-parent-action > .side-action[aria-disabled="true"],
+.change-parent-action > .side-action[aria-disabled="true"] * { cursor: var(--cur-ban) !important; }
+.change-parent-action > .side-action[aria-disabled="true"]:hover { background: transparent; color: var(--subtext1); }
+.change-parent-help { padding: 2px 8px 5px; font-size: 12px; line-height: 1.4; color: var(--subtext1); }
+.change-parent-help select { width: 100%; margin-top: 4px; }
+.canvas-host[data-choosing-parent] .sc-arrow-hit,
+.node[data-parent-choice] iframe { pointer-events: none !important; }
+.node[data-parent-choice] { user-select: none; }
+.node[data-parent-choice="eligible"] { --parent-pick-cursor: var(--cur-click); }
+.node[data-parent-choice="invalid"], .node[data-parent-choice="cancel"] { --parent-pick-cursor: var(--cur-ban); }
+.node[data-parent-choice], .node[data-parent-choice] :where(div, span, p, h2, li, strong) { cursor: var(--parent-pick-cursor) !important; }
 .side-action.toggled {
   background: var(--tint-4);
   color: var(--text);

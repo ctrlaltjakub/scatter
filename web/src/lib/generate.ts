@@ -1,4 +1,5 @@
 import { normalizeLanguage, versionLanguage } from './languages';
+import { parentImageForRequest, structuralParent } from './changeParent';
 import { generationLanguagePrompt } from './generationLanguage';
 import { configuredPrompt } from '@/lib/configuredPrompt';
 import { mergeGoogleSearchSuggestions } from './googleSearchSuggestions';
@@ -112,7 +113,7 @@ function contextFor(parentId: string | null, childId?: string): PromptContext {
   const parent = proj.nodes[parentId];
   if (!parent) return { parent: null, grandparent: null };
   const sourceAnswer = childId ? Object.values(proj.arrows).find((arrow) =>
-    arrow.toNodeId === childId && arrow.fromNodeId === parentId)?.sourceAnswer : undefined;
+    arrow.kind === 'auto' && arrow.toNodeId === childId && arrow.fromNodeId === parentId)?.sourceAnswer : undefined;
   const pv = sourceAnswer ? parent.versions.find((version) => version.createdAt === sourceAnswer.versionCreatedAt)
     : parent.versions[parent.currentVersionIndex];
   if (parent.chat) return {
@@ -918,9 +919,10 @@ async function streamIntoVersion(
     // (incl. any corrective restructure) is complete — the chip pass runs
     // with `generating` still true but no skeleton.
     if (genProjectId) updateGenNode(genProjectId, nodeId, { streamingText: true });
+    const requestProject = genProjectId ? getGenProject(genProjectId) : undefined;
     let pass1 = await streamChunks({
       nodeId, variant, parentIdForContext, signal: ctrl.signal, onAcc,
-      imageContext: genProjectId ? getGenProject(genProjectId)?.nodes[nodeId]?.versions[streamVersionIndex()]?.imageContext : undefined,
+      imageContext: parentImageForRequest(requestProject, nodeId, requestProject?.nodes[nodeId]?.versions[streamVersionIndex()]),
       commitGate: makeBulletCommitGate(),
     });
     if (superseded()) return;
@@ -1524,6 +1526,7 @@ function beginBurst(
       maxL1Bullets: opts.draftMeta.maxL1Bullets,
       contentType: opts.draftMeta.contentType,
       language: opts.draftMeta.language ?? versionLanguage(cur),
+      ...rewriteParentImage(opts.draftMeta),
     } : {}),
     ...(opts?.draftMeta?.selectedTextQuestion === null
       ? { selectedTextQuestion: undefined }
@@ -1765,6 +1768,7 @@ type RewriteVersionMeta = {
   contentType?: ContentType;
   /** Undefined inherits, a string stores/replaces, null explicitly clears. */
   selectedTextQuestion?: string | null;
+  parentImage?: ImageQuestionContext | null;
   width?: number;
   /** Unrenumbered sources already represented by markers in the working body. */
   sources?: NodeSource[];
@@ -1773,6 +1777,12 @@ type RewriteVersionMeta = {
   webSearched?: boolean;
   webSearchFailed?: boolean;
 };
+
+function rewriteParentImage(meta: RewriteVersionMeta): Partial<NodeVersion> {
+  return meta.parentImage === undefined ? {} : {
+    imageContext: meta.parentImage ?? undefined, imageQuestion: undefined, imageTitleState: undefined,
+  };
+}
 
 /**
  * Called at the end of every rewrite — successful, aborted, or
@@ -1842,6 +1852,7 @@ function finishRewrite(
     } = current;
     const newVersion: NodeVersion = {
       ...currentTextMeta,
+      ...rewriteParentImage(newVersionMeta),
       language: newVersionMeta.language ?? versionLanguage(current),
       answerEnrichmentId: undefined,
       header: newVersionMeta.header,
@@ -2064,16 +2075,22 @@ async function runWholeRewrite(opts: {
   evidenceSources?: NodeSource[];
   evidenceGoogleSearchSuggestions?: string[];
 }): Promise<CommittedRewriteCitationCtx | null> {
-  const { nodeId, variant, parentIdForContext, newVersionMeta, maxOutputTokens } = opts;
+  const { nodeId, variant, parentIdForContext, maxOutputTokens } = opts;
   const generationProjectId = activeGenerationProjectId();
   const runChips = opts.runChips ?? true;
   const statusLabel = opts.statusLabel ?? statusVerb(variant.kind);
 
   // Old sources from the pre-rewrite version — carried over for markers the model
   // preserves on unchanged text (read before finishRewrite appends a new version).
-  const startNode = useGraphStore.getState().project?.nodes[nodeId];
+  const startProject = useGraphStore.getState().project;
+  const startNode = startProject?.nodes[nodeId];
   const supersededDraft = useRewriteStore.getState().snapshot[nodeId];
   const sourceIndex = supersededDraft?.preBurstVersionIndex ?? startNode?.currentVersionIndex;
+  const requestImage = sourceIndex == null ? undefined
+    : parentImageForRequest(startProject, nodeId, startNode?.versions[sourceIndex]);
+  const newVersionMeta = startProject && structuralParent(startProject, nodeId)?.parentScope === 'node'
+    ? { ...opts.newVersionMeta, parentImage: requestImage ?? null, selectedTextQuestion: opts.newVersionMeta.selectedTextQuestion ?? null }
+    : opts.newVersionMeta;
   const oldSources: NodeSource[] = opts.evidenceSources
     ? []
     : sourceIndex == null
@@ -2124,7 +2141,7 @@ async function runWholeRewrite(opts: {
     // Then stream the new content in.
     const streamRes = await streamChunks({
       nodeId, variant, parentIdForContext,
-      imageContext: sourceIndex == null ? undefined : startNode?.versions[sourceIndex]?.imageContext,
+      imageContext: requestImage,
       signal: controller.signal,
       onAcc: (sanitizedAcc) => {
         if (sanitizedAcc.trim()) markGenerationTextReceived(snapshot.generationSessionId);
@@ -2465,6 +2482,7 @@ function selectedQuestionContext(
   incoming: Arrow | undefined,
   explain: boolean,
 ): SelectedQuestionContext | null {
+  if (incoming?.parentScope === 'node') return null;
   if (version.headerParts?.question?.trim() && version.headerParts.subject.trim()) {
     return {
       selectedText: normalizeHeaderText(version.headerParts.subject),
@@ -2517,11 +2535,11 @@ export async function generateEmptyTextNode(nodeId: string, prompt: string): Pro
   const incoming = Object.values(graph.project!.arrows).find(arrow => arrow.kind === 'auto' && arrow.toNodeId === nodeId);
   const parentId = incoming?.fromNodeId ?? null;
   // Recover blanks created before selected image context was saved on versions.
-  const imageContext = current.imageContext ?? incoming?.sourceImage;
+  const imageContext = parentImageForRequest(graph.project, nodeId, current);
   const headerParts: HeaderParts = { subject: question, ...(explain ? { suffix: 'explained' } : {}) };
   graph.updateNode(nodeId, { generationError: undefined, versions: node.versions.map((version, index) =>
     index === node.currentVersionIndex ? { ...version, emptyText: false, initialTextFrame: true, createdAt,
-      ...(imageContext ? { imageContext: structuredClone(imageContext) } : {}),
+      imageContext: imageContext ? structuredClone(imageContext) : undefined,
       language: normalizeLanguage(settings.generationLanguage),
       header: flattenHeaderParts(headerParts), headerParts, generatedBy: explain ? 'explain' : 'follow-up' } : version) });
   await streamIntoVersion(nodeId, explain ? { kind: 'explain', term: question } : { kind: 'follow-up', question }, parentId,
@@ -2887,14 +2905,17 @@ export async function regenerateNode(nodeId: string): Promise<void> {
     const incoming = Object.values(proj.arrows).find(a => a.kind === 'auto' && a.toNodeId === nodeId);
     const headerParts = resolveVersionHeaderParts(node, cur, proj.arrows);
     const selectedQuestion = selectedQuestionContext(cur, incoming, isExplain);
+    const standaloneQuestion = incoming?.parentScope === 'node'
+      ? cur.headerParts?.question || cur.selectedTextQuestion || cur.imageQuestion
+      : cur.imageContext?.regions.length ? cur.imageQuestion : undefined;
     const variant: TaskVariant = isExplain
       ? {
           kind: 'explain',
-          term: cur.imageContext?.regions.length && cur.imageQuestion ? cur.imageQuestion : selectedQuestion
+          term: standaloneQuestion || (selectedQuestion
             ? selectedQuestionExplainTerm(selectedQuestion)
-            : semanticHeaderText(headerParts),
+            : semanticHeaderText(headerParts)),
         }
-      : cur.imageContext?.regions.length && cur.imageQuestion ? { kind: 'follow-up', question: cur.imageQuestion }
+      : standaloneQuestion ? { kind: 'follow-up', question: standaloneQuestion }
       : selectedQuestion
         ? {
             kind: 'follow-up',
@@ -3892,6 +3913,16 @@ export function translateBoundsToRaw(
 export async function retryGeneration(nodeId: string): Promise<void> {
   const args = retryArgs.get(nodeId);
   if (!args) return;
+  const project = useGraphStore.getState().project;
+  const node = project?.nodes[nodeId], incoming = project && structuralParent(project, nodeId);
+  if (node && incoming?.parentScope === 'node' && args.parentIdForContext !== null) {
+    const version = node.versions[node.currentVersionIndex];
+    const question = version?.selectedTextQuestion || version?.imageQuestion;
+    const variant = args.variant.kind === 'follow-up' ? { kind: 'follow-up' as const, question: args.variant.question }
+      : args.variant.kind === 'explain' && question ? { kind: 'explain' as const, term: question } : args.variant;
+    await streamIntoVersion(nodeId, variant, incoming.fromNodeId);
+    return;
+  }
   await streamIntoVersion(nodeId, args.variant, args.parentIdForContext);
 
 }

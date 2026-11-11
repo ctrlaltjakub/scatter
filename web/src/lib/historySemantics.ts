@@ -356,7 +356,9 @@ export function preserveProjectPresentation(
 
   const targetArrows: Record<string, Arrow> = {};
   for (const [id, targetArrow] of Object.entries(target.arrows)) {
-    const anchors = current.arrows[id]?.anchors;
+    const live = current.arrows[id];
+    const anchors = live?.fromNodeId === targetArrow.fromNodeId && live.toNodeId === targetArrow.toNodeId
+      ? live.anchors : undefined;
     targetArrows[id] = anchors ? { ...targetArrow, anchors } : targetArrow;
   }
 
@@ -502,6 +504,11 @@ export function describeHistoryChange(
     return { kind: 'group-edit', label, nodeIds };
   }
 
+  const moved = before.arrows !== after.arrows && Object.values(after.arrows).find(a => {
+    const old = before.arrows[a.id];
+    return a.kind === 'auto' && old?.kind === 'auto' && old.toNodeId === a.toNodeId && old.fromNodeId !== a.fromNodeId;
+  });
+  if (moved) return { kind: 'relation', label: 'Change parent node', nodeIds: [moved.toNodeId] };
   const arrowCountChanged = Object.keys(before.arrows).length !== Object.keys(after.arrows).length;
   if (arrowCountChanged) {
     return {

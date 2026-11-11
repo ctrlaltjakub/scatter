@@ -52,6 +52,21 @@ const chat = () => useGraphStore.getState().project!.nodes.chat!;
 beforeEach(() => { vi.restoreAllMocks(); setup(); });
 
 describe('chat action lifecycle', () => {
+  it('keeps old answers and uses the newly assigned parent for a regeneration and the next turn', async () => {
+    vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* () { yield { delta: 'An answer.', done: true }; });
+    await submitChat('chat', { question: 'First question' });
+    const first = chat().versions.at(-1)!, firstId = first.chat!.parentSnapshotId!;
+    const graph = useGraphStore.getState(), parent = graph.project!.nodes.parent!;
+    graph.addNodeWithArrow({ ...parent, id: 'second', type: 'explain', versions: [{ ...parent.versions[0]!, header: 'New parent', body: 'New context.' }] },
+      { id: 'second-edge', fromNodeId: 'parent', toNodeId: 'second', kind: 'auto' });
+    expect(graph.changeParent(graph.project!.id, 'chat', 'second', graph.project!.arrows.a!)).toBe(true);
+    expect(chat().chat!.parentSnapshots[firstId]?.body).toBe('Original parent text');
+    await submitChat('chat', { regenerate: true });
+    expect(chat().chat!.parentSnapshots[chat().versions.at(-1)!.chat!.parentSnapshotId!]?.body).toBe('New context.');
+    await submitChat('chat', { question: 'Second question' });
+    expect(chat().chat!.parentSnapshots[chat().versions.at(-1)!.chat!.parentSnapshotId!]?.body).toBe('New context.');
+    expect(chat().versions.find(v => v.createdAt === first.createdAt)?.chat?.parentSnapshotId).toBe(firstId);
+  });
   it('retains an empty image-selection chat’s context through reload, parent replacement/deletion, new turns, regeneration and fork', async () => {
     const requests: StreamChatOpts[] = [];
     vi.spyOn(getAdapter('custom'), 'streamChat').mockImplementation(async function* (_key, options) {

@@ -1,5 +1,7 @@
 'use client';
-import React, { memo, useId, useRef, useSyncExternalStore } from 'react';
+import React, { memo, useId, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
+import { useParentPickStore, type ParentPick } from '@/store/useParentPickStore';
+import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import type { Project, Arrow, ScatterNode, ImageQuestionContext } from '@/store/types';
 import { nodeWidth, nodeRenderedH } from '@/lib/nodeSize';
 import { useArrowAnchorsStore } from '@/store/useArrowAnchorsStore';
@@ -139,6 +141,7 @@ function smoothPath(pts: { x: number; y: number }[], smoothing: number): string 
 }
 
 export function ArrowLayer({ project }: Props) {
+  const pick = useParentPickStore(s => s.pick);
   const arrows = Object.values(project.arrows).filter((arrow) => isArrowVisible(arrow, project.selection));
   const ropeSmoothing = useSettingsStore(
     (s) => s.physicsConfig?.ropeSmoothing ?? DEFAULT_PHYSICS_CONFIG.ropeSmoothing,
@@ -175,6 +178,7 @@ export function ArrowLayer({ project }: Props) {
           projectId={project.id}
           imageContext={context}
           arrow={a}
+          pick={pick?.projectId === project.id && pick.arrowId === a.id ? pick : undefined}
           from={from}
           to={project.nodes[a.toNodeId]}
           ropeSmoothing={ropeSmoothing}
@@ -187,6 +191,7 @@ export function ArrowLayer({ project }: Props) {
 
 interface ArrowItemProps {
   arrow: Arrow;
+  pick?: ParentPick;
   from: ScatterNode | undefined;
   to: ScatterNode | undefined;
   ropeSmoothing: number;
@@ -308,6 +313,8 @@ const ArrowItem = memo(function ArrowItem(p: ArrowItemProps) {
       ? 'sc-arrowhead-highlight'
       : a.kind === 'dotted' ? 'sc-arrowhead-dotted' : 'sc-arrowhead-auto';
 
+    if (p.pick) return <ParentArrowPreview pick={p.pick} stroke={stroke} opacity={ink.strokeOpacity} smoothing={ropeSmoothing} />;
+
     // Click the arrow to navigate to the end whose name the ASCII label would
     // show. This same rule applies even when no label found enough room to draw.
     const onHitClick = (e: React.MouseEvent) => {
@@ -389,3 +396,48 @@ const ArrowItem = memo(function ArrowItem(p: ArrowItemProps) {
     );
   })();
 });
+
+/** This path exists only in the SVG. Never feed its pointer endpoint into
+ * the rope worker, persisted anchors, or the project's undo history. */
+function ParentArrowPreview({ pick, stroke, opacity, smoothing }: {
+  pick: ParentPick; stroke: string; opacity: number; smoothing: number;
+}) {
+  const path = useRef<SVGPathElement>(null);
+  const { arrowId, projectId, fromNodeId, nodeId, pointer } = pick;
+  useLayoutEffect(() => {
+    const el = path.current, host = el?.closest('.canvas-host');
+    if (!el || !host) return;
+    const project = useGraphStore.getState().project;
+    const from = project?.nodes[fromNodeId], to = project?.nodes[nodeId];
+    if (!from || !to || project?.id !== projectId) return;
+    const rectOf = (node: ScatterNode) => ({ ...(useLivePositionsStore.getState().positions[node.id] ?? node.position),
+      width: nodeWidth(node), height: nodeRenderedH(node) });
+    const old = rectOf(from), target = rectOf(to);
+    const oldPort = rectBorderToward(old, { x: target.x + target.width / 2, y: target.y + target.height / 2 });
+    const stored = useArrowAnchorsStore.getState().anchors[arrowId] ?? project.arrows[arrowId]?.anchors;
+    const initial = stored && stored.length >= 2 ? stored : [oldPort, rectBorderToward(target, oldPort)];
+    const start = performance.now(), box = host.getBoundingClientRect(), v = useLiveViewportStore.getState();
+    let x = box.left + v.x + initial[0]!.x * v.zoom, y = box.top + v.y + initial[0]!.y * v.zoom;
+    let last = start, frame = 0, lastPath = '';
+    const draw = (now: number) => {
+      const view = useLiveViewportStore.getState(), bounds = host.getBoundingClientRect();
+      const k = 1 - Math.exp(-Math.max(0, now - last) / 36); last = now;
+      x += (pointer.x - x) * k; y += (pointer.y - y) * k;
+      const a = { x: (x - bounds.left - view.x) / view.zoom, y: (y - bounds.top - view.y) / view.zoom };
+      const child = useGraphStore.getState().project?.nodes[nodeId];
+      if (!child) return;
+      const b = rectBorderToward(rectOf(child), a);
+      const t = 1 - Math.pow(1 - Math.min(1, Math.max(0, now - start) / 150), 3);
+      const d = t === 1 ? `M ${a.x} ${a.y} L ${b.x} ${b.y}` : smoothPath(initial.map((p, i) => {
+        const fraction = i / (initial.length - 1);
+        return { x: p.x + (a.x + fraction * (b.x - a.x) - p.x) * t, y: p.y + (a.y + fraction * (b.y - a.y) - p.y) * t };
+      }), smoothing);
+      if (d !== lastPath) { el.setAttribute('d', d); lastPath = d; }
+      frame = requestAnimationFrame(draw);
+    };
+    draw(start);
+    return () => cancelAnimationFrame(frame);
+  }, [arrowId, projectId, fromNodeId, nodeId, pointer, smoothing]);
+  return <path ref={path} data-parent-preview={arrowId} fill="none" stroke={stroke} strokeWidth={3}
+    strokeOpacity={opacity} strokeLinecap="round" strokeLinejoin="round" markerEnd="url(#sc-arrowhead-auto)" pointerEvents="none" />;
+}

@@ -39,6 +39,7 @@ import {
 } from '@/lib/historySemantics';
 import { useHistoryMetaStore } from './useHistoryMetaStore';
 import { collectAutomaticBranchNodeIds } from '@/lib/projectBranch';
+import { withChangedParent } from '@/lib/changeParent';
 import { planNodeDeletion, planNodesDeletion } from '@/lib/arrowPolicy';
 import {
   EMPTY_SOURCE_LIBRARY,
@@ -230,6 +231,7 @@ interface GraphState {
    */
   setNodePositions: (positions: { id: string; x: number; y: number }[]) => void;
   addArrow: (arrow: Arrow) => void;
+  changeParent: (projectId: string, nodeId: string, parentId: string, expected: Pick<Arrow, 'id' | 'fromNodeId'>) => boolean;
   /** Add a node and its connecting arrow in a SINGLE store mutation, so a
    *  spawn lands as exactly ONE undo entry instead of two. */
   addNodeWithArrow: (node: ScatterNode, arrow: Arrow, references?: Arrow[]) => void;
@@ -397,6 +399,14 @@ export const useGraphStore = create<GraphState>()(
         if (!changed) return s;
         return { project: { ...s.project, nodes: newNodes, updatedAt: Date.now() } };
       }),
+      changeParent: (projectId, nodeId, parentId, expected) => {
+        const current = get().project;
+        if (!current || current.id !== projectId) return false;
+        const project = withChangedParent(current, nodeId, parentId, expected);
+        if (!project) return false;
+        set({ project, highlight: null });
+        return true;
+      },
       addArrow: (arrow) => set((s) => {
         if (!s.project) return s;
         return { project: { ...s.project, arrows: { ...s.project.arrows, [arrow.id]: arrow }, updatedAt: Date.now() } };

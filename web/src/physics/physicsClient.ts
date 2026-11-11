@@ -8,8 +8,8 @@ type ArrowAnchors = Record<string /* arrowId */, AnchorPos[]>;
 export type PlacedNode = { id: string; token: number };
 export type NodeInsertion = Position & { frozen: boolean; width: number; height: number;
   birth?: { token: number; parentId?: string; regions?: readonly PlacementRegion[] } };
-export type LinkInsertion = { source: string; target: string; kind: 'auto' | 'dotted'; gravitates: boolean; arrowId: string; anchors?: AnchorPos[] };
-type OnTick = (positions: Position[], arrowAnchors: ArrowAnchors, removedArrowIds: string[], placedNodes?: PlacedNode[]) => void;
+export type LinkInsertion = { source: string; target: string; kind: 'auto' | 'dotted'; gravitates: boolean; arrowId: string; anchors?: AnchorPos[]; routeRevision?: number };
+type OnTick = (positions: Position[], arrowAnchors: ArrowAnchors, removedArrowIds: string[], placedNodes?: PlacedNode[], routeRevision?: number) => void;
 export type SizeWake = 'normal' | 'gentle' | 'none';
 
 /** User-input events that drive the simulation. Captured by the sandbox
@@ -53,7 +53,7 @@ export class PhysicsClient {
     this.worker.onmessage = (e: MessageEvent) => {
       const m = e.data;
       if (m?.type === 'tick') {
-        for (const fn of this.listeners) fn(m.nodes, m.arrowAnchors, m.removedArrowIds ?? [], m.placedNodes);
+        for (const fn of this.listeners) fn(m.nodes, m.arrowAnchors, m.removedArrowIds ?? [], m.placedNodes, m.routeRevision);
       }
     };
     // A worker that fails to load/parse (bad chunk URL, blocked, unsupported)
@@ -83,7 +83,7 @@ export class PhysicsClient {
   addGraph(nodes: NodeInsertion[], links: LinkInsertion[]) {
     this.worker.postMessage({ type: 'add-graph', nodes, links });
   }
-  addLink(link: { source: string; target: string; kind: 'auto' | 'dotted'; gravitates: boolean; arrowId: string; anchors?: AnchorPos[] }) {
+  addLink(link: LinkInsertion) {
     this.worker.postMessage({ type: 'add-link', link });
   }
   removeLinks(ids: string[]) {

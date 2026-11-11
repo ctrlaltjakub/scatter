@@ -1,5 +1,6 @@
 'use client';
 import { VersionCounter } from '@/components/VersionCounter';
+import { ChangeParentAction } from './ChangeParentAction';
 import {
   ChevronsUpDown, ListChevronsUpDown,
   Palette,
@@ -79,17 +80,18 @@ const LEFT_OFFSET = -(PANEL_W + PANEL_GAP);
 
 /** One measured/moving stack: menus and attribution must never drift apart.
  * The camera-fit selector includes both panels, without changing node sizing. */
-function NodeSidePanelStack({ panelRef, style, snippets, disclosure, children }: {
+function NodeSidePanelStack({ panelRef, style, snippets, disclosure, changeParent, children }: {
   panelRef: RefObject<HTMLDivElement | null>;
   style?: CSSProperties;
   snippets?: string[];
   disclosure: { open: SidePanelSection | null; setOpen: (section: SidePanelSection | null) => void };
   children: ReactNode;
+  changeParent: ReactNode;
 }) {
   return <div ref={panelRef} className="node-side-panel-stack node-actions-panel"
     style={{ ...style, gap: PANEL_GAP }}
     onPointerDown={event => event.stopPropagation()} onClick={event => event.stopPropagation()}>
-    <SidePanelDisclosureContext.Provider value={disclosure}><div className="side-panel">{children}</div></SidePanelDisclosureContext.Provider>
+    <SidePanelDisclosureContext.Provider value={disclosure}><div className="side-panel">{children}{changeParent}</div></SidePanelDisclosureContext.Provider>
     {!!snippets?.length && <section className="side-panel google-search-panel" aria-label="Gemini API search suggestions">
       <h3 className="google-search-panel-heading">Forced by Gemini API:</h3>
       <GoogleSearchSuggestions snippets={snippets} showLabel={false} />
@@ -430,6 +432,7 @@ export function NodeSidePanel() {
   // Chat answer navigation also updates currentVersionIndex, so this follows
   // only the active answer/alternative, never all conversation versions.
   const panelProps = { panelRef, style: { ...panelStyle, ...entranceStyle }, snippets: v.googleSearchSuggestions,
+    changeParent: !isRoot && <ChangeParentAction nodeId={node.id} nodeCount={Object.keys(project.nodes).length} />,
     disclosure: { open: openSection, setOpen: (section: SidePanelSection | null) => {
       const panel = useCitationPanelStore.getState();
       if (panel.nodeId === selectedId && ((panel.mode === 'fact-check' && section !== 'fact')

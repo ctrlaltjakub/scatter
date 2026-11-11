@@ -20,6 +20,7 @@ import {
   KIND_CHAT_AURA,
   KIND_GHOST,
   WAVE_NONE,
+  WAVE_PARENT_CHOICE,
   WAVE_RIPPLE,
   WAVE_COLLAPSE,
   WAVE_RECEDE,
@@ -199,6 +200,17 @@ describe('packRecords', () => {
     packRecords([makeAura('a')], [], waves, NO_ECHOES, 1000, resolveTint, out);
     expect(out[11]).toBe(WAVE_RIPPLE);
     expect(out[12]).toBe(100);
+  });
+
+  test('repeats the quieter picker ripple only on eligible nodes and yields to actual focus', () => {
+    const out = new Float32Array(2 * FLOATS_PER_RECORD), pick = { candidates: new Set(['a']), startedAt: 120 };
+    const auras = [makeAura('a'), makeAura('b')];
+    for (const now of [220, 1070, 1920]) {
+      packRecords(auras, [], new Map(), NO_ECHOES, now, resolveTint, out, pick);
+      expect([out[11], out[12], out[FLOATS_PER_RECORD + 11]]).toEqual([WAVE_PARENT_CHOICE, 100, WAVE_NONE]);
+    }
+    packRecords(auras, [], new Map([['a', { kind: 'focus', t0: 1900 }]]), NO_ECHOES, 1920, resolveTint, out, pick);
+    expect(out[11]).toBe(WAVE_RIPPLE);
   });
 
   test('unfocus waves map to the receding-ripple kind', () => {

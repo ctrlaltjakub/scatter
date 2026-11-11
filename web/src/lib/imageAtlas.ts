@@ -20,7 +20,7 @@ export function imageArrowCandidates(arrows: Project['arrows'], nodeId: string):
   if (!index) {
     index = new Map();
     for (const arrow of Object.values(arrows)) {
-      if (!arrow.sourceImage && (arrow.kind !== 'auto' || arrow.label || arrow.sourceSelection || arrow.sourceAnswer)) continue;
+      if (!arrow.sourceImage && (arrow.kind !== 'auto' || arrow.parentScope === 'node' || arrow.label || arrow.sourceSelection || arrow.sourceAnswer)) continue;
       const list = index.get(arrow.fromNodeId) ?? [];
       list.push(arrow);
       index.set(arrow.fromNodeId, list);
@@ -42,7 +42,7 @@ export function imageArrowContext(arrow: Arrow, child?: ScatterNode): ImageQuest
   if (arrow.sourceImage) return arrow.sourceImage.regions.length ? arrow.sourceImage : undefined;
   // Earlier image follow-ups already retained the exact image/regions on the
   // child. Read those without migrating projects or creating an undo entry.
-  if (arrow.kind !== 'auto' || arrow.label || arrow.sourceSelection || arrow.sourceAnswer) return undefined;
+  if (arrow.kind !== 'auto' || arrow.parentScope === 'node' || arrow.label || arrow.sourceSelection || arrow.sourceAnswer) return undefined;
   return child?.versions.find((version) => version.imageContext?.regions.length)?.imageContext;
 }
 

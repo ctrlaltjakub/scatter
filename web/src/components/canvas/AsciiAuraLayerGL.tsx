@@ -106,6 +106,7 @@ import {
 import { useArrowAnchorsStore } from '@/store/useArrowAnchorsStore';
 import { useArrowLabelStore, type DesiredLabel } from '@/store/useArrowLabelStore';
 import { isArrowVisible } from '@/lib/arrowPolicy';
+import { useParentPickStore } from '@/store/useParentPickStore';
 import { useGroupLabelStore, type DesiredGroupLabel } from '@/store/useGroupLabelStore';
 import { useProjectSyncLabelStore } from '@/store/useProjectSyncLabelStore';
 import { useCanvasSelectionStore } from '@/store/useCanvasSelectionStore';
@@ -499,6 +500,7 @@ export function AsciiAuraLayerGL({
     const unsubscribeSelection = useCanvasSelectionStore.subscribe(() => {
       stateRef.current.dirty = true;
     });
+    const unsubscribeParentPick = useParentPickStore.subscribe(() => { stateRef.current.dirty = true; });
     const updateOpacity = () => {
       const opacity = asciiOpacityMultipliers(useSettingsStore.getState());
       stateRef.current.opacity = opacity.aura;
@@ -991,9 +993,10 @@ export function AsciiAuraLayerGL({
             fromRect: { x: number; y: number; w: number; h: number };
             toRect: { x: number; y: number; w: number; h: number };
           }[] = [];
+          const pickedArrowId = useParentPickStore.getState().pick?.arrowId;
           for (const arrowId in project.arrows) {
             const arr = project.arrows[arrowId];
-            if (!arr || !isArrowVisible(arr, project.selection)) continue;
+            if (!arr || arrowId === pickedArrowId || !isArrowVisible(arr, project.selection)) continue;
             const fromA = auras.get(arr.fromNodeId);
             const toA = auras.get(arr.toNodeId);
             if (!fromA || !toA) continue;
@@ -1123,6 +1126,8 @@ export function AsciiAuraLayerGL({
           });
           const hiddenArrowIds = new Set(Object.values(project.arrows)
             .filter((arrow) => !isArrowVisible(arrow, project.selection)).map((arrow) => arrow.id));
+          const picking = useParentPickStore.getState().pick;
+          if (picking) hiddenArrowIds.add(picking.arrowId);
           useArrowLabelStore.getState().reconcile(desiredArrows, now, hiddenArrowIds);
 
           const groupPlacements = cachedGroupPlacements;
@@ -1223,7 +1228,7 @@ export function AsciiAuraLayerGL({
 
       // ── Arrow fade → G (stage-demote, MAX over overlapping segments). ──
       paintArrowDimming(data, useArrowAnchorsStore.getState().anchors,
-        useGraphStore.getState().project, v, CELL, cellsX, cellsY);
+        useGraphStore.getState().project, v, CELL, cellsX, cellsY, useParentPickStore.getState().pick?.arrowId);
 
       const graph = useGraphStore.getState();
       const project = graph.project;
@@ -1270,7 +1275,7 @@ export function AsciiAuraLayerGL({
 
       // ── Pack + upload records. ──
       const count = packRecords(
-        sc.auras.values(), sc.ghosts.values(), sc.waves, sc.focusEchoes, now, resolveTint, s.records,
+        sc.auras.values(), sc.ghosts.values(), sc.waves, sc.focusEchoes, now, resolveTint, s.records, useParentPickStore.getState().pick,
       );
       gl.bindTexture(gl.TEXTURE_2D, g.recordsTex);
       gl.texSubImage2D(
@@ -1433,7 +1438,7 @@ export function AsciiAuraLayerGL({
       const transitioning = scene.evalIntensities(now);
       const sc = scene.state;
       const active = sc.waves.size > 0 || sc.ghosts.size > 0 || transitioning
-        || statusAwake(now) || labelAwake(now) || dragHintAwake(now);
+        || !!useParentPickStore.getState().pick || statusAwake(now) || labelAwake(now) || dragHintAwake(now);
       if (s.dirty || active) s.lastActivity = now;
       if (!s.fontReady) return;
       // Startup orbs cool more slowly than graph auras. Let their whole wake
@@ -1491,6 +1496,7 @@ export function AsciiAuraLayerGL({
       unsubscribeDragHint();
       unsubscribeProjectSyncLabel();
       unsubscribeSelection();
+      unsubscribeParentPick();
       unsubscribeSettings();
       canvas.removeEventListener('webglcontextlost', onLost);
       canvas.removeEventListener('webglcontextrestored', onRestored);

@@ -58,6 +58,26 @@ beforeEach(() => {
 afterEach(() => { resetGenerationSessionsForTests(); useGraphStore.getState().setProject(null); });
 const regions = [{ x: .5, y: 0, width: .5, height: 1 }];
 describe('image follow-up generation', () => {
+  it.each([true, false])('uses the new parent instead of an old image selection (already generated: %s)', async generated => {
+    fake.route = 'explain';
+    const graph = useGraphStore.getState(), root = graph.project!.nodes.image!;
+    const context = { sourceMedia: root.versions[0]!.media!, regions, sourceVersionCreatedAt: 1 };
+    const id = spawnEmptyTextNode('image', 'explain', context)!;
+    const read = () => useGraphStore.getState().project!.nodes[id]!;
+    if (generated) await generateEmptyTextNode(id, 'What is this shape?');
+    const version = read().versions[0]!;
+    graph.addNodeWithArrow({ ...root, id: 'new', type: 'explain', versions: [{ header: 'Spectral colors', body: 'A prism separates light.', createdAt: 3, generatedBy: 'explain', contentType: 'explain' }] },
+      { id: 'other', fromNodeId: 'image', toNodeId: 'new', kind: 'auto' });
+    const arrow = Object.values(useGraphStore.getState().project!.arrows).find(a => a.toNodeId === id)!;
+    expect(graph.changeParent(graph.project!.id, id, 'new', arrow)).toBe(true);
+    vi.mocked(prepareImageQuestion).mockClear(); fake.calls = [];
+    if (generated) await regenerateNode(id); else await generateEmptyTextNode(id, 'What is light?');
+    expect(read().generationError).toBeUndefined();
+    expect(prepareImageQuestion).not.toHaveBeenCalled();
+    expect(fake.calls.some(c => c.messages.some(m => m.content.includes('A prism separates light.')))).toBe(true);
+    expect(read().versions.at(-1)?.imageContext).toBeUndefined();
+    if (generated) expect(read().versions.find(v => v.createdAt === version.createdAt)?.imageContext).toEqual(context);
+  });
   it.each(['encyclopedic', 'explain'] as const)('keeps a manually added %s node’s selected image through reload, parent deletion and regeneration', async type => {
     fake.route = type === 'explain' ? 'explain' : 'explore';
     const graph = useGraphStore.getState();

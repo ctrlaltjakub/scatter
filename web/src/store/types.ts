@@ -573,6 +573,9 @@ export interface Arrow {
   fromNodeId: string;
   toNodeId: string;
   kind: 'auto' | 'dotted';      // structural parent or visual-only shared reference
+  /** An explicitly chosen whole-node parent. Never infer an origin from an
+   * older version's image crop, text selection, or chat answer. */
+  parentScope?: 'node';
   label?: string;
   sourceSelection?: ArrowSourceSelection;
   /** Atlas exception: this relation starts at selected pixels in its source image. */

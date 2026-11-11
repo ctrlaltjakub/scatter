@@ -7,6 +7,7 @@ import { useArrowAnchorsStore } from '@/store/useArrowAnchorsStore';
 import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useNodeBirthStore } from '@/store/useNodeBirthStore';
+import { beginParentPick, cancelParentPick, chooseParent } from '@/store/useParentPickStore';
 import { Canvas } from './Canvas';
 import type { ComponentProps } from 'react';
 import type { NodeView } from './NodeView';
@@ -462,6 +463,38 @@ describe('Canvas physics sync', () => {
     });
     expect(useLivePositionsStore.getState().positions.n0).toEqual({ x: 0, y: 0 });
     expect(useArrowAnchorsStore.getState().anchors.old).toBeUndefined();
+  });
+
+  it('does not change physics while picking, then replaces only the committed edge without its old rope', async () => {
+    vi.stubGlobal('requestAnimationFrame', undefined);
+    seedProject(3);
+    const graph = useGraphStore.getState();
+    graph.addArrow({ id: 'incoming', fromNodeId: 'n0', toNodeId: 'n1', kind: 'auto' });
+    graph.addArrow({ id: 'other', fromNodeId: 'n0', toNodeId: 'n2', kind: 'auto' });
+    graph.setSelection(['n1']);
+    renderCanvas(); await act(async () => {});
+    const phx = physicsMock.instances[0]!;
+    useArrowAnchorsStore.getState().setAnchors({ incoming: [{ x: 1, y: 2 }, { x: 3, y: 4 }] });
+    phx.addLink.mockClear(); phx.removeLinks.mockClear();
+    act(() => beginParentPick('n1', { x: 3, y: 4 }, false));
+    act(() => fireEvent.pointerMove(window, { clientX: 550, clientY: 350 }));
+    act(() => cancelParentPick());
+    expect(phx.dragMove).not.toHaveBeenCalled();
+    expect(phx.removeLinks).not.toHaveBeenCalled(); expect(phx.addLink).not.toHaveBeenCalled();
+    act(() => beginParentPick('n1', { x: 0, y: 0 }, false));
+    act(() => { expect(chooseParent('n2')).toBe(true); });
+    expect(phx.removeLinks.mock.calls).toEqual([[['incoming']]]);
+    expect(phx.addLink.mock.calls).toEqual([[expect.objectContaining({ source: 'n2', target: 'n1', arrowId: 'incoming', anchors: undefined })]]);
+    expect(useArrowAnchorsStore.getState().anchors.incoming).toBeUndefined();
+    // A worker message posted just before the edit can reach the app AFTER
+    // the edit. Its old geometry must not reappear on the reparented arrow.
+    const tick = phx.onTick.mock.calls[0]![0];
+    const oldChain = [{ x: 1, y: 2 }, { x: 3, y: 4 }], newChain = [{ x: 200, y: 15 }, { x: 4, y: 6 }];
+    act(() => tick([], { incoming: oldChain, other: oldChain }, [], [], 0));
+    expect(useArrowAnchorsStore.getState().anchors.incoming).toBeUndefined();
+    expect(useArrowAnchorsStore.getState().anchors.other).toEqual(oldChain);
+    act(() => tick([], { incoming: newChain }, [], [], phx.addLink.mock.calls[0]![0].routeRevision));
+    expect(useArrowAnchorsStore.getState().anchors.incoming).toEqual(newChain);
   });
 
   it('drags every selected node by the same delta and commits movement without an undo step', async () => {
