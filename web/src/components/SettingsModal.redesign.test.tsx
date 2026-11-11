@@ -14,6 +14,12 @@ import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
 import { colorToCss } from '@/lib/groupColor';
 
 vi.mock('@/opfs/settingsIO', () => ({ saveSettings: vi.fn(async () => undefined), loadSettings: vi.fn() }));
+// Visiting Developer mounts the Drive diagnostics. Navigation tests do not
+// need a real connectivity probe; online/offline behavior has its own suite.
+vi.mock('@/lib/networkStatus', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/networkStatus')>(),
+  useIsBrowserOnline: () => true,
+}));
 
 beforeEach(() => {
   useSettingsStore.setState({
