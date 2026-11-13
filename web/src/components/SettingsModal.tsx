@@ -53,6 +53,7 @@ import {
 } from '@/store/types';
 import {
   exportActiveScatterZip,
+  exportActiveObsidianCanvas,
   importScatterFromFile,
   reassignActiveProjectColors,
 } from '@/store/projectActions';
@@ -1197,6 +1198,23 @@ function ShortcutsTab() {
 function DataTab({ onClose }: { onClose: () => void }) {
   const importInputRef = useRef<HTMLInputElement>(null);
   const settingsImportInputRef = useRef<HTMLInputElement>(null);
+  const hasProject = useGraphStore(s => !!s.project);
+  const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState('');
+  const exportObsidian = async () => {
+    setExporting(true);
+    setExportStatus('');
+    try {
+      const out = await exportActiveObsidianCanvas();
+      if (!out) return;
+      downloadBlob(out.blob, out.filename);
+      setExportStatus(out.missingMedia
+        ? 'Downloaded. Some media files were unavailable on this device; original links were kept where available.'
+        : 'Downloaded. Extract the ZIP at the top level of your Obsidian vault, then open the .canvas file.');
+    } catch {
+      setExportStatus('Could not export the canvas. Check that project media are available on this device and try again.');
+    } finally { setExporting(false); }
+  };
 
   /** Download the currently open project as a self-contained .scatter.zip. */
   const exportProject = async () => {
@@ -1330,12 +1348,10 @@ function DataTab({ onClose }: { onClose: () => void }) {
   return (
     <>
       <SettingsSection
-        title="Project backups"
+        title="Project backup and export"
         description={<>Export the <strong>open project and its media</strong> as a .scatter.zip file. Import adds a backup as a <strong>new project</strong>.</>}
       >
-        <div className="field-row">
-          <label className="field-label">Project</label>
-          <div style={{ display: 'flex', gap: 6 }}>
+        <div role="group" aria-label="Project backup actions" className="settings-backup-actions">
             <button type="button" className="btn btn-secondary" onClick={() => void exportProject()}>
               <Upload size={14} /> Export project
             </button>
@@ -1346,8 +1362,12 @@ function DataTab({ onClose }: { onClose: () => void }) {
             >
               <Download size={14} /> Import project
             </button>
-          </div>
         </div>
+        <p className="field-help">For <strong>Obsidian</strong>, extract the ZIP at the top level of your vault and open the <strong>.canvas</strong> file. The canvas and its notes are editable; use a project backup to restore the project in this app.</p>
+        <button type="button" className="btn btn-secondary" disabled={!hasProject || exporting} onClick={() => void exportObsidian()}>
+          <Upload size={14} /> {exporting ? 'Exporting canvas…' : 'Export to Obsidian Canvas'}
+        </button>
+        {exportStatus && <p className="field-help" role="status">{exportStatus}</p>}
         <input
           ref={importInputRef}
           type="file"
@@ -1360,9 +1380,7 @@ function DataTab({ onClose }: { onClose: () => void }) {
         title="Settings backup"
         description={<>Save your <strong>preferences and provider configuration</strong> in a file. Import it to restore settings or move them to <strong>another browser</strong>.</>}
       >
-        <div className="field-row" style={{ marginTop: 16 }}>
-          <label className="field-label">Settings</label>
-          <div style={{ display: 'flex', gap: 6 }}>
+        <div role="group" aria-label="Settings backup actions" className="settings-backup-actions">
             <button type="button" className="btn btn-secondary" onClick={() => void exportSettings()}>
               <Upload size={14} /> Export settings
             </button>
@@ -1376,7 +1394,6 @@ function DataTab({ onClose }: { onClose: () => void }) {
             >
               <Download size={14} /> Import settings
             </button>
-          </div>
         </div>
         <input
           ref={settingsImportInputRef}

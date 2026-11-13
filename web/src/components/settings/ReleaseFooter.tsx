@@ -14,6 +14,9 @@ export function ReleaseFooter() {
       aria-label="GitHub repository (opens in a new tab)">
       GitHub
     </a>
-    <small>v{APP_VERSION} · {releaseLabel(channel)}</small>
+    <a href="https://www.scatter.study/changelog" target="_blank" rel="noopener noreferrer"
+      aria-label={'Changelog, version ' + APP_VERSION + ' · ' + releaseLabel(channel) + ' (opens in a new tab)'}>
+      <small>v{APP_VERSION} · {releaseLabel(channel)}</small>
+    </a>
   </footer>;
 }

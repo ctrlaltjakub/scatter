@@ -80,9 +80,15 @@ export function markedTerms(body: string): string[] {
 /** Redo removes only term delimiters, never literal [[...]] in code,
  * links, images or raw HTML. All other source bytes are retained. */
 export function stripTermMarkers(body: string): string {
+  return replaceTermMarkers(body, inner => inner);
+}
+
+/** Apply a presentation to real marked terms, leaving code, URLs and math untouched. */
+export function replaceTermMarkers(body: string, replace: (inner: string) => string): string {
+  if (!body.includes('[[')) return body;
   const protectedRanges = literalRanges(parseChatMarkdown(body));
   return body.replace(/\[\[([\s\S]*?)\]\]/g, (match, inner: string, start: number) =>
-    protectedRanges.some((range) => overlaps(range, [start, start + match.length])) ? match : inner);
+    protectedRanges.some((range) => overlaps(range, [start, start + match.length])) ? match : replace(inner));
 }
 
 interface Run { text: string; starts: number[]; ends: number[]; formats: Array<{ raw: Range; text: Range }> }

@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ReleaseFooter } from './ReleaseFooter';
+import { APP_VERSION } from '@/lib/deployment';
 
 afterEach(() => { cleanup(); vi.unstubAllEnvs(); });
 
@@ -9,7 +10,9 @@ describe('settings release footer', () => {
     vi.stubEnv('NEXT_PUBLIC_RELEASE_CHANNEL', channel);
     vi.stubEnv('NEXT_PUBLIC_SCATTER_DEMO', channel === 'demo' ? '1' : '');
     render(<ReleaseFooter />);
-    const release = screen.getByText(`v1.0.0 · ${{ beta: 'Beta', stable: 'Stable', demo: 'Demo' }[channel]}`);
+    const release = screen.getByRole('link', { name: /Changelog, version/ });
+    expect(release).toHaveTextContent(`v${APP_VERSION} · ${{ beta: 'Beta', stable: 'Stable', demo: 'Demo' }[channel]}`);
+    expect(release).toHaveAttribute('href', 'https://www.scatter.study/changelog');
     const repository = screen.getByRole('link', { name: 'GitHub repository (opens in a new tab)' });
     expect(repository).toHaveAttribute('href', 'https://github.com/ctrlaltjakub/scatter');
     expect(repository).toHaveAttribute('target', '_blank');

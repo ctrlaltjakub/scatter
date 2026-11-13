@@ -287,6 +287,8 @@
 .settings-modal .field-row > div {
   min-width: 0;
 }
+.settings-backup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0; }
+.settings-backup-actions .btn { max-width: 100%; white-space: normal; }
 .settings-node-fonts { margin-bottom: 24px; }
 .settings-reading-subheading { margin-bottom: 12px; }
 .settings-reading-subheading h4 { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); }

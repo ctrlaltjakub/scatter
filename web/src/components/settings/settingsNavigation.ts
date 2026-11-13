@@ -54,7 +54,7 @@ export const SETTINGS_PAGES = [
     label: 'Backup and local data',
     description: 'Export backups, import saved data, or remove local data.',
     keywords:
-      'data export import settings project backup file zip json erase remove wipe reset all app data api keys',
+      'data export import settings project backup obsidian canvas vault markdown file zip json erase remove wipe reset all app data api keys',
   },
   {
     id: 'prompts',

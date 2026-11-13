@@ -62,6 +62,7 @@ The demo replays **recorded answers** for this project. Click a **marked term** 
 - **Image generation and editing:** Generate images or use AI to edit **the whole image or a selected region**. Crop, adjust, draw or **annotate with text** manually.
 - **Free images:** Automatic or manual search through **Wikimedia Commons and Openverse**, with **attribution and license information**.
 - **Projects:** Search, **automatic saving**, import and export, settings backups and **earlier content versions**.
+- **Obsidian Canvas (1.1 beta):** In **Settings → Backup and local data**, export the open project and extract the ZIP at the top level of your vault. Open the **.canvas** file to keep the layout, linked notes and available media. [Changelog](https://www.scatter.study/changelog)
 - **Synchronization:** Projects and settings sync through **Google Drive or WebDAV**, including self-hosted Nextcloud, with **snapshot history**.
 - **Multiple AI models:** Switch between **several main models** on the canvas. Assign other models by task and control **reasoning, token limits and background activity**.
 - **Deep customization:** Adjust **appearance** with colors, fonts and canvas effects. Change **behavior** with keyboard shortcuts, reading controls and layout settings.

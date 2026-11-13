@@ -18,9 +18,11 @@ import {
   releaseProjectPersistence,
 } from './projectPersistence';
 import { useMediaUrlStore } from './useMediaUrlStore';
+import { useSettingsStore } from './useSettingsStore';
 import { sweepOrphanAssets, deleteProjectAssets, loadAsset, saveAsset } from '@/opfs/assetsIO';
 import {
   copySourceAsset,
+  loadSourceAsset,
   deleteProjectSourceAssets,
   saveSourceAsset,
   sweepOrphanSourceAssets,
@@ -361,6 +363,19 @@ export async function exportActiveScatterZip(): Promise<{ blob: Blob; filename: 
   const proj = foldRuntimeIntoProject(s.project);
   const blob = await buildProjectZip(proj);
   return { blob, filename: `${sanitizeFilename(proj.name, 'scatter-project')}.scatter.zip` };
+}
+
+export async function exportActiveObsidianCanvas() {
+  const project = useGraphStore.getState().project;
+  if (!project) return null;
+  const snapshot = foldRuntimeIntoProject(project);
+  const { buildObsidianArchive } = await import('@/lib/obsidian/archive');
+  const settings = useSettingsStore.getState();
+  return buildObsidianArchive(snapshot, id => loadAsset(snapshot.id, id), {
+    readSource: id => loadSourceAsset(snapshot.id, id),
+    accents: { hue: settings.accentHueShift, desaturate: settings.accentDesaturate, darken: settings.accentDarken,
+      theme: document.documentElement.dataset.theme === 'mocha' ? 'dark' : 'light' },
+  });
 }
 
 /** Add an imported project as a NEW scatter (fresh id, de-duplicated name),
