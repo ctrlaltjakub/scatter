@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, type ModelRole, type Settings } from '@/store/types';
 import { MODEL_ROLES, RECOMMENDED_MODELS, planRecommendedModels, manualModelChoice, normalizeRecommendations, modelUpdatePreferences, recommendedModelIds, pendingRecommendedRoles } from './recommendedModels';
 import { listSwitchableModels } from '@/store/providerSelectors';
+import { parseGeminiModel } from '@/providers/geminiModels';
 
 const text = MODEL_ROLES.filter(role => role !== 'image').map(role => ({ id: RECOMMENDED_MODELS[role].id, caps: { vision: true, tools: true, textOutput: true } }));
 const images = [{ id: RECOMMENDED_MODELS.image.id, supportsImageEditing: true }];
@@ -9,6 +10,22 @@ const empty = (): Settings => ({ ...DEFAULT_SETTINGS, providers: [{ id: 'or', pr
 const enrolled = () => planRecommendedModels(empty(), 'or', text, images, true).settings;
 
 describe('curated model updates', () => {
+  it('selects real-time Hydrogen in quick setup and upgrades only the enrolled main role', () => {
+    const hydrogen = { providerId: 'or', model: 'google/gemini-4-hydrogen' };
+    const old = { providerId: 'or', model: 'google/gemini-3.8-flash' };
+    const base = enrolled();
+    expect(base.activeModelRef).toEqual(hydrogen);
+    const source = { ...base, activeModelRef: old, providers: [{ ...base.providers[0]!, enabledModels: [old.model] }],
+      modelRecommendations: { ...base.modelRecommendations!, main: { autoUpdate: true, ref: old, version: '2026-10-25-interactive-kimi' } } };
+    expect(pendingRecommendedRoles(source)).toEqual(['main']);
+    const batchOnly = [{ ...text[0]!, id: hydrogen.model + ':batch' }];
+    expect(planRecommendedModels(source, 'or', batchOnly, images).settings).toBe(source);
+    const plan = planRecommendedModels(source, 'or', text, images);
+    expect(plan.settings.activeModelRef).toEqual(hydrogen);
+    expect(plan.changed).toEqual(['main']);
+    const manual = { ...source, modelRecommendations: manualModelChoice(source, 'main') };
+    expect(planRecommendedModels(manual, 'or', text, images).settings).toBe(manual);
+  });
   it('defaults OpenRouter interactive builds to GPT-6.1 Sol with vision and tools', () => {
     expect(RECOMMENDED_MODELS.interactive.id).toBe('openai/gpt-6.1-sol');
     expect(enrolled().interactiveModelRef?.model).toBe('openai/gpt-6.1-sol');
@@ -31,9 +48,9 @@ describe('curated model updates', () => {
     let source: Settings = { ...DEFAULT_SETTINGS, providers: [{ id: 'google', preset: 'gemini', apiKey: 'test', enabledModels: ['gemini-3.5-flash'] }],
       activeModelRef: { providerId: 'google', model: 'gemini-3.5-flash' } };
     source = { ...source, modelRecommendations: modelUpdatePreferences(source, ['main'], true) };
-    const plan = planRecommendedModels(source, 'google', [{ id: 'gemini-3.8-flash', caps: { vision: true, tools: true, textOutput: true } }], []);
+    const plan = planRecommendedModels(source, 'google', [parseGeminiModel({ name: 'models/gemini-4-hydrogen', thinking: true })], []);
     expect(plan.changed).toEqual(['main']);
-    expect(plan.settings.activeModelRef).toEqual({ providerId: 'google', model: 'gemini-3.8-flash' });
+    expect(plan.settings.activeModelRef).toEqual({ providerId: 'google', model: 'gemini-4-hydrogen' });
     expect(recommendedModelIds('secondary', 'gemini')).toEqual([]);
     expect(recommendedModelIds('interactive', 'gemini')).toEqual([]);
     expect(recommendedModelIds('image', 'gemini')).toEqual([]);

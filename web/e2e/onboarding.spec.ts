@@ -1,6 +1,6 @@
 import { test, expect, type Page, type TestInfo } from '@playwright/test';
 
-const modelId = 'google/gemini-3.8-flash';
+const modelId = 'google/gemini-4-hydrogen';
 
 async function confirmSetup(page: Page, info?: TestInfo) {
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -37,7 +37,7 @@ test.beforeEach(async ({ page }) => {
     if (path.endsWith('/key')) return route.fulfill({ json: { data: { limit: 10, limit_remaining: 10, usage: 0 } } });
     if (path.endsWith('/images/models')) return route.fulfill({ json: { data: [] } });
     if (path.endsWith('/models')) return route.fulfill({ json: { data: [{
-      id: modelId, name: 'Gemini 3.8 Flash', context_length: 128000,
+      id: modelId, name: 'Gemini 4 Hydrogen', context_length: 1048576,
       architecture: { input_modalities: ['text', 'image'], output_modalities: ['text'] },
       supported_parameters: ['tools', 'reasoning'],
     }] } });

@@ -38,6 +38,7 @@ export async function listGeminiModels(key: string, base?: string): Promise<Gemi
  * Infer only general-purpose documented families; unknown models remain
  * accessible through the existing compatibility-filter override. */
 export function isGeminiTextModel(id: string): boolean {
+  if (id === 'gemini-4-hydrogen') return true;
   return /^gemini-(?:[2-9][\d.]*-(?:flash|pro|argon)(?:-|$)|(?:flash(?:-lite)?|pro)-latest$)/i.test(id)
     && !/(?:image|audio|tts|live|transcribe|computer-use|robotics|omni)/i.test(id);
 }

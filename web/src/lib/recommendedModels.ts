@@ -6,12 +6,13 @@ import { listSwitchableModels } from '@/store/providerSelectors';
 // Only bump the revision of the role whose recommendation changed.
 const previousRevision = '2026-10-25-interactive-kimi';
 export const RECOMMENDATION_VERSIONS: Record<ModelRole, string> = {
-  main: previousRevision, secondary: previousRevision, interactive: '2026-11-10-sol-6.1', image: '2026-11-08-sunburst-2.6',
+  main: '2026-11-13-gemini-4-hydrogen', secondary: previousRevision, interactive: '2026-11-10-sol-6.1', image: '2026-11-08-sunburst-2.6',
 };
+const hydrogen = 'gemini-4-hydrogen';
 const sunburst = 'gpt-image-2.6-sunburst';
 const sol = 'gpt-6.1-sol';
 export const RECOMMENDED_MODELS = {
-  main: { id: 'google/gemini-3.8-flash', name: 'Gemini 3.8 Flash', label: 'Main model', purpose: 'Nodes and conversations' },
+  main: { id: `google/${hydrogen}`, name: 'Gemini 4 Hydrogen', label: 'Main model', purpose: 'Nodes and conversations' },
   secondary: { id: 'openai/gpt-6-luna', name: 'GPT-6 Luna', label: 'Secondary model', purpose: 'Terms, previews, and source assistance' },
   interactive: { id: `openai/${sol}`, name: 'GPT-6.1 Sol', label: 'Interactive model', purpose: 'Interactive programs and screenshot review' },
   image: { id: `openai/${sunburst}`, name: 'GPT Image 2.6 Sunburst', label: 'Image model', purpose: 'Image generation and editing · optional' },
@@ -47,7 +48,7 @@ const same = (a: ActiveModelRef | null | undefined, b: ActiveModelRef | null | u
  * means no approved replacement for that connection, not a fallback provider. */
 export function recommendedModelIds(role: ModelRole, preset: ProviderPreset): readonly string[] {
   if (preset === 'openrouter') return [RECOMMENDED_MODELS[role].id];
-  if (preset === 'gemini') return role === 'main' ? ['gemini-3.8-flash'] : [];
+  if (preset === 'gemini') return role === 'main' ? [hydrogen] : [];
   if (preset === 'openai') {
     if (role === 'secondary') return ['gpt-6-luna'];
     if (role === 'interactive') return [sol];
@@ -55,7 +56,7 @@ export function recommendedModelIds(role: ModelRole, preset: ProviderPreset): re
     return [];
   }
   if (preset === 'custom') {
-    if (role === 'main') return ['google/gemini-3.8-flash', 'gemini-3.8-flash'];
+    if (role === 'main') return [RECOMMENDED_MODELS.main.id, hydrogen];
     if (role === 'secondary') return ['openai/gpt-6-luna', 'gpt-6-luna'];
     if (role === 'interactive') return [RECOMMENDED_MODELS.interactive.id, sol];
   }
