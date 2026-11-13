@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import JSZip from 'jszip';
+import { posix } from 'node:path';
 import type { NodeVersion, Project, ScatterNode } from '@/store/types';
 import { buildObsidianArchive } from './archive';
 import { termPreviewFingerprint } from '../termPreviewCore';
@@ -21,10 +22,30 @@ async function unpack(p: Project, asset: (id:string) => Promise<Blob|null> = asy
   const zip = await JSZip.loadAsync(await result.blob.arrayBuffer());
   const path = Object.keys(zip.files).find(n => n.endsWith('.canvas'))!;
   const canvas = JSON.parse(await zip.file(path)!.async('string'));
-  const note = (id: string) => zip.file(canvas.nodes.find((n: { id: string }) => n.id === id).file)!.async('string');
-  return { result, zip, canvas, note };
+  const note = (id: string) => {
+    const card = canvas.nodes.find((n: { id: string }) => n.id === id);
+    expect(card.type).toBe('text');
+    const relative = decodeURIComponent(/^!\[\]\(<(\.\/Notes\/.+\.md)>\)$/.exec(card.text)![1]!);
+    return zip.file(posix.join(posix.dirname(path), relative))!.async('string');
+  };
+  return { result, zip, canvas, note, path };
 }
 describe('Obsidian vault export', () => {
+  it('resolves every note from its canvas, including after extraction into a wrapper or opening the project as a vault', async () => {
+    const p = project(card('a', ver('Étude (日本語)', 'First note')), card('b', ver('Étude (日本語)', 'Second note')));
+    const { zip, canvas, path } = await unpack(p);
+    const folder = posix.dirname(path) + '/';
+    for (const parent of ['', 'Project.obsidian/', 'Courses/Week 1/Renamed/']) {
+      const extracted = new Set(Object.keys(zip.files).map(name => parent + name.slice(folder.length)));
+      const canvasPath = parent + posix.basename(path);
+      for (const card of canvas.nodes) {
+        expect(card.type).toBe('text');
+        expect(card).not.toHaveProperty('file');
+        const ref = /^!\[\]\(<(\.\/Notes\/.+\.md)>\)$/.exec(card.text)![1]!;
+        expect(extracted.has(posix.join(posix.dirname(canvasPath), decodeURIComponent(ref)))).toBe(true);
+      }
+    }
+  });
   it('preserves arrangement, exact colors, directions, fold states and real term targets across languages', async () => {
     const v = ver('عنوان', '日本語 [[日本語]] और [[वर्ण]] and [[plain]].\n\n- 第一章\n  - Échelle: Mesure.\n  - رقم: تفسير.', { width:560, sources:[{ n:4, url:'https://example.org/a' }] });
     v.termPreviews = { fingerprint:termPreviewFingerprint(v), entries:{ 'वर्ण':'A written character.' } };
@@ -63,7 +84,7 @@ describe('Obsidian vault export', () => {
     const d = card('d',ver('Video','',{media:{source:'embed',kind:'embed',provider:'youtube',embedId:'video-one'}}));
     const { result, canvas, zip, note } = await unpack(project(a,b,c,d), async id => id === 'ok' ? new Blob(['GIF89a']) : null);
     expect(result.missingMedia).toBe(1);
-    expect(new Set(canvas.nodes.map((n:{ file:string }) => n.file)).size).toBe(4);
+    expect(new Set(canvas.nodes.map((n:{ text:string }) => n.text)).size).toBe(4);
     const gifs = Object.keys(zip.files).filter(k => k.endsWith('.gif')); expect(gifs).toHaveLength(1);
     expect(await zip.file(gifs[0]!)!.async('string')).toBe('GIF89a');
     expect(Object.keys(zip.files).some(k => k.split('/').includes('..'))).toBe(false);

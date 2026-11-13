@@ -30,10 +30,10 @@ const extensions: Record<string, string> = {
 };
 const safeId = (id: string) => !!id && id !== '.' && id !== '..' && !/[/\\\u0000-\u001f]/.test(id);
 const coord = (n: number) => Number.isFinite(n) ? Math.round(n) : 0;
-type Card = { id: string; type: 'file'; file: string; x: number; y: number; width: number; height: number; color?: string };
+type Card = { id: string; type: 'text'; text: string; x: number; y: number; width: number; height: number; color?: string };
 const instructions = [
   '# Open the canvas in Obsidian', '',
-  'Extract the entire ZIP at the top level of an Obsidian vault. Keep the project folder name and its contents together: Canvas file paths start at the vault root.',
+  'Extract the entire ZIP anywhere inside your vault, or open the extracted project folder as its own vault. Keep the .canvas file alongside Notes and the other exported folders. You can move or rename the project folder as a whole.',
   'Open the .canvas file. Each card is backed by an editable Markdown note. Connected terms link to the corresponding note. Other terms with a saved definition link to a block in Previews. Enable the Page preview core plugin to preview links; hold Ctrl (Cmd on macOS) if your Obsidian settings require it.',
   'Read notes in Reading view for the initial fold states. Earlier questions and encyclopedia sections are folded; the last question is open. Sources are folded at the end of each note.',
   'Open interactive HTML files in a browser. If Obsidian hides HTML files, enable Settings → Files and links → Detect all file extensions, or open the Interactive folder in your file manager.',
@@ -129,7 +129,10 @@ export async function buildObsidianArchive(project: Project, readAsset: (id: str
     const { note, glossary } = await nodeNote(project, node, names, title, media, projectSources, interactiveLink);
     put(file, note);
     if (glossary) put('Previews/' + stem + '.md', glossary);
-    cards.push({ id: node.id, type: 'file', file: folder + '/' + file, color,
+    // Obsidian resolves a JSON Canvas file card from the *vault root*, not
+    // the canvas. A Markdown embed resolves from the canvas itself and still
+    // displays the editable note (including its own relative attachments).
+    cards.push({ id: node.id, type: 'text', text: localLink('', './' + file, true), color,
       x: coord(node.position.x), y: coord(node.position.y), width: Math.max(1, coord(nodeWidth(node))),
       height: Math.max(1, coord(node.renderedHeight || estimatedNodeHeight(node))) });
   }

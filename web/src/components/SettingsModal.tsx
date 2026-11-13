@@ -1210,7 +1210,7 @@ function DataTab({ onClose }: { onClose: () => void }) {
       downloadBlob(out.blob, out.filename);
       setExportStatus(out.missingMedia
         ? 'Downloaded. Some media files were unavailable on this device; original links were kept where available.'
-        : 'Downloaded. Extract the ZIP at the top level of your Obsidian vault, then open the .canvas file.');
+        : 'Downloaded. Extract the ZIP anywhere in your vault, then open the .canvas file.');
     } catch {
       setExportStatus('Could not export the canvas. Check that project media are available on this device and try again.');
     } finally { setExporting(false); }
@@ -1363,7 +1363,7 @@ function DataTab({ onClose }: { onClose: () => void }) {
               <Download size={14} /> Import project
             </button>
         </div>
-        <p className="field-help">For <strong>Obsidian</strong>, extract the ZIP at the top level of your vault and open the <strong>.canvas</strong> file. The canvas and its notes are editable; use a project backup to restore the project in this app.</p>
+        <p className="field-help">For <strong>Obsidian</strong>, extract the ZIP anywhere in your vault or open the extracted project folder as a vault. Keep the <strong>.canvas</strong> file and its folders together. Use a project backup to restore the project in this app.</p>
         <button type="button" className="btn btn-secondary" disabled={!hasProject || exporting} onClick={() => void exportObsidian()}>
           <Upload size={14} /> {exporting ? 'Exporting canvas…' : 'Export to Obsidian Canvas'}
         </button>
