@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { resolveNodeTextSelection, sourceFieldProjection } from './nodeTextSelection';
+import { LANGUAGES } from './languages';
 
 function textNode(el: Element): Text {
   const node = el.firstChild;
@@ -25,6 +26,13 @@ function select(
 afterEach(() => { document.body.innerHTML = ''; });
 
 describe('resolveNodeTextSelection', () => {
+  it.each(LANGUAGES)('keeps $name raw selection offsets when repairing legacy bold term boundaries', ({ sample }) => {
+    const body = `[[**${sample}**]]** and **[[**example**]] remain visible.`;
+    const projection = sourceFieldProjection(body, 'ft')!;
+    expect(projection.text).toBe(`${sample} and example remain visible.`);
+    expect(projection.raw[projection.text.indexOf('and')]).toBe(body.indexOf('and'));
+    expect(projection.raw[projection.text.indexOf('example')]).toBe(body.indexOf('example'));
+  });
   it('retains source offsets through multiline emphasis, blank lines and supplementary CJK characters', () => {
     const body = '**𠮷野の文。\n次の文。**\n\n[[最後]]の文。';
     const projection = sourceFieldProjection(body, 'ft')!;

@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { selectionNodeId } from '@/lib/selectionNode';
 import { resolveNodeTextSelection } from '@/lib/nodeTextSelection';
 import { clearPreservedSelectionHighlight, preserveSelectionHighlight } from '@/lib/selectionHighlight';
@@ -14,6 +14,9 @@ import { useImageGenerationAvailable } from '@/hooks/useImageGenerationAvailable
 import { activateChatAnswer } from '@/lib/chat/actions';
 import { SelectionWebSearchLink } from '../SelectionWebSearchLink';
 import { positionSelectionToolbar } from '@/lib/positionSelectionToolbar';
+import { markTermFromSelection, termMarkingBusy } from '@/lib/manualTerms';
+import { markSelectedTerm } from '@/lib/termMarking';
+import { useNodeStatusStore } from '@/store/useNodeStatusStore';
 
 /**
  * Floating toolbar that appears above a finished text selection inside a single
@@ -31,6 +34,7 @@ import { positionSelectionToolbar } from '@/lib/positionSelectionToolbar';
  * dismisses on Escape, selection-collapse, or a click outside the bar.
  */
 interface ToolbarState {
+  projectId: string;
   nodeId: string;
   text: string;
   selection: NodeTextSelection;
@@ -44,6 +48,15 @@ export function SelectionToolbar() {
   // Timer that reverts the "Copied" label back to "Copy" after a beat.
   const copiedTimerRef = useRef<number | null>(null);
   const imageEnabled = useImageGenerationAvailable();
+  const nodeBusy = useGraphStore(graph => {
+    const node = state && graph.project?.id === state.projectId ? graph.project.nodes[state.nodeId] : undefined;
+    return termMarkingBusy(node, node?.versions[state?.selection.versionIndex ?? -1], undefined, undefined);
+  });
+  const markingBusy = useNodeStatusStore(statuses => state ? termMarkingBusy(
+    useGraphStore.getState().project?.nodes[state.nodeId],
+    useGraphStore.getState().project?.nodes[state.nodeId]?.versions[state.selection.versionIndex],
+    statuses.statuses[state.nodeId], statuses.processes[state.nodeId]) : false);
+  const markable = useMemo(() => !!state && !!markSelectedTerm(state.selection), [state]);
 
   const clearSelection = useCallback((removeNative = false) => {
     setState(null);
@@ -126,7 +139,7 @@ export function SelectionToolbar() {
       // request a camera pan: the user is already looking at this text.
       useGraphStore.getState().setSelection([nodeId]);
       setCopied(false);
-      setState({ nodeId, text: exact.text.trim(), selection: exact });
+      setState({ projectId: project!.id, nodeId, text: exact.text.trim(), selection: exact });
     };
     let raf: number | null = null;
     const onMouseUp = (e: MouseEvent) => {
@@ -271,6 +284,14 @@ export function SelectionToolbar() {
       </button>
       <span className="sc-sel-div" aria-hidden="true" />
       <SelectionWebSearchLink text={state.text} />
+      <span className="sc-sel-div" aria-hidden="true" />
+      <button type="button" className="sc-sel-btn" disabled={nodeBusy || markingBusy || !markable}
+        data-tip={nodeBusy || markingBusy ? 'Wait for node generation and term marking to finish'
+          : !markable ? 'Select unmarked text within one paragraph; code, links and existing terms cannot be marked'
+          : 'Make this selection a clickable term and generate its preview'}
+        onClick={() => { if (markTermFromSelection(state.projectId, state.selection)) dismiss(); }}>
+        Mark term
+      </button>
       <span className="sc-sel-div" aria-hidden="true" />
       <button type="button" className="sc-sel-btn" onClick={onExplore}>
         Explore

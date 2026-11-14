@@ -7,8 +7,11 @@ import type { ScatterNode } from '@/store/types';
 import { spawnRoutedExplain, spawnTermClick } from '@/lib/generate';
 import { configuredImageModelAvailable, spawnImageFromSelection } from '@/lib/imageGeneration';
 import { useSettingsStore } from '@/store/useSettingsStore';
+import { useNodeStatusStore } from '@/store/useNodeStatusStore';
+import { generateTermPreviews } from '@/lib/termPreviews';
 
 vi.mock('@/lib/generate', () => ({ spawnTermClick: vi.fn(), spawnRoutedExplain: vi.fn() }));
+vi.mock('@/lib/termPreviews', () => ({ generateTermPreviews: vi.fn(), registerManualTermMark: vi.fn() }));
 vi.mock('@/lib/imageGeneration', () => ({
   configuredImageModelAvailable: vi.fn(() => false),
   spawnImageFromSelection: vi.fn(),
@@ -34,6 +37,8 @@ describe('SelectionToolbar exact node selection', () => {
   let highlights: Map<string, unknown>;
 
   beforeEach(() => {
+    vi.mocked(generateTermPreviews).mockReset();
+    useNodeStatusStore.setState({ statuses: {}, processes: {} });
     useSettingsStore.setState({ selectionWebSearch: { engineId: 'google', customEngines: [] } });
     vi.mocked(spawnTermClick).mockReset();
     vi.mocked(spawnRoutedExplain).mockReset();
@@ -63,6 +68,38 @@ describe('SelectionToolbar exact node selection', () => {
       <div data-node-id="n1"><div class="sc-ab-root">
         <span data-sc-source-field="b:0:c:1:desc">repeated beta</span>
       </div></div>`;
+  });
+
+  it('places Mark term between Web search and Explore and makes one undoable occurrence edit', async () => {
+    render(<SelectionToolbar />);
+    const field = document.querySelector<HTMLElement>('[data-sc-source-field]')!;
+    selectText(field, 0, 8); fireEvent.mouseUp(field);
+    const button = await screen.findByRole('button', { name: 'Mark term' });
+    expect([...document.querySelectorAll('.sc-sel-toolbar button, .sc-sel-toolbar a')].map(el => el.textContent))
+      .toEqual(['Copy', 'Web search', 'Mark term', 'Explore', 'Explain', 'Image']);
+    useGraphStore.temporal.getState().clear();
+    fireEvent.click(button);
+    expect(useGraphStore.getState().project?.nodes.n1?.versions[0]?.body)
+      .toBe(body.replace('Second: repeated', 'Second: [[repeated]]'));
+    expect(generateTermPreviews).toHaveBeenCalledWith('n1', 0, false, { terms: ['repeated'] });
+    expect(useGraphStore.temporal.getState().pastStates).toHaveLength(1);
+    expect(screen.queryByRole('button', { name: 'Mark term' })).not.toBeInTheDocument();
+  });
+
+  it('disables only during generation or term marking and stays enabled during previews', async () => {
+    render(<SelectionToolbar />);
+    const field = document.querySelector<HTMLElement>('[data-sc-source-field]')!;
+    selectText(field, 0, 8); fireEvent.mouseUp(field);
+    const button = await screen.findByRole('button', { name: 'Mark term' });
+    expect(button).toBeEnabled();
+    act(() => useGraphStore.getState().updateNode('n1', { generating: true }));
+    expect(button).toBeDisabled();
+    act(() => useGraphStore.getState().updateNode('n1', { generating: false }));
+    act(() => useNodeStatusStore.getState().setProcessStatus('n1', 'marking', 'MARKING TERMS'));
+    expect(button).toBeDisabled();
+    act(() => useNodeStatusStore.getState().clearProcessStatus('n1', 'marking'));
+    act(() => useNodeStatusStore.getState().setProcessStatus('n1', 'previews', 'GENERATING TERM PREVIEWS'));
+    expect(button).toBeEnabled();
   });
 
   afterEach(() => {

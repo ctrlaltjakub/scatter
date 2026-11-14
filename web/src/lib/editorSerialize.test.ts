@@ -37,6 +37,27 @@ describe('editorSerialize round-trip', () => {
     expect(rt(body, 'explain')).toBe(body);
   });
 
+  it('keeps one continuous bold span around terms and their connecting words', () => {
+    const body = 'Die **[[Oberseite]] und [[Unterseite]] zusammen** bleiben sichtbar.';
+    expect(rt(body, 'explain')).toBe(body);
+    expect(rt(rt(body, 'explain'), 'explain')).toBe(body);
+    const legacy = 'Die [[**Oberseite**]]** und **[[**Unterseite**]]** zusammen** bleiben sichtbar.';
+    expect(rt(legacy, 'explain')).toBe(body);
+  });
+
+  it('keeps whitespace outside bold delimiters, including whitespace-only marked runs', () => {
+    const doc = bodyToDoc('Before words after.', 'explain', 'Title');
+    const paragraph = doc.content![1]!.content![0]!;
+    paragraph.content = [
+      { type: 'text', text: 'Before' },
+      { type: 'text', text: ' words ', marks: [{ type: 'bold' }] },
+      { type: 'text', text: 'after.' },
+    ];
+    expect(docToBody(doc)).toBe('Before **words** after.');
+    paragraph.content[1]!.text = ' ';
+    expect(docToBody(doc)).toBe('Before after.');
+  });
+
   it('multiple sentences round-trip as one free-text block', () => {
     const body = 'First sentence with **bold**. Second sentence with a [[term]].';
     expect(rt(body, 'explain')).toBe(body);

@@ -4,12 +4,19 @@ import { useNodeStatusStore } from '@/store/useNodeStatusStore';
 import { useChatRuntimeStore } from '@/store/useChatRuntimeStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { secondaryTaskCompletion } from './secondaryTaskCompletion';
-import { completeTermPreviews, previewTerms, reusableTermPreviews, TERM_PREVIEW_BATCH_SIZE, termPreviewFingerprint, termPreviewKey, termPreviewWorkFingerprint } from './termPreviewCore';
+import { completeTermPreviews, previewTerms, reusableTermPreviews, TERM_PREVIEW_BATCH_SIZE, termPreviewContextFingerprint, termPreviewFingerprint, termPreviewKey, termPreviewWorkFingerprint } from './termPreviewCore';
 import { enrichmentMembers, pendingAnswerTermMarking, shareAnswerEnrichment } from './chat/sharedEnrichment';
 import { ensureAnswerTerms } from './chat/enrichment';
 
-const running = new Map<string, { controller: AbortController; fingerprint: string }>();
-const statusOwners = new Map<string, AbortController>();
+const running = new Map<string, { controller: AbortController; fingerprint: string; terms: Set<string> }>();
+const statusOwners = new Map<string, Set<AbortController>>();
+// One pending body per version, consumed by the focused watcher. Manual marking
+// requests its own preview; that mutation must not backfill unrelated terms.
+const manuallyMarkedBodies = new Map<string, string>();
+export function registerManualTermMark(projectId: string, nodeId: string, createdAt: number, body: string): void {
+  manuallyMarkedBodies.set(`${projectId}:${nodeId}:${createdAt}`, body);
+  if (manuallyMarkedBodies.size > 100) manuallyMarkedBodies.delete(manuallyMarkedBodies.keys().next().value!);
+}
 let activeRequests = 0;
 const waiting: Array<() => void> = [];
 
@@ -29,16 +36,18 @@ async function limited<T>(signal: AbortSignal, work: () => Promise<T>): Promise<
 export const termPreviewProcess = (createdAt: number) => `term-previews-${createdAt}`;
 
 /** Background enrichment never creates an undo entry or changes body text.
- * Results are committed only to the captured project/version and exact body. */
-export async function generateTermPreviews(nodeId: string, createdAt: number, retryFailed = false): Promise<void> {
-  if (!useSettingsStore.getState().autoTermPreviews) return;
+ * Results stay with the captured project and matching source prose. */
+export async function generateTermPreviews(nodeId: string, createdAt: number, retryFailed = false,
+  options?: { terms: readonly string[] }): Promise<void> {
+  const requested = options && new Set(options.terms.map(termPreviewKey));
+  if (!requested && !useSettingsStore.getState().autoTermPreviews) return;
   const project = useGraphStore.getState().project;
   const node = project?.nodes[nodeId];
   let version = node?.versions.find(v => v.createdAt === createdAt);
   if (!project || !node || !version || version.contentType === 'interactive' || version.chat?.state === 'generating') return;
   // Chat completion belongs to each answer. A different turn may be streaming
   // or have failed while the user re-marks an already completed answer.
-  if (!node.chat && (node.generating || node.generationError)) return;
+  if (!node.chat && (node.generating || (!requested && node.generationError))) return;
   if (node.chat && !version.answerEnrichmentId) {
     version = shareAnswerEnrichment(version, `${project.id}:${nodeId}:${createdAt}`);
     updateGenNode(project.id, nodeId, { versions: node.versions.map(v => v.createdAt === createdAt ? version! : v) });
@@ -46,7 +55,7 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
   const seed = version;
   if (version.answerEnrichmentId && pendingAnswerTermMarking.has(version.answerEnrichmentId)) return;
   const fingerprint = termPreviewFingerprint(version);
-  const allTerms = previewTerms(version);
+  const allTerms = previewTerms(version).filter(term => !requested || requested.has(termPreviewKey(term)));
   const ownEntries = version.termPreviews?.fingerprint === fingerprint
     && (!retryFailed || version.termPreviews.languageMode === 'source') ? version.termPreviews.entries : {};
   if (allTerms.every(term => Object.hasOwn(ownEntries, termPreviewKey(term)))) return;
@@ -59,16 +68,21 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
   const existing = reused?.entries ?? ownEntries;
   // A completed pass already retries malformed entries twice. Remember those
   // exhausted terms so refocusing cannot repeatedly spend money on them.
-  const exhausted = new Set(reused?.exhaustedTerms ?? []);
+  const exhausted = new Set((reused?.exhaustedTerms ?? []).filter(term => !requested?.has(term)));
   const terms = allTerms.filter(term => !Object.hasOwn(existing, termPreviewKey(term)) && !exhausted.has(termPreviewKey(term)));
   if (!terms.length) return;
-  const workFingerprint = termPreviewWorkFingerprint(version);
-  const key = `${project.id}:${version.answerEnrichmentId ?? `${nodeId}:${workFingerprint}`}`;
+  const workFingerprint = termPreviewContextFingerprint(version);
+  const identity = `${project.id}:${version.answerEnrichmentId ?? `${nodeId}:${workFingerprint}`}`;
+  const termKeys = new Set(terms.map(termPreviewKey));
+  if (requested && [...running.entries()].some(([key, task]) => key.startsWith(identity + ':')
+    && task.fingerprint === workFingerprint && !task.controller.signal.aborted
+    && [...termKeys].every(term => task.terms.has(term)))) return;
+  const key = `${identity}:${requested ? JSON.stringify([...termKeys].sort()) : 'auto'}`;
   const previous = running.get(key);
   if (previous?.fingerprint === workFingerprint && !previous.controller.signal.aborted) return;
   previous?.controller.abort();
   const controller = new AbortController();
-  running.set(key, { controller, fingerprint: workFingerprint });
+  running.set(key, { controller, fingerprint: workFingerprint, terms: termKeys });
   // Large encyclopedic nodes can contain hundreds of terms. Scale the overall
   // budget with work; still cap each individual request to catch a stalled API.
   const timeout = Math.min(1_800_000, Math.max(180_000, Math.ceil(terms.length / TERM_PREVIEW_BATCH_SIZE) * 60_000));
@@ -81,7 +95,8 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
     const members = seed.answerEnrichmentId ? enrichmentMembers(current, nodeId, seed)
       : (current.nodes[nodeId]?.versions ?? []).map((version, index) => ({ nodeId, index, version }));
     return members
-      .filter(member => termPreviewWorkFingerprint(member.version) === workFingerprint)
+      .filter(member => termPreviewContextFingerprint(member.version) === workFingerprint
+        && (!requested || previewTerms(member.version).some(term => termKeys.has(termPreviewKey(term)))))
       .map(member => ({ ...member, node: current.nodes[member.nodeId]! }));
   };
   const statusNodes = new Map<string, number>();
@@ -90,30 +105,37 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
     if (!members.length) controller.abort();
     for (const member of members) if (!statusNodes.has(member.nodeId)) {
       statusNodes.set(member.nodeId, member.version.createdAt);
-      statusOwners.set(`${project.id}:${member.nodeId}:${member.version.createdAt}`, controller);
+      const statusKey = `${project.id}:${member.nodeId}:${member.version.createdAt}`;
+      const owners = statusOwners.get(statusKey) ?? new Set<AbortController>();
+      owners.add(controller);
+      statusOwners.set(statusKey, owners);
       useNodeStatusStore.getState().setProcessStatus(member.nodeId, termPreviewProcess(member.version.createdAt), 'GENERATING TERM PREVIEWS');
     }
   };
   const unsubscribe = useGraphStore.subscribe(syncStatus);
-  const unsubscribeSettings = useSettingsStore.subscribe(state => { if (!state.autoTermPreviews) controller.abort(); });
+  const unsubscribeSettings = useSettingsStore.subscribe(state => { if (!requested && !state.autoTermPreviews) controller.abort(); });
   syncStatus();
   const commit = (entries: Record<string, string>, exhaustedTerms: string[] = []) => {
     if (signal.aborted || (!Object.keys(entries).length && !exhaustedTerms.length)) return;
     for (const current of currentVersions()) {
+      // Undo may remove one term while another request is still running.
+      const visible = new Set(previewTerms(current.version).map(termPreviewKey));
+      const applicable = Object.fromEntries(Object.entries(entries).filter(([key]) => visible.has(key)));
       const currentFingerprint = termPreviewFingerprint(current.version);
       const previous = current.version.termPreviews?.fingerprint === currentFingerprint ? current.version.termPreviews : undefined;
+      const stillFailed = [...new Set([...(previous?.exhaustedTerms ?? []), ...exhaustedTerms.map(termPreviewKey)])]
+        .filter(term => !Object.hasOwn(applicable, term));
       // A restored project can contain the same shared answer in more than one
       // history entry. Keep updates already committed to its other versions.
       const latestNode = useGraphStore.getState().project?.nodes[current.nodeId];
       if (!latestNode) continue;
       const versions = [...latestNode.versions];
-      versions[current.index] = { ...current.version, termPreviews: { fingerprint: currentFingerprint, entries: { ...previous?.entries, ...entries },
+      versions[current.index] = { ...current.version, termPreviews: { fingerprint: currentFingerprint, entries: { ...previous?.entries, ...applicable },
+        ...(previous?.manualTerms ? { manualTerms: previous.manualTerms } : {}),
         // A partial legacy cache can still contain explanations in the old
         // forced language. Only an explicit redo refreshes those paid entries.
         ...(!previous || previous.languageMode === 'source' || !Object.keys(previous.entries).length ? { languageMode: 'source' as const } : {}),
-        ...((exhaustedTerms.length || previous?.exhaustedTerms?.length) ? {
-          exhaustedTerms: [...new Set([...(previous?.exhaustedTerms ?? []), ...exhaustedTerms.map(termPreviewKey)])],
-        } : {}),
+        ...(stillFailed.length ? { exhaustedTerms: stillFailed, ...(previous?.error ? { error: previous.error } : {}) } : {}),
       } };
       updateGenNode(project.id, current.node.id, { versions });
     }
@@ -133,7 +155,10 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
         const latest = useGraphStore.getState().project?.nodes[current.nodeId];
         if (!latest) continue;
         updateGenNode(project.id, current.nodeId, { versions: latest.versions.map((v, i) => i === current.index
-          ? { ...v, termPreviews: { ...v.termPreviews, fingerprint: termPreviewFingerprint(v), entries: v.termPreviews?.entries ?? {}, error: message } } : v) });
+          ? { ...v, termPreviews: { ...v.termPreviews, fingerprint: termPreviewFingerprint(v), entries: v.termPreviews?.entries ?? {}, error: message,
+            ...(requested ? { exhaustedTerms: [...new Set([...(v.termPreviews?.exhaustedTerms ?? []), ...termKeys])]
+              .filter(term => !Object.hasOwn(v.termPreviews?.entries ?? {}, term)) } : {}),
+          } } : v) });
       }
       if (!signal.aborted) console.warn('[term previews] Background explanations could not finish.', error);
     }
@@ -147,7 +172,9 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
       const statusKey = `${project.id}:${id}:${timestamp}`;
       // A manual redo can detach this answer from its former shared identity.
       // Finishing that old task must not clear the replacement task's status.
-      if (statusOwners.get(statusKey) !== controller) continue;
+      const owners = statusOwners.get(statusKey);
+      if (!owners?.delete(controller)) continue;
+      if (owners.size) continue;
       statusOwners.delete(statusKey);
       useNodeStatusStore.getState().clearProcessStatus(id, termPreviewProcess(timestamp));
     }
@@ -180,6 +207,10 @@ export function watchFocusedTermPreviews(): () => void {
           && termPreviewWorkFingerprint(previous) === termPreviewWorkFingerprint(version)
           && previous.chat?.state === version.chat?.state);
       })) return;
+    const markerOnly = new Set(previousProject === project?.id && previousNode === focused?.id && previousEnabled === enabled
+      ? versions.filter(version => previousVersions.some(previous => previous.createdAt === version.createdAt
+        && previous.body !== version.body
+        && termPreviewContextFingerprint(previous) === termPreviewContextFingerprint(version))).map(version => version.createdAt) : []);
     previousProject = project?.id;
     previousEnabled = enabled;
     previousNode = focused?.id;
@@ -190,7 +221,10 @@ export function watchFocusedTermPreviews(): () => void {
       // Opening a detached answer also resumes work interrupted before copying.
       if (version.chat) void ensureAnswerTerms(project.id, focused.id,
         { turnId: version.chat.turnId, versionCreatedAt: version.createdAt });
-      if (enabled) void generateTermPreviews(focused.id, version.createdAt);
+      const manualKey = `${project.id}:${focused.id}:${version.createdAt}`;
+      const manualBody = manuallyMarkedBodies.get(manualKey);
+      manuallyMarkedBodies.delete(manualKey);
+      if (enabled && manualBody !== version.body && !markerOnly.has(version.createdAt)) void generateTermPreviews(focused.id, version.createdAt);
     }
   };
   let queued = false, disposed = false;

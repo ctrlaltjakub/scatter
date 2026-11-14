@@ -364,6 +364,7 @@ export function SourceSelectionOutline({ rootRef, refreshKey }: Props) {
       attributeFilter: ['data-theme'],
     });
     window.addEventListener('resize', remeasure);
+    root.addEventListener('scroll', remeasure, true);
     root.addEventListener('transitionend', handleTransitionEnd);
     void document.fonts?.ready.then(remeasure);
     return () => {
@@ -372,6 +373,7 @@ export function SourceSelectionOutline({ rootRef, refreshKey }: Props) {
       classObserver.disconnect();
       themeObserver.disconnect();
       window.removeEventListener('resize', remeasure);
+      root.removeEventListener('scroll', remeasure, true);
       root.removeEventListener('transitionend', handleTransitionEnd);
     };
   }, [measure, rootRef]);

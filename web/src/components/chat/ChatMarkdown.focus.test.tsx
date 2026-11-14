@@ -40,7 +40,10 @@ function fixture() {
   useGraphStore.temporal.getState().pause();
   return { old: node.versions.find(v => v.createdAt === 2)!, next: node.versions.find(v => v.createdAt === 3)!, project };
 }
-beforeEach(() => { vi.clearAllMocks(); useLiveViewportStore.getState().clear(); useCitationPanelStore.getState().close(); });
+beforeEach(() => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  vi.clearAllMocks(); useLiveViewportStore.getState().clear(); useCitationPanelStore.getState().close();
+});
 afterEach(() => { cleanup(); useGraphStore.getState().setProject(null); useGraphStore.temporal.getState().resume(); });
 
 describe('chat focus rendering isolation', () => {

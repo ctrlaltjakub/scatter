@@ -224,6 +224,21 @@ describe('selected-text child generation', () => {
       parts: [{ sourceField: 'ft', text: 'opening paragraph' }],
     });
   });
+  it.each(['explore', 'explain', 'follow-up'] as const)('keeps the Markdown-note source version on selected %s actions', async action => {
+    const body = '# Notes\n\nA compact opening paragraph.';
+    const node = useGraphStore.getState().project!.nodes.parent!;
+    useGraphStore.getState().updateNode('parent', { type: 'manual-empty', versions: [{ ...node.versions[0]!, body,
+      contentType: 'answer', markdownNote: true, chat: { turnId: 'note', title: 'Notes', question: '', state: 'complete', contextPath: [], informationChunking: false } }] });
+    const start = body.indexOf('opening paragraph');
+    const selection: NodeTextSelection = { ...exactSelection, sourceBody: body, start, end: start + 17,
+      parts: [{ sourceField: 'chat:1', start, end: start + 17, text: 'opening paragraph' }] };
+    const id = action === 'explore' ? await spawnTermClick('parent', selection.text, { sourceSelection: selection })
+      : action === 'explain' ? await spawnExplain('parent', selection.text, { sourceSelection: selection })
+        : await spawnFollowUp('parent', 'Why does this happen?', selection);
+    const arrow = Object.values(useGraphStore.getState().project!.arrows).find(item => item.toNodeId === id)!;
+    expect(arrow.sourceAnswer).toEqual({ turnId: 'note', versionCreatedAt: 100 });
+    expect(arrow.sourceSelection?.parts[0]?.sourceField).toBe('chat:1');
+  });
 
   it('uses the selected passage and question in an encyclopedic follow-up header', async () => {
     const childId = await spawnFollowUp('parent', 'why does this happen?', exactSelection);

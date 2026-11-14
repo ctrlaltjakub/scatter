@@ -8665,7 +8665,7 @@ select.input {
 [data-theme="mocha"] .chat-user-message { background: color-mix(in oklab, var(--node-accent, var(--text)) 13%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--node-accent, var(--text)) 42%, transparent); }
 .chat-user-message { color: var(--subtext1); }
 .chat-assistant { min-width: 0; position: relative; color: var(--subtext1); user-select: text; cursor: var(--cur-text); }
-.chat-markdown { font-size: 14px; line-height: 1.5; color: var(--subtext1); overflow-wrap: anywhere; }
+.chat-markdown { position: relative; font-size: 14px; line-height: 1.5; color: var(--subtext1); overflow-wrap: anywhere; }
 .chat-markdown.is-chunked { line-height: 1.35; }
 .chat-markdown p { margin: 0 0 12px; }
 .chat-markdown p:last-child { margin-bottom: 0; }

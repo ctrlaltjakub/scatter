@@ -12,6 +12,8 @@ import { useRewriteStore } from '@/store/useRewriteStore';
 import { useCitationPanelStore } from '@/store/useCitationPanelStore';
 import { applyTermSelection } from '@/lib/termMarking';
 import { factCheckBodyFingerprint } from '@/lib/factCheckCore';
+import { bodyToDoc, docToBody } from '@/lib/editorSerialize';
+import { LANGUAGES } from '@/lib/languages';
 
 beforeAll(() => {
   if (!('ResizeObserver' in globalThis)) {
@@ -317,6 +319,29 @@ describe('AdaptiveBullets', () => {
     expect(chip!.textContent).toBe('double empathy problem'); // no ** in the label
     expect(chip!.closest('strong')).not.toBeNull();           // rendered bold
     expect(container.textContent).not.toContain('**');         // no leaked asterisks
+  });
+
+  it('renders previously saved bold terms and connecting words without leaking markers or bold into later text', () => {
+    const body = 'Die [[**Oberseite**]]** und **[[**Unterseite**]] erhalten **zwei Signale**.\nDanach folgt normaler Text.';
+    const { container } = render(<AdaptiveBullets body={body} parentNodeId="p1" onReferenceClick={vi.fn()} />);
+    const opening = container.querySelector('.sc-ab-root > .sc-ab-freetext')!;
+    expect(opening.textContent).toBe('Die Oberseite und Unterseite erhalten zwei Signale.Danach folgt normaler Text.');
+    expect([...opening.querySelectorAll('strong')].map(element => element.textContent).join('')).toBe('Oberseite und Unterseitezwei Signale');
+    expect([...opening.querySelectorAll('.ref-chip')].map(element => element.textContent)).toEqual(['Oberseite', 'Unterseite']);
+  });
+
+  it.each(LANGUAGES)('keeps edited $name bold phrases with multiple clickable terms readable', ({ sample }) => {
+    const source = `Before **[[${sample}]] and [[${sample}]] together** after.`;
+    const saved = docToBody(bodyToDoc(source, 'explain', 'Example'));
+    const onClick = vi.fn();
+    const { container } = render(<AdaptiveBullets body={saved} parentNodeId="p1" onReferenceClick={onClick} />);
+    const opening = container.querySelector('.sc-ab-root > .sc-ab-freetext')!;
+    expect(opening.textContent).toBe(`Before ${sample} and ${sample} together after.`);
+    expect([...opening.querySelectorAll('strong')].map(element => element.textContent).join('')).toBe(`${sample} and ${sample} together`);
+    const chips = opening.querySelectorAll<HTMLElement>('.ref-chip');
+    expect(chips).toHaveLength(2);
+    fireEvent.click(chips[0]!);
+    expect(onClick).toHaveBeenCalledWith(sample, expect.anything());
   });
 
   it('renders selected phrases with mixed bold/italic formatting and a clean click target', () => {

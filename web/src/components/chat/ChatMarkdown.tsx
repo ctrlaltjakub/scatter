@@ -15,6 +15,7 @@ import { annotateChatMarkdown, annotateChatRelations } from '@/lib/chat/markdown
 import { useGraphStore } from '@/store/useGraphStore';
 import { resolveArrowSourceSelection } from '@/lib/sourceSelection';
 import { SourceSelectionMark } from '@/components/node/SourceSelectionMark';
+import { SourceSelectionOutline } from '@/components/node/SourceSelectionOutline';
 import { ReferenceChip, useReferenceResolution, type ReferenceResolution } from '@/components/node/ReferenceChip';
 import { CitationMarker } from '@/components/node/CitationMarker';
 import { NodeContentInteractionProvider, useNodeContentInteraction } from '@/components/node/NodeContentInteractionContext';
@@ -134,13 +135,19 @@ export const ChatMarkdown = memo(function ChatMarkdown({ nodeId, version, tableO
   localEvidence?: { activeId: string | null; onUnit: (id: string) => void } }) {
   const ref = useMemo(() => ({ turnId: version.chat!.turnId, versionCreatedAt: version.createdAt }),
     [version.chat?.turnId, version.createdAt]);
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Markdown notes and detached answers reuse this renderer but do not have a
+  // conversation. Their saved selection arrows follow normal node/version
+  // anchors, including older arrows without chat-answer metadata.
+  const inConversation = useGraphStore(s => !!s.project?.nodes[nodeId]?.chat);
+  const relationScope = inConversation ? ref : undefined;
   const typography = useReadingTypography(version.language, version.body);
-  const resolution = useReferenceResolution(nodeId, ref);
-  const relations = useGraphStore((s) => nodeRelations(s.project?.arrows, nodeId, ref));
+  const resolution = useReferenceResolution(nodeId, relationScope);
+  const relations = useGraphStore((s) => nodeRelations(s.project?.arrows, nodeId, relationScope));
   const selectedChild = useGraphStore((s) => relatedSelectedNodeId(s.project?.selection,
-    nodeRelations(s.project?.arrows, nodeId, ref).sourceSelectionChildIds));
+    nodeRelations(s.project?.arrows, nodeId, relationScope).sourceSelectionChildIds));
   const highlightedArrow = useGraphStore((s) => s.highlight?.arrowId
-    && nodeRelations(s.project?.arrows, nodeId, ref).sourceSelectionById.has(s.highlight.arrowId)
+    && nodeRelations(s.project?.arrows, nodeId, relationScope).sourceSelectionById.has(s.highlight.arrowId)
     ? s.highlight.arrowId : null);
   const outerInteraction = useNodeContentInteraction();
   // History/source panels and evidence on other answers cannot change this
@@ -208,8 +215,10 @@ export const ChatMarkdown = memo(function ChatMarkdown({ nodeId, version, tableO
     nodeId, answer: ref, resolution, relations, selectedChild, highlightedArrow, tableOnly, factProps,
   }), [nodeId, ref, resolution, relations, selectedChild, highlightedArrow, tableOnly, factProps]);
   return <NodeContentInteractionProvider value={interaction}>
-    <div className={`chat-markdown${version.chat?.informationChunking ? ' is-chunked' : ''}`} data-preview-version={version.createdAt}
+    <div ref={rootRef} className={`chat-markdown${version.chat?.informationChunking ? ' is-chunked' : ''}`} data-preview-version={version.createdAt}
       lang={languageInfo(version.language).locale} dir={languageDirection(version.language)} style={typography}>
+      {(relations.sourceSelections.length > 0 || resolution.childByTerm.size > 0) && <SourceSelectionOutline rootRef={rootRef}
+        refreshKey={`${version.body}\u0000${!!version.chat?.informationChunking}\u0000${selectedChild}\u0000${highlightedArrow}\u0000${relations.sourceSelections.map(arrow => arrow.id).join(',')}\u0000${resolution.selectedNodeId}\u0000${resolution.highlightedTerm}`} />}
       <MarkdownPresentationContext.Provider value={presentation}>{content}</MarkdownPresentationContext.Provider>
     </div>
   </NodeContentInteractionProvider>;

@@ -18,7 +18,7 @@ import { useReadingStore } from '@/store/useReadingStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useDisplayBody } from '@/store/useRewriteStore';
 import { useNodeStatusStore } from '@/store/useNodeStatusStore';
-import { bulletDescriptionPreview, termPreviewFor } from '@/lib/termPreviewCore';
+import { bulletDescriptionPreview, termPreviewFor, termPreviewFingerprint, termPreviewKey } from '@/lib/termPreviewCore';
 import { termPreviewProcess } from '@/lib/termPreviews';
 import { termLabel } from '@/lib/termLabel';
 import { GROUP_LABEL_ZOOM_THRESHOLD } from '@/lib/asciiAura/groupLabels';
@@ -272,10 +272,13 @@ function RelationPreviewCard({ target }: { target: RelationTarget }) {
   const displayBody = useDisplayBody(linkedChildId ?? '', versionIndex, version?.body ?? '');
   const opening = openingParagraphPreview(displayBody, true);
   const hasChild = !!node;
-  const explanation = useMemo(() => autoPreviews && !hasChild && target.term
+  const previewEnabled = autoPreviews || !!(parentVersion && target.term
+    && parentVersion.termPreviews?.fingerprint === termPreviewFingerprint(parentVersion)
+    && parentVersion.termPreviews.manualTerms?.includes(termPreviewKey(target.term)));
+  const explanation = useMemo(() => previewEnabled && !hasChild && target.term
     ? termPreviewFor(parentVersion, target.term, target.sourceField) : undefined,
-  [autoPreviews, hasChild, parentVersion, target.term, target.sourceField]);
-  const compact = node ? !!node.generating && !opening : autoPreviews && !explanation && explaining;
+  [previewEnabled, hasChild, parentVersion, target.term, target.sourceField]);
+  const compact = node ? !!node.generating && !opening : previewEnabled && !explanation && explaining;
   const full = !node && !!explanation;
   const text = node ? opening || (compact ? 'Generating' : version?.header?.trim() || '')
     : explanation || (compact ? 'Generating' : '');

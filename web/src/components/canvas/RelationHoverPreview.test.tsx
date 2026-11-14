@@ -404,6 +404,16 @@ describe('RelationHoverPreview', () => {
     expect(screen.getByRole('tooltip')).not.toHaveClass('is-explanation');
   });
 
+  it('shows an explicitly marked term preview with automatic previews disabled', () => {
+    const versions = chatVersions('A [[cache]] helps.');
+    useGraphStore.getState().updateNode('parent', { versions: useGraphStore.getState().project!.nodes.parent!.versions.map(v => ({ ...v,
+      termPreviews: v.termPreviews && { ...v.termPreviews, manualTerms: ['cache'] } })) });
+    useSettingsStore.setState({ autoTermPreviews: false });
+    render(<ChatHarness versions={versions} />);
+    fireEvent.focusIn(screen.getAllByRole('button', { name: 'cache' })[0]!);
+    expect(screen.getByRole('tooltip')).toHaveTextContent('version 4');
+  });
+
   it('does not show a generating tooltip when automatic previews are disabled', () => {
     useSettingsStore.setState({ autoTermPreviews: false });
     useGraphStore.getState().updateNode('parent', { versions: [{ header: 'Memory', body: 'A [[cache]] helps.',

@@ -2513,7 +2513,8 @@ function sourceSelectionForParent(
 }
 
 function chatSelectionOrigin(parent: ScatterNode, selection?: NodeTextSelection): ChatAnswerRef | undefined {
-  if (!parent.chat) return undefined;
+  // Standalone Markdown notes/answers also have version-owned answer metadata.
+  // Keep it so following a child's relation can reveal and scroll its origin.
   const version = parent.versions[selection?.versionIndex ?? parent.currentVersionIndex];
   return version?.chat ? { turnId: version.chat.turnId, versionCreatedAt: version.createdAt } : undefined;
 }

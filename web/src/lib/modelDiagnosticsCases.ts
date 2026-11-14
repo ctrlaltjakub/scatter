@@ -4,7 +4,7 @@ import { buildMessages, buildFollowUpClassifierPrompt, withNodeWebSearch } from 
 import { effectivePrompt, substitute } from './promptDefaults';
 import { chatFormattingPrompt } from './chatFormatting';
 import { termSelectionPrompt } from './termSelectionPrompt';
-import { applyTermSelection, markedTerms, stripTermMarkers } from './termMarking';
+import { applyTermSelection, markSelectedTerm, markedTerms, stripTermMarkers } from './termMarking';
 import { previewRequest, previewTerms, inspectTermPreviews, retainTermPreviews, termPreviewFingerprint, termPreviewFor } from './termPreviewCore';
 import { GenerationResponseError, parseResponseJson, validateEncyclopedicOutput } from './generationValidation';
 import { parseFactCheckFinding } from './factCheckCore';
@@ -12,6 +12,8 @@ import { freshOutlineProblem, parseBody } from './bulletParse';
 import { languageInfo, languageDirection } from './languages';
 import { factCheckMessages } from './factCheckRequest';
 import { imageQuestionInstructions } from './imageQuestionPrompt';
+import { bodyToDoc, docToBody } from './editorSerialize';
+import { parseChatMarkdown, type ChatMdNode } from './chat/markdownFields';
 
 export interface ModelDiagnosticCase {
   id: string; label: string; role: ModelRole;
@@ -130,15 +132,33 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
     const body = applyTermSelection(DIAGNOSTIC_TEXT, text);
     assertDiagnostic(body && markedTerms(body).length > 0, 'Term selection returned invalid JSON or no usable terms. Check the secondary model, then retry Redo terms on the affected answer.');
     assertDiagnostic(body && stripTermMarkers(body) === stripTermMarkers(DIAGNOSTIC_TEXT), 'Term marking changed the source text instead of only marking terms.');
+    if (body) {
+      // Exercise the saved editor form too, within the same paid term-selection
+      // check. Splitting a bold phrase around its terms must not expose stars.
+      const saved = docToBody(bodyToDoc(body, 'explain', 'Terms'));
+      const literalText = (node: ChatMdNode): string => node.type === 'text' ? node.value ?? ''
+        : (node.children ?? []).map(literalText).join('');
+      assertDiagnostic(!literalText(parseChatMarkdown(stripTermMarkers(saved))).includes('**'),
+        'Saving marked terms exposed bold delimiters. Report this app formatting error; no extra model call is needed.');
+    }
   });
-  const previewVersion = { header: 'Geometry and literature',
+  let previewVersion = { header: 'Geometry and literature',
     body: 'The [[perimeter]] measures the boundary of an [[equilateral triangle]]. [[J. R. R. Tolkien]] wrote The Hobbit.\n\nBeim Lernen hält das [[working memory]] Informationen vorübergehend verfügbar, damit sie für eine aktuelle Aufgabe verarbeitet werden können.\n\n- Geometry\n  - Geometry: The study of shapes, sizes and positions.',
     language: language.id, createdAt: 1, generatedBy: 'root' as const, contentType: 'encyclopedic' as const };
+  // Manual marking uses the same preview request/validation as automatic terms.
+  // Exercise that path inside this existing check without another paid call.
+  const unmarked = previewVersion.body.replace('[[perimeter]]', 'perimeter');
+  const start = unmarked.indexOf('perimeter');
+  const manual = markSelectedTerm({ nodeId: 'diagnostic', versionIndex: 0, sourceBody: unmarked,
+    start, end: start + 9, text: 'perimeter', parts: [{ sourceField: 'freeText', start, end: start + 9, text: 'perimeter' }] });
+  if (manual) previewVersion = { ...previewVersion, body: manual.body };
   // Match production: the existing Geometry description supplies its preview
   // locally; the paid check covers only terms that still need an explanation.
   const requestedPreviewTerms = previewTerms(previewVersion);
   const preview = previewRequest(previewVersion, requestedPreviewTerms);
   secondary('previews', 'Term previews', preview.system, preview.user, preview.maxOutputTokens, text => {
+    assertDiagnostic(!!manual && manual.body === previewVersion.body,
+      'Mark term could not preserve the selected source passage. Report this app error; no extra model call is needed.');
     const { entries, issues } = inspectTermPreviews(text, requestedPreviewTerms);
     assertDiagnostic(!Object.keys(issues).length, Object.entries(issues).map(([term, issue]) => `${term}: ${issue.reason}`).join(' '));
     // One mixed-source request also checks that English terms and the current

@@ -3,6 +3,25 @@
 Each version has one entry. Beta versions remain listed until that version is
 released to stable, when its label changes to Stable. Older entries are kept.
 
+## 1.2.1 · Beta — 14 November 2026
+
+### New features
+
+- Mark term in the text-selection toolbar makes the selected occurrence clickable
+  and requests a preview for that term only. It sits between Web search and Explore.
+- Preview requests for manually marked terms run independently and retain completed
+  results when more terms are marked. Explicit requests also work with automatic
+  previews turned off. Marking is undoable and is disabled during node generation
+  and term marking, while preview generation can continue in the background.
+
+### Fixes
+
+- Saving bold text containing terms keeps formatting balanced. Existing affected
+  explanations render without exposed bold markers or bold extending into later text.
+- Explore and selected-text follow-ups from Markdown text nodes retain source
+  highlights, relation outlines, hover previews and navigation to their child nodes.
+  Older saved Markdown relations can also reveal their original source version.
+
 ## 1.1.1 · Beta — 14 November 2026
 
 ### Fixes

@@ -94,15 +94,29 @@ function runsToMarkdown(runs: Inline[]): string {
     if (previous && !!previous.bold === !!run.bold && !!previous.term === !!run.term) previous.text += run.text;
     else merged.push({ ...run });
   }
-  return merged
-    .map((r) => {
-      if (!r.text) return '';
-      if (r.term && r.bold) return `[[**${r.text}**]]`;
-      if (r.term) return `[[${r.text}]]`;
-      if (r.bold) return `**${r.text}**`;
-      return r.text;
-    })
-    .join('');
+  const bold = (text: string) => {
+    const content = text.trim();
+    if (!content) return text;
+    return text.slice(0, text.length - text.trimStart().length) + `**${content}**`
+      + text.slice(text.trimEnd().length);
+  };
+  let markdown = '';
+  for (let i = 0; i < merged.length;) {
+    const run = merged[i]!;
+    if (!run.bold) {
+      markdown += run.term ? `[[${run.text}]]` : run.text;
+      i++;
+      continue;
+    }
+    const from = i;
+    while (i < merged.length && merged[i]!.bold) i++;
+    // A continuous bold phrase can contain several clickable terms. Keep one
+    // emphasis span around it; separate runs such as ** and ** are not valid
+    // Markdown and can expose stars or absorb later formatting.
+    if (i === from + 1 && run.term) markdown += `[[${bold(run.text)}]]`;
+    else markdown += bold(merged.slice(from, i).map(item => item.term ? `[[${item.text}]]` : item.text).join(''));
+  }
+  return markdown;
 }
 
 // ── body → model → doc ─────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { termSelectionPrompt } from './termSelectionPrompt';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { mappedSegment, parseChatMarkdown, type ChatMdNode } from './chat/markdownFields';
 import { termLabel } from './termLabel';
+import type { NodeTextSelection } from '@/store/useNodeTextSelectionStore';
 
 const MAX_BATCH_CHARS = 6000;
 type Range = [number, number];
@@ -187,6 +188,23 @@ function insertRanges(body: string, ranges: Range[]): string {
 export function applyTermSelection(body: string, output: string): string | null {
   const terms = parseSelection(output);
   return terms === null ? null : insertRanges(body, selectionRanges(indexSource(body), terms, [0, body.length]));
+}
+
+/** Explicit marking changes only the selected occurrence, never every match
+ * chosen by the automatic selector. Keep code, existing terms and formatting
+ * boundaries protected by the same source index used for model selections. */
+export function markSelectedTerm(selection: NodeTextSelection): { body: string; term: string; range: Range } | null {
+  const { sourceBody: body, parts, text } = selection;
+  if (parts?.length !== 1 || /[\r\n\u2028\u2029]/u.test(text)
+    || /(?:^b:\d+:title$|^b:\d+:c:\d+:name$)/.test(parts[0]!.sourceField)
+    || !parseSelection(JSON.stringify({ terms: [text] }))?.length) return null;
+  const selected = body.slice(selection.start, selection.end);
+  const from = selection.start + selected.length - selected.trimStart().length;
+  const to = selection.end - selected.length + selected.trimEnd().length;
+  const range = selectionRanges(indexSource(body), [text], [0, body.length])
+    .find(([start, end]) => start <= from && end >= to);
+  if (!range) return null;
+  return { body: insertRanges(body, [range]), term: text.trim().replace(/\s+/g, ' '), range };
 }
 
 /** Shared by chat, encyclopedic generation, rewrites, selected fragments and

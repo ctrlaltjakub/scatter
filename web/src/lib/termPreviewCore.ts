@@ -34,6 +34,19 @@ export function termPreviewWorkFingerprint(version: NodeVersion): string {
   return `${source.length}:${hashPrompt(source)}`;
 }
 
+const contextFingerprints = new Map<string, string>();
+/** Adding a clickable term does not change the prose an in-flight preview is
+ * explaining. Real content/language edits still invalidate that work. */
+export function termPreviewContextFingerprint(version: NodeVersion): string {
+  const key = termPreviewWorkFingerprint(version);
+  const cached = contextFingerprints.get(key);
+  if (cached) return cached;
+  const result = termPreviewWorkFingerprint({ ...version, body: stripTermMarkers(version.body) });
+  if (contextFingerprints.size >= 128) contextFingerprints.delete(contextFingerprints.keys().next().value!);
+  contextFingerprints.set(key, result);
+  return result;
+}
+
 /** Only deliberate metadata edits may re-key a verified cache. Body, language
  * or rendering changes still invalidate it, including cached retry failures. */
 export function retainTermPreviews(source: NodeVersion, next: NodeVersion): NodeVersion['termPreviews'] {
@@ -53,6 +66,7 @@ export function reusableTermPreviews(version: NodeVersion, candidates: readonly 
   let entries = current?.entries;
   let followsSourceLanguage = !current || current.languageMode === 'source';
   const exhaustedTerms = new Set(retryFailed ? [] : current?.exhaustedTerms ?? []);
+  const manualTerms = new Set(current?.manualTerms ?? []);
   let plain: string | undefined;
   for (const candidate of candidates) {
     const cache = candidate.termPreviews;
@@ -65,6 +79,7 @@ export function reusableTermPreviews(version: NodeVersion, candidates: readonly 
       plain ??= stripTermMarkers(version.body);
       if (stripTermMarkers(candidate.body) !== plain) continue;
     }
+    for (const term of cache.manualTerms ?? []) manualTerms.add(term);
     for (const [key, value] of Object.entries(cache.entries)) {
       if (typeof value !== 'string' || (entries && Object.hasOwn(entries, key))) continue;
       if (cache.languageMode !== 'source') followsSourceLanguage = false;
@@ -77,9 +92,11 @@ export function reusableTermPreviews(version: NodeVersion, candidates: readonly 
       for (const term of cache.exhaustedTerms ?? []) exhaustedTerms.add(term);
     }
   }
-  if (!retryFailed && entries === current?.entries && exhaustedTerms.size === (current?.exhaustedTerms?.length ?? 0)) return current;
+  if (!retryFailed && entries === current?.entries && exhaustedTerms.size === (current?.exhaustedTerms?.length ?? 0)
+    && manualTerms.size === (current?.manualTerms?.length ?? 0)) return current;
   return retryFailed || entries || exhaustedTerms.size ? { fingerprint, entries: entries ?? {},
     ...(followsSourceLanguage ? { languageMode: 'source' as const } : {}),
+    ...(manualTerms.size ? { manualTerms: [...manualTerms] } : {}),
     ...(exhaustedTerms.size ? { exhaustedTerms: [...exhaustedTerms] } : {}) } : undefined;
 }
 

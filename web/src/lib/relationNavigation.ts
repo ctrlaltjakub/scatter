@@ -11,18 +11,24 @@ import { answerVersion } from './chat/model';
 export function revealRelationSource(arrow: Arrow): boolean {
   const graph = useGraphStore.getState();
   const parent = graph.project?.nodes[arrow.fromNodeId];
-  if (parent && (parent.chat || parent.versions[parent.currentVersionIndex]?.contentType === 'answer') && arrow.sourceAnswer) {
-    const version = answerVersion(parent, arrow.sourceAnswer);
+  // Older standalone Markdown relations predate answer references. Recover
+  // their exact saved version, never infer a turn in an actual conversation.
+  const legacyVersion = !parent?.chat ? parent?.versions.find(v => v.contentType === 'answer'
+    && v.createdAt === arrow.sourceSelection?.sourceVersionCreatedAt) : undefined;
+  const sourceAnswer = arrow.sourceAnswer ?? (legacyVersion?.chat
+    ? { turnId: legacyVersion.chat.turnId, versionCreatedAt: legacyVersion.createdAt } : undefined);
+  if (parent && (parent.chat || parent.versions[parent.currentVersionIndex]?.contentType === 'answer') && sourceAnswer) {
+    const version = answerVersion(parent, sourceAnswer);
     // A deleted turn is an unavailable origin, never a match in another turn.
     if (!version) return false;
     const runtime = useChatRuntimeStore.getState();
-    runtime.view(parent.id, { active: arrow.sourceAnswer,
+    runtime.view(parent.id, { active: sourceAnswer,
       previews: { ...runtime.views[parent.id]?.previews,
-        [arrow.sourceAnswer.turnId]: arrow.sourceAnswer.versionCreatedAt } });
+        [sourceAnswer.turnId]: sourceAnswer.versionCreatedAt } });
     useGraphStore.temporal.getState().pause();
     try { graph.updateNode(parent.id, { currentVersionIndex: parent.versions.indexOf(version) }); }
     finally { useGraphStore.temporal.getState().resume(); }
-    runtime.jumpTo(parent.id, arrow.sourceAnswer.turnId, arrow.sourceSelection?.text ?? arrow.label);
+    runtime.jumpTo(parent.id, sourceAnswer.turnId, arrow.sourceSelection?.text ?? arrow.label);
     return true;
   }
   if (!arrow.sourceSelection) return false;

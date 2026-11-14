@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { useChatRuntimeStore } from '@/store/useChatRuntimeStore';
 import { navigateExistingRelation } from './relationNavigation';
 import { createBlankProject, useGraphStore } from '@/store/useGraphStore';
 import { useActiveIdxStore } from '@/store/useActiveIdxStore';
@@ -97,6 +98,20 @@ describe('navigateExistingRelation', () => {
     expect(useGraphStore.getState().project?.nodes[parent.id]?.bulletsCollapsed).toBe(false);
     expect(useActiveIdxStore.getState().byNodeId[parent.id]).toBe(0);
     expect(useGraphStore.getState().panTo).toMatchObject({ kind: 'node', id: 'child' });
+  });
+
+  it('recovers an old Markdown-note relation and jumps to its exact saved source without undo', () => {
+    const project = createBlankProject('Notes', 'parent');
+    project.nodes.parent = { id: 'parent', type: 'manual-empty', frozen: false, position: { x: 0, y: 0 }, currentVersionIndex: 1,
+      versions: [1, 2].map(createdAt => ({ header: 'Note', body: 'A chosen passage.', createdAt, generatedBy: 'manual', contentType: 'answer',
+        chat: { turnId: 'note', title: 'Note', question: '', state: 'complete', contextPath: [], informationChunking: false } })) };
+    useGraphStore.setState({ project });
+    useGraphStore.temporal.getState().clear();
+    navigateExistingRelation({ id: 'old-note', kind: 'auto', fromNodeId: 'parent', toNodeId: 'child',
+      sourceSelection: { sourceVersionCreatedAt: 1, createdAt: 3, text: 'chosen passage', parts: [] } });
+    expect(useGraphStore.getState().project?.nodes.parent?.currentVersionIndex).toBe(0);
+    expect(useChatRuntimeStore.getState().views.parent?.jump).toMatchObject({ turnId: 'note', query: 'chosen passage' });
+    expect(useGraphStore.temporal.getState().pastStates).toHaveLength(0);
   });
 
   it('does not reveal an unrelated bullet when a later version makes the source ambiguous', () => {

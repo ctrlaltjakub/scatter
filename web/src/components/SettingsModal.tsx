@@ -415,7 +415,7 @@ function GenerationSection() {
       <CollapsibleSection title="Automatic enrichment" description={<>Generate <strong>term previews</strong> and find <strong>free images</strong> in the background.</>}>
         <p className="field-help">These tasks use the <strong>secondary tasks model</strong> and may incur provider charges.</p>
         <SettingsToggle title="Generate term previews automatically" checked={autoTermPreviews} onChange={setAutoTermPreviews}
-          description={<>Generate <strong>one-sentence explanations</strong> for marked terms. When off, hovering only previews a <strong>linked node</strong>, if one exists.</>} />
+          description={<>Generate <strong>one-sentence explanations</strong> for marked terms. When off, hovering previews <strong>manually marked terms</strong> or a <strong>linked node</strong>, if one exists.</>} />
         <SettingsToggle title="Search for free images automatically" checked={autoFreeImages} onChange={setAutoFreeImages}
           description={<>Find <strong>freely reusable images</strong> from <strong>Wikimedia Commons</strong> and <strong>Openverse</strong> for <strong>encyclopedic and answer nodes</strong>. Use <strong>Search for free images</strong> in a node’s panel to search manually.</>} />
       </CollapsibleSection>

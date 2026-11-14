@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeAll, beforeEach, describe, it, expect, vi } from 'vitest';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { StrictMode } from 'react';
 import { useChatTableStore } from '@/store/useChatTableStore';
 import { ChatMarkdown } from './ChatMarkdown';
@@ -12,6 +12,12 @@ import { LANGUAGES } from '@/lib/languages';
 
 vi.mock('@/lib/chat/actions', () => ({ activateChatAnswer: vi.fn() }));
 vi.mock('@/lib/referenceAction', () => ({ activateReference: vi.fn() }));
+beforeAll(() => {
+  if (!globalThis.ResizeObserver) globalThis.ResizeObserver = class {
+    observe() {} unobserve() {} disconnect() {}
+  };
+});
+beforeEach(() => useGraphStore.setState({ project: null, highlight: null, panTo: null }));
 const answer = (body: string, chunked = true) => {
   let node = createChatNode({ id: 'c', createdAt: 1, position: { x: 0, y: 0 }, bodyHeight: 600 });
   node = appendChatAnswer(node, { turnId: 't', createdAt: 2, question: 'Question', metadata: { informationChunking: chunked } });
@@ -21,6 +27,50 @@ const answer = (body: string, chunked = true) => {
   return node.versions[1]!;
 };
 describe('chat Markdown presentation', () => {
+  it('keeps real conversations scoped to the exact answer instead of another turn or an unscoped arrow', () => {
+    const body = 'A selected passage stays in its own answer.';
+    const version = answer(body, false);
+    const project = createBlankProject('Conversation scope', 'c');
+    const node = createChatNode({ id: 'c', createdAt: 1, position: { x: 0, y: 0 }, bodyHeight: 400 });
+    project.nodes.c = { ...node, versions: [version], currentVersionIndex: 0 };
+    const anchor = { sourceVersionCreatedAt: 2, createdAt: 3, text: 'selected passage',
+      parts: [{ sourceField: 'chat:0', start: 2, end: 18, text: 'selected passage' }] };
+    project.arrows = Object.fromEntries([
+      ['correct', { turnId: 't', versionCreatedAt: 2 }],
+      ['other-turn', { turnId: 'other', versionCreatedAt: 2 }],
+      ['unscoped', undefined],
+    ].map(([id, sourceAnswer]) => [String(id), { id: String(id), kind: 'auto', fromNodeId: 'c', toNodeId: String(id),
+      sourceAnswer: sourceAnswer as { turnId: string; versionCreatedAt: number } | undefined, sourceSelection: anchor }]));
+    useGraphStore.setState({ project, activeProjectId: project.id });
+    const { container } = render(<ChatMarkdown nodeId="c" version={version} />);
+    const marks = container.querySelectorAll('.source-selection-mark');
+    expect(marks).toHaveLength(1);
+    expect(marks[0]).toHaveAttribute('data-relation-arrow-id', 'correct');
+  });
+  it.each([false, true])('connects selected passages in Markdown notes to their children (saved answer ref: %s)', scoped => {
+    const body = 'A **selected passage** remains connected to its explanation.';
+    const version = { ...answer(body, false), contentType: 'answer' as const, markdownNote: true };
+    const project = createBlankProject('Markdown selections', 'c');
+    project.nodes.c = { id: 'c', type: 'manual-empty', frozen: true, position: { x: 0, y: 0 },
+      currentVersionIndex: 0, versions: [version] };
+    project.nodes.child = { ...project.nodes.c, id: 'child' };
+    project.arrows = { relation: { id: 'relation', kind: 'auto', fromNodeId: 'c', toNodeId: 'child',
+      ...(scoped ? { sourceAnswer: { turnId: 't', versionCreatedAt: 2 } } : {}),
+      sourceSelection: { sourceVersionCreatedAt: 2, createdAt: 3, text: 'selected passage',
+        parts: [{ sourceField: 'chat:0', start: body.indexOf('selected passage'), end: body.indexOf('selected passage') + 16, text: 'selected passage' }] } } };
+    useGraphStore.setState({ project, activeProjectId: project.id, highlight: null, panTo: null });
+    useGraphStore.temporal.getState().clear();
+    const { container } = render(<ChatMarkdown nodeId="c" version={version} />);
+    const mark = container.querySelector<HTMLElement>('.source-selection-mark')!;
+    expect(mark).toHaveTextContent('selected passage');
+    expect(mark).toHaveAttribute('data-relation-arrow-id', 'relation');
+    act(() => useGraphStore.getState().setSelection(['child']));
+    expect(mark).toHaveClass('active');
+    fireEvent.click(mark);
+    expect(useGraphStore.getState().panTo).toMatchObject({ kind: 'node', id: 'child' });
+    expect(useGraphStore.getState().highlight?.arrowId).toBe('relation');
+    expect(useGraphStore.temporal.getState().pastStates).toHaveLength(0);
+  });
   it('leaves Google search suggestions to the active answer’s side panel', () => {
     const version = { ...answer('A grounded answer.'), googleSearchSuggestions: ['<div>Google Search</div>'] };
     const { container } = render(<ChatMarkdown nodeId="c" version={version} />);

@@ -368,6 +368,8 @@ export interface NodeVersion {
     entries: Record<string, string>;
     /** Legacy previews remain readable; explicit Redo terms refreshes them once. */
     languageMode?: 'source';
+    /** Explicit selections can show previews with automatic enrichment off. */
+    manualTerms?: string[];
     exhaustedTerms?: string[];
     error?: string;
   };
