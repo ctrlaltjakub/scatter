@@ -146,7 +146,7 @@ export async function buildObsidianArchive(project: Project, readAsset: (id: str
       fromSide: horizontal ? (dx >= 0 ? 'right':'left') : (dy >= 0 ? 'bottom':'top'),
       toSide: horizontal ? (dx >= 0 ? 'left':'right') : (dy >= 0 ? 'top':'bottom'),
       color: options.accents ? mutedAccentHex(from.color, options.accents.hue, options.accents.desaturate, options.accents.darken, options.accents.theme, .58) : from.color,
-      label: a.label || undefined }];
+    }];
   });
   put(projectName + '.canvas', JSON.stringify({ nodes: cards, edges }, null, 2));
   put('Open in Obsidian.md', instructions);

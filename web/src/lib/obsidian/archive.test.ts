@@ -56,6 +56,7 @@ describe('Obsidian vault export', () => {
     expect(canvas.nodes[0]).toMatchObject({ id:'a',x:-315,y:77,width:560,height:352,color:'#aabbcc' });
     expect(canvas.nodes[1].color).toBe('#abcd00');
     expect(canvas.edges[0]).toMatchObject({ fromNode:'a', toNode:'b', fromSide:'right',toEnd:'arrow',color:'#aabbcc' });
+    expect(canvas.edges[0]).not.toHaveProperty('label');
     const md = await note('a');
     expect(md).toContain('[日本語](<./' + encodeURIComponent('日本語') + '.md>)');
     expect(md).toMatch(/\[वर्ण\]\(<\.\.\/Previews\/.+\.md#\^term-1>\)/);
