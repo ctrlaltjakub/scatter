@@ -363,7 +363,14 @@ export interface NodeVersion {
   /** Preserve the initial 4:5 frame while its first answer streams. */
   initialTextFrame?: boolean;
   /** Derived term explanations for this exact text; persisted, not a new edit. */
-  termPreviews?: { fingerprint: string; entries: Record<string, string>; exhaustedTerms?: string[]; error?: string };
+  termPreviews?: {
+    fingerprint: string;
+    entries: Record<string, string>;
+    /** Legacy previews remain readable; explicit Redo terms refreshes them once. */
+    languageMode?: 'source';
+    exhaustedTerms?: string[];
+    error?: string;
+  };
   /** Rich answer metadata, owned by a chat turn or a detached Answer snapshot. */
   chat?: import('./chatTypes').ChatAnswerMetadata;
   header: string;

@@ -159,16 +159,26 @@ describe('model diagnostics', () => {
   it('passes previews with abbreviated names and different emphasis without repair calls', async () => {
     const cfg = settings(), job = diagnosticPlan(cfg, 'secondary').find(job => job.test.id === 'previews')!;
     const request = JSON.parse(job.test.messages[1]!.content as string);
-    expect(request.terms.map((entry: { term: string }) => entry.term)).toEqual(['perimeter', 'equilateral triangle', 'J. R. R. Tolkien']);
+    expect(request.terms.map((entry: { term: string }) => entry.term)).toEqual(['perimeter', 'equilateral triangle', 'J. R. R. Tolkien', 'working memory']);
     expect(request.context).toContain('The study of shapes');
     const invoke = vi.fn(async function* () {
       yield { delta: JSON.stringify({ previews: [
         { id: 0, parts: ['The perimeter is ', 'the total boundary length', ' of a shape.'] },
         { id: 1, parts: ['An equilateral triangle has three equal sides.'] },
         { id: 2, parts: ['J. R. R. Tolkien was an author known for ', 'The Hobbit', ' and ', 'The Lord of the Rings', '.'] },
+        { id: 3, parts: ['Das Arbeitsgedächtnis hält Informationen kurzfristig bereit und ermöglicht ihre Verarbeitung.'] },
       ] }), done: true, finishReason: 'stop' as const };
     });
     expect((await runDiagnosticJob(job, cfg, new AbortController().signal, '', invoke)).status).toBe('passed');
+    expect(invoke).toHaveBeenCalledTimes(1);
+  });
+  it('rejects an English preview for a German source paragraph without making a repair call', async () => {
+    const cfg = settings(), job = diagnosticPlan(cfg, 'secondary').find(job => job.test.id === 'previews')!;
+    const invoke = vi.fn(async function* () {
+      yield { delta: JSON.stringify({ previews: [0, 1, 2, 3].map(id => ({ id, parts: ['This is an English explanation.'] })) }),
+        done: true, finishReason: 'stop' as const };
+    });
+    await expect(runDiagnosticJob(job, cfg, new AbortController().signal, '', invoke)).rejects.toThrow('must be German like its source paragraph');
     expect(invoke).toHaveBeenCalledTimes(1);
   });
   it('follows the active main model across providers without changing explicit role assignments', () => {

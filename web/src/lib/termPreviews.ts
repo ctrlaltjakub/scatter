@@ -4,7 +4,7 @@ import { useNodeStatusStore } from '@/store/useNodeStatusStore';
 import { useChatRuntimeStore } from '@/store/useChatRuntimeStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { secondaryTaskCompletion } from './secondaryTaskCompletion';
-import { completeTermPreviews, previewTerms, reusableTermPreviews, TERM_PREVIEW_BATCH_SIZE, termPreviewFingerprint, termPreviewKey } from './termPreviewCore';
+import { completeTermPreviews, previewTerms, reusableTermPreviews, TERM_PREVIEW_BATCH_SIZE, termPreviewFingerprint, termPreviewKey, termPreviewWorkFingerprint } from './termPreviewCore';
 import { enrichmentMembers, pendingAnswerTermMarking, shareAnswerEnrichment } from './chat/sharedEnrichment';
 import { ensureAnswerTerms } from './chat/enrichment';
 
@@ -47,7 +47,8 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
   if (version.answerEnrichmentId && pendingAnswerTermMarking.has(version.answerEnrichmentId)) return;
   const fingerprint = termPreviewFingerprint(version);
   const allTerms = previewTerms(version);
-  const ownEntries = version.termPreviews?.fingerprint === fingerprint ? version.termPreviews.entries : {};
+  const ownEntries = version.termPreviews?.fingerprint === fingerprint
+    && (!retryFailed || version.termPreviews.languageMode === 'source') ? version.termPreviews.entries : {};
   if (allTerms.every(term => Object.hasOwn(ownEntries, termPreviewKey(term)))) return;
   const reused = reusableTermPreviews(version, version.answerEnrichmentId
     ? [...node.versions, ...enrichmentMembers(project, nodeId, version).map(member => member.version)] : node.versions, retryFailed);
@@ -61,12 +62,13 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
   const exhausted = new Set(reused?.exhaustedTerms ?? []);
   const terms = allTerms.filter(term => !Object.hasOwn(existing, termPreviewKey(term)) && !exhausted.has(termPreviewKey(term)));
   if (!terms.length) return;
-  const key = `${project.id}:${version.answerEnrichmentId ?? `${nodeId}:${createdAt}`}`;
+  const workFingerprint = termPreviewWorkFingerprint(version);
+  const key = `${project.id}:${version.answerEnrichmentId ?? `${nodeId}:${workFingerprint}`}`;
   const previous = running.get(key);
-  if (previous?.fingerprint === fingerprint && !previous.controller.signal.aborted) return;
+  if (previous?.fingerprint === workFingerprint && !previous.controller.signal.aborted) return;
   previous?.controller.abort();
   const controller = new AbortController();
-  running.set(key, { controller, fingerprint });
+  running.set(key, { controller, fingerprint: workFingerprint });
   // Large encyclopedic nodes can contain hundreds of terms. Scale the overall
   // budget with work; still cap each individual request to catch a stalled API.
   const timeout = Math.min(1_800_000, Math.max(180_000, Math.ceil(terms.length / TERM_PREVIEW_BATCH_SIZE) * 60_000));
@@ -74,8 +76,12 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
   const currentVersions = () => {
     const current = useGraphStore.getState().project;
     if (current?.id !== project.id) return [];
-    return enrichmentMembers(current, nodeId, seed)
-      .filter(member => termPreviewFingerprint(member.version) === fingerprint)
+    // Title-only editor snapshots retain the same prose. Let the original
+    // request finish for them too, even if they have a new version timestamp.
+    const members = seed.answerEnrichmentId ? enrichmentMembers(current, nodeId, seed)
+      : (current.nodes[nodeId]?.versions ?? []).map((version, index) => ({ nodeId, index, version }));
+    return members
+      .filter(member => termPreviewWorkFingerprint(member.version) === workFingerprint)
       .map(member => ({ ...member, node: current.nodes[member.nodeId]! }));
   };
   const statusNodes = new Map<string, number>();
@@ -94,13 +100,17 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
   const commit = (entries: Record<string, string>, exhaustedTerms: string[] = []) => {
     if (signal.aborted || (!Object.keys(entries).length && !exhaustedTerms.length)) return;
     for (const current of currentVersions()) {
-      const previous = current.version.termPreviews?.fingerprint === fingerprint ? current.version.termPreviews : undefined;
+      const currentFingerprint = termPreviewFingerprint(current.version);
+      const previous = current.version.termPreviews?.fingerprint === currentFingerprint ? current.version.termPreviews : undefined;
       // A restored project can contain the same shared answer in more than one
       // history entry. Keep updates already committed to its other versions.
       const latestNode = useGraphStore.getState().project?.nodes[current.nodeId];
       if (!latestNode) continue;
       const versions = [...latestNode.versions];
-      versions[current.index] = { ...current.version, termPreviews: { fingerprint, entries: { ...previous?.entries, ...entries },
+      versions[current.index] = { ...current.version, termPreviews: { fingerprint: currentFingerprint, entries: { ...previous?.entries, ...entries },
+        // A partial legacy cache can still contain explanations in the old
+        // forced language. Only an explicit redo refreshes those paid entries.
+        ...(!previous || previous.languageMode === 'source' || !Object.keys(previous.entries).length ? { languageMode: 'source' as const } : {}),
         ...((exhaustedTerms.length || previous?.exhaustedTerms?.length) ? {
           exhaustedTerms: [...new Set([...(previous?.exhaustedTerms ?? []), ...exhaustedTerms.map(termPreviewKey)])],
         } : {}),
@@ -123,7 +133,7 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
         const latest = useGraphStore.getState().project?.nodes[current.nodeId];
         if (!latest) continue;
         updateGenNode(project.id, current.nodeId, { versions: latest.versions.map((v, i) => i === current.index
-          ? { ...v, termPreviews: { ...v.termPreviews, fingerprint, entries: v.termPreviews?.entries ?? {}, error: message } } : v) });
+          ? { ...v, termPreviews: { ...v.termPreviews, fingerprint: termPreviewFingerprint(v), entries: v.termPreviews?.entries ?? {}, error: message } } : v) });
       }
       if (!signal.aborted) console.warn('[term previews] Background explanations could not finish.', error);
     }
@@ -166,8 +176,9 @@ export function watchFocusedTermPreviews(): () => void {
     if (previousEnabled === enabled && previousProject === project?.id && previousNode === focused?.id && previousGenerating === focused?.generating
       && versions.length === previousVersions.length && versions.every((version, index) => {
         const previous = previousVersions[index]!;
-        return previous === version || (previous.createdAt === version.createdAt && previous.header === version.header
-          && previous.body === version.body && previous.chat?.state === version.chat?.state);
+        return previous === version || ((!focused?.chat || previous.createdAt === version.createdAt)
+          && termPreviewWorkFingerprint(previous) === termPreviewWorkFingerprint(version)
+          && previous.chat?.state === version.chat?.state);
       })) return;
     previousProject = project?.id;
     previousEnabled = enabled;

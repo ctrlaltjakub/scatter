@@ -13,6 +13,7 @@ import { useChatRuntimeStore } from '@/store/useChatRuntimeStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { showChatAlternative, spawnChatAnswer } from './chat/actions';
 import { saveManualEdit } from './generate';
+import { saveNodeHeader } from './nodeHeaderActions';
 
 const complete = vi.hoisted(() => vi.fn());
 vi.mock('./secondaryTaskCompletion', () => ({ secondaryTaskCompletion: complete }));
@@ -329,6 +330,33 @@ describe('background preview lifecycle', () => {
     expect(answerEnrichmentError(chatVersion(12))).toBeUndefined();
     expect(complete).toHaveBeenCalledTimes(2);
   });
+  it.each(['encyclopedic', 'explain', 'answer', 'chat'] as const)('refreshes legacy English previews on a translated %s only after explicit Redo terms', async contentType => {
+    const body = 'Bei der [[Habituation]] nimmt eine Reaktion nach wiederholter Darbietung ab.';
+    if (contentType === 'chat') {
+      const project = seedChat();
+      useGraphStore.getState().updateNode('n', updateChatAnswer(project.nodes.n!, { turnId: 'second', versionCreatedAt: 12 }, { body, language: 'en' }));
+    } else useGraphStore.getState().updateNode('n', { versions: [{ ...current(), body, language: 'en', contentType }] });
+    const timestamp = contentType === 'chat' ? 12 : 10;
+    const node = useGraphStore.getState().project!.nodes.n!;
+    useGraphStore.getState().updateNode('n', { versions: node.versions.map(v => v.createdAt === timestamp ? { ...v,
+      termPreviews: { fingerprint: termPreviewFingerprint(v), entries: { habituation: 'Habituation is a decrease in response.' } },
+    } : v) });
+    useSettingsStore.setState({ generationLanguage: 'ja' });
+    await generateTermPreviews('n', timestamp);
+    expect(complete).not.toHaveBeenCalled();
+    const german = 'Habituation ist die **Abnahme einer Reaktion** nach **wiederholter Darbietung** eines Reizes.';
+    complete.mockResolvedValueOnce('{"terms":["Habituation"]}')
+      .mockResolvedValueOnce(JSON.stringify({ previews: [{ id: 0, parts: [german] }] }));
+    if (contentType === 'chat') await redoChatTerms('n', { turnId: 'second', versionCreatedAt: 12 });
+    else await redoTermMarking('n');
+    const latest = () => contentType === 'chat' ? chatVersion(12) : useGraphStore.getState().project!.nodes.n!.versions.at(-1)!;
+    await vi.waitFor(() => expect(termPreviewFor(latest(), 'Habituation')).toBe(german));
+    expect(latest().termPreviews?.languageMode).toBe('source');
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete.mock.calls[1]![0].system).not.toContain('English (en-US)');
+    await generateTermPreviews('n', latest().createdAt);
+    expect(complete).toHaveBeenCalledTimes(2);
+  });
   it.each(['encyclopedic', 'explain', 'answer', 'chat'] as const)('redo recovers abbreviated-name previews in %s without regenerating completed entries', async contentType => {
     seed('A [[cache]] stores a recording by [[Aphex Twin]].');
     if (contentType === 'chat') {
@@ -339,7 +367,7 @@ describe('background preview lifecycle', () => {
     const node = useGraphStore.getState().project!.nodes.n!;
     const timestamp = contentType === 'chat' ? 12 : 10;
     useGraphStore.getState().updateNode('n', { versions: node.versions.map(v => v.createdAt === timestamp ? { ...v,
-      termPreviews: { fingerprint: termPreviewFingerprint(v), entries: { cache: explanation }, exhaustedTerms: ['aphex twin'] },
+      termPreviews: { fingerprint: termPreviewFingerprint(v), languageMode: 'source', entries: { cache: explanation }, exhaustedTerms: ['aphex twin'] },
     } : v) });
     const abbreviated = ['Aphex Twin is the alias of ', 'Richard D. James', ', a musician known for ', 'experimental electronic music', '.'];
     const expected = 'Aphex Twin is the alias of **Richard D. James**, a musician known for **experimental electronic music**.';
@@ -545,7 +573,7 @@ describe('background preview lifecycle', () => {
       const v = chatVersion(12);
       useGraphStore.getState().updateNode('n', updateChatAnswer(node,
         { turnId: 'second', versionCreatedAt: 12 }, { termPreviews: {
-          fingerprint: termPreviewFingerprint(v), entries: { cache: explanation },
+          fingerprint: termPreviewFingerprint(v), languageMode: 'source', entries: { cache: explanation },
         } }));
       return '{"terms":["cache","latency"]}';
     });
@@ -701,6 +729,83 @@ describe('background preview lifecycle', () => {
     useGraphStore.getState().updateNode('n', { frozen: true });
     expect(complete).toHaveBeenCalledTimes(1);
     stop();
+  });
+  it.each(LANGUAGES)('keeps $name previews after a title edit, undo, redo and refocusing', async ({ id, sample }) => {
+    useGraphStore.getState().updateNode('n', { versions: [{ ...current(), language: id, body: `${sample} [[cache]]` }] });
+    const stop = watchFocusedTermPreviews();
+    try {
+      await vi.waitFor(() => expect(termPreviewFor(current(), 'cache')).toBe(explanation));
+      const original = current();
+      useGraphStore.temporal.getState().clear();
+      saveNodeHeader(useGraphStore.getState().project!.id, 'n', 10, `${sample} — new title`);
+      await Promise.resolve();
+      expect(termPreviewFor(current(), 'cache')).toBe(explanation);
+      expect(current()).toMatchObject({ body: original.body, language: id, createdAt: 10 });
+      expect(useGraphStore.temporal.getState().pastStates).toHaveLength(1);
+      useGraphStore.temporal.getState().undo(); await Promise.resolve();
+      expect(current().header).toBe(original.header);
+      useGraphStore.temporal.getState().redo(); await Promise.resolve();
+      useGraphStore.getState().setSelection([]); await Promise.resolve();
+      useGraphStore.getState().setSelection(['n']); await Promise.resolve();
+      expect(termPreviewFor(current(), 'cache')).toBe(explanation);
+      expect(complete).toHaveBeenCalledTimes(1);
+    } finally { stop(); }
+  });
+  it.each(['inline', 'editor'] as const)('keeps one in-flight preview request through a %s title edit', async (mode) => {
+    let finish!: (value: string) => void;
+    complete.mockImplementationOnce(() => new Promise<string>(resolve => { finish = resolve; }));
+    const stop = watchFocusedTermPreviews();
+    try {
+      await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(1));
+      if (mode === 'inline') saveNodeHeader(useGraphStore.getState().project!.id, 'n', 10, 'Renamed');
+      else saveManualEdit('n', 'Renamed', current().body);
+      await Promise.resolve();
+      useGraphStore.getState().setSelection([]); await Promise.resolve();
+      useGraphStore.getState().setSelection(['n']); await Promise.resolve();
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(complete.mock.calls[0]![0].signal.aborted).toBe(false);
+      finish(result([0]));
+      await vi.waitFor(() => {
+        const node = useGraphStore.getState().project!.nodes.n!;
+        expect(termPreviewFor(node.versions[node.currentVersionIndex], 'cache')).toBe(explanation);
+      });
+      expect(complete).toHaveBeenCalledTimes(1);
+    } finally { finish(result([0])); stop(); }
+  });
+  it('retains previews and their language throughout title-only editor autosaves, but invalidates them after a body edit', async () => {
+    useGraphStore.getState().updateNode('n', { versions: [{ ...current(), language: 'ja' }] });
+    const stop = watchFocusedTermPreviews();
+    try {
+      await vi.waitFor(() => expect(termPreviewFor(current(), 'cache')).toBe(explanation));
+      useGraphStore.temporal.getState().clear();
+      const draft = saveManualEdit('n', 'New title', current().body);
+      saveManualEdit('n', 'Newer title', current().body, draft);
+      await Promise.resolve();
+      let node = useGraphStore.getState().project!.nodes.n!;
+      expect(node.versions).toHaveLength(2);
+      expect(node.versions[1]?.language).toBe('ja');
+      expect(termPreviewFor(node.versions[1], 'cache')).toBe(explanation);
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(useGraphStore.temporal.getState().pastStates).toHaveLength(1);
+      saveManualEdit('n', 'Newer title', 'A changed [[cache]] context.', draft);
+      node = useGraphStore.getState().project!.nodes.n!;
+      expect(termPreviewFor(node.versions[1], 'cache')).toBeUndefined();
+      await vi.waitFor(() => expect(complete).toHaveBeenCalledTimes(2));
+    } finally { stop(); }
+  });
+  it.each(['inline', 'editor'] as const)('does not retry failed previews just because a %s title changes', async (mode) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    complete.mockRejectedValue(new Error('Provider unavailable'));
+    const stop = watchFocusedTermPreviews();
+    try {
+      await vi.waitFor(() => expect(current().termPreviews?.error).toContain('could not finish'));
+      if (mode === 'inline') saveNodeHeader(useGraphStore.getState().project!.id, 'n', 10, 'Renamed');
+      else saveManualEdit('n', 'Renamed', current().body);
+      await Promise.resolve();
+      expect(complete).toHaveBeenCalledTimes(1);
+      const node = useGraphStore.getState().project!.nodes.n!;
+      expect(node.versions[node.currentVersionIndex]?.termPreviews?.error).toContain('could not finish');
+    } finally { stop(); warn.mockRestore(); }
   });
   it.each(['explain', undefined] as const)('backfills explain previews on focus and reuses them after refocusing (content type: %s)', async (contentType) => {
     useGraphStore.getState().updateNode('n', { type: 'explain', versions: [{ ...current(),

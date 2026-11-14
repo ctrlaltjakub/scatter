@@ -13,6 +13,7 @@ import { useNodeStatusStore } from '@/store/useNodeStatusStore';
 import { markChatTerms } from './chat/termMarking';
 import { markTerms, stripTermMarkers } from './termMarking';
 import { generateTermPreviews } from './termPreviews';
+import { retainTermPreviews } from './termPreviewCore';
 import { generateImageQuestionTitle } from './generateImageQuestionTitle';
 import {
   useRewriteStore,
@@ -3943,11 +3944,13 @@ export function saveManualEdit(nodeId: string, header: string | HeaderParts, bod
     : normalizeHeaderParts(header);
   const flat = flattenHeaderParts(parts) || cur.header;
   const newVersion: NodeVersion = {
+    ...(body === cur.body ? { answerEnrichmentId: cur.answerEnrichmentId, answerTermMarking: cur.answerTermMarking } : {}),
     header: flat,
     headerParts: parts,
     body,
     createdAt: draftIndex >= 0 ? cur.createdAt : nextTextVersionTimestamp(node),
     generatedBy: 'manual',
+    language: versionLanguage(cur),
     // A manual edit keeps the node's bullet cap and content type unchanged.
     maxL1Bullets: cur.maxL1Bullets,
     contentType: currentContentType(node),
@@ -3962,6 +3965,7 @@ export function saveManualEdit(nodeId: string, header: string | HeaderParts, bod
     } : {}),
     selectedTextQuestion: parts.question,
   };
+  if (body === cur.body) newVersion.termPreviews = retainTermPreviews(cur, newVersion);
   const versions = [...node.versions];
   if (draftIndex >= 0) versions[draftIndex] = newVersion;
   else versions.push(newVersion);

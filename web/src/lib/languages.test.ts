@@ -63,7 +63,17 @@ describe('generation languages', () => {
     expect(termPreviewFingerprint({ ...v, language: 'pl' })).not.toBe(fingerprint);
     expect(reusableTermPreviews({ ...v, language: 'pl' }, [{ ...v, termPreviews: { fingerprint, entries: { term: 'English preview.' } } }])).toBeUndefined();
     useSettingsStore.setState({ generationLanguage: 'ar' });
-    expect(previewRequest({ ...v, language: 'pl' }, ['term']).system).toContain('Polish (pl-PL)');
+    expect(previewRequest({ ...v, language: 'pl' }, ['term']).system).toBe(previewRequest(v, ['term']).system);
+  });
+  it.each(LANGUAGES)('uses the actual $name source text for previews independently of saved language and selector', ({ id, sample }) => {
+    const v: NodeVersion = { header: 'A topic with an English title', body: `${sample} [[concept]]`,
+      language: id, generatedBy: 'root', contentType: 'encyclopedic', createdAt: 1 };
+    useSettingsStore.setState({ generationLanguage: 'ja' });
+    const request = previewRequest(v, ['concept']);
+    useSettingsStore.setState({ generationLanguage: 'ar' });
+    expect(previewRequest({ ...v, language: id === 'en' ? 'de' : 'en' }, ['concept'])).toEqual(request);
+    expect(JSON.parse(request.user).context).toContain(sample);
+    expect(request.system).not.toContain('This language selection takes precedence');
   });
   it('does not break script shaping in overview titles or mark inside a Hindi word', () => {
     for (const text of ['العربية', '日本語', 'स्पष्ट', '한국어']) {

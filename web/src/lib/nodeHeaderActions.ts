@@ -1,6 +1,7 @@
 import { useGraphStore } from '@/store/useGraphStore';
 import { useChatRuntimeStore } from '@/store/useChatRuntimeStore';
 import { canInlineEditNodeHeader, normalizeEditableHeader } from './nodeHeaderText';
+import { retainTermPreviews } from './termPreviewCore';
 
 export function requestNodeHeaderEdit(nodeId: string) {
   const project = useGraphStore.getState().project;
@@ -25,8 +26,10 @@ export function saveNodeHeader(projectId: string, nodeId: string, versionCreated
   const index = node.versions.findIndex(version => version.createdAt === versionCreatedAt);
   const version = node.versions[index];
   if (!version || version.header === title) return;
-  graph.updateNode(nodeId, { versions: node.versions.map((item, i) => i === index
-    ? { ...item, header: title, headerParts: { subject: title },
-      ...(item.chat ? { chat: { ...item.chat, title, titleManual: true } } : {}) }
-    : item) });
+  graph.updateNode(nodeId, { versions: node.versions.map((item, i) => {
+    if (i !== index) return item;
+    const next = { ...item, header: title, headerParts: { subject: title },
+      ...(item.chat ? { chat: { ...item.chat, title, titleManual: true } } : {}) };
+    return { ...next, termPreviews: retainTermPreviews(item, next) };
+  }) });
 }

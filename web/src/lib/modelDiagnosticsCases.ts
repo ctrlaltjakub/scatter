@@ -5,7 +5,7 @@ import { effectivePrompt, substitute } from './promptDefaults';
 import { chatFormattingPrompt } from './chatFormatting';
 import { termSelectionPrompt } from './termSelectionPrompt';
 import { applyTermSelection, markedTerms, stripTermMarkers } from './termMarking';
-import { previewRequest, previewTerms, inspectTermPreviews } from './termPreviewCore';
+import { previewRequest, previewTerms, inspectTermPreviews, retainTermPreviews, termPreviewFingerprint, termPreviewFor } from './termPreviewCore';
 import { GenerationResponseError, parseResponseJson, validateEncyclopedicOutput } from './generationValidation';
 import { parseFactCheckFinding } from './factCheckCore';
 import { freshOutlineProblem, parseBody } from './bulletParse';
@@ -132,15 +132,26 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
     assertDiagnostic(body && stripTermMarkers(body) === stripTermMarkers(DIAGNOSTIC_TEXT), 'Term marking changed the source text instead of only marking terms.');
   });
   const previewVersion = { header: 'Geometry and literature',
-    body: 'The [[perimeter]] measures the boundary of an [[equilateral triangle]]. [[J. R. R. Tolkien]] wrote The Hobbit.\n\n- Geometry\n  - Geometry: The study of shapes, sizes and positions.',
+    body: 'The [[perimeter]] measures the boundary of an [[equilateral triangle]]. [[J. R. R. Tolkien]] wrote The Hobbit.\n\nBeim Lernen hält das [[working memory]] Informationen vorübergehend verfügbar, damit sie für eine aktuelle Aufgabe verarbeitet werden können.\n\n- Geometry\n  - Geometry: The study of shapes, sizes and positions.',
     language: language.id, createdAt: 1, generatedBy: 'root' as const, contentType: 'encyclopedic' as const };
   // Match production: the existing Geometry description supplies its preview
   // locally; the paid check covers only terms that still need an explanation.
   const requestedPreviewTerms = previewTerms(previewVersion);
   const preview = previewRequest(previewVersion, requestedPreviewTerms);
   secondary('previews', 'Term previews', preview.system, preview.user, preview.maxOutputTokens, text => {
-    const { issues } = inspectTermPreviews(text, requestedPreviewTerms);
+    const { entries, issues } = inspectTermPreviews(text, requestedPreviewTerms);
     assertDiagnostic(!Object.keys(issues).length, Object.entries(issues).map(([term, issue]) => `${term}: ${issue.reason}`).join(' '));
+    // One mixed-source request also checks that English terms and the current
+    // selector cannot override the German prose surrounding working memory.
+    assertDiagnostic(/\b(?:das|die|der|ein|eine|ist|hält|speichert|ermöglicht|für|während|damit|werden|beim|zu|und|als)\b/iu.test(entries['working memory'] ?? ''),
+      'The working memory preview must be German like its source paragraph. Retry the check or choose a secondary model that follows source-language instructions.');
+    // Exercise the same cache retention as title editing with this response;
+    // a display-title change must never need another model request.
+    const saved = { ...previewVersion, termPreviews: { fingerprint: termPreviewFingerprint(previewVersion), entries } };
+    const renamed = { ...saved, header: 'My study notes' };
+    renamed.termPreviews = retainTermPreviews(saved, renamed)!;
+    assertDiagnostic(requestedPreviewTerms.every(term => termPreviewFor(renamed, term) === termPreviewFor(saved, term)),
+      'Term previews could not be retained after a title edit. Report this app error; no extra model call is needed.');
   });
   secondary('group-title', 'Group name', prompt('groupName') + '\n\n' + languagePrompt, JSON.stringify({ headers: ['Triangles', 'Circles', 'Polygon perimeter'] }), 256,
     text => assertDiagnostic(typeof parseResponseJson(text).name === 'string', 'The group-name response has no name field.'));

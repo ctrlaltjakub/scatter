@@ -1,4 +1,3 @@
-import { generationLanguagePrompt } from './generationLanguage';
 import { versionLanguage } from './languages';
 import { configuredPrompt } from '@/lib/configuredPrompt';
 import { GenerationOutputLimitError } from './generationLimits';
@@ -26,19 +25,40 @@ export function termPreviewFingerprint(version: NodeVersion): string {
   return `${source.length}:${hashPrompt(source)}`;
 }
 
+/** A title is editable presentation, not a reason to repeat paid preview work.
+ * Keep the persisted fingerprint format above compatible with existing caches. */
+export function termPreviewWorkFingerprint(version: NodeVersion): string {
+  const kind = version.contentType ?? (['chat', 'explain', 'interactive', 'media'].includes(version.generatedBy)
+    ? version.generatedBy : 'encyclopedic');
+  const source = JSON.stringify([version.answerEnrichmentId ?? kind, version.body, versionLanguage(version)]);
+  return `${source.length}:${hashPrompt(source)}`;
+}
+
+/** Only deliberate metadata edits may re-key a verified cache. Body, language
+ * or rendering changes still invalidate it, including cached retry failures. */
+export function retainTermPreviews(source: NodeVersion, next: NodeVersion): NodeVersion['termPreviews'] {
+  if (termPreviewWorkFingerprint(source) !== termPreviewWorkFingerprint(next)
+    || source.termPreviews?.fingerprint !== termPreviewFingerprint(source)) return;
+  return { ...source.termPreviews, fingerprint: termPreviewFingerprint(next) };
+}
+
 /** Re-marking changes delimiters, not meaning. Reuse only verified caches with
  * the exact same prose, subject and node kind; real edits still invalidate them.
- * Keep unmarked entries too, so a later redo can mark the term again for free. */
+ * Keep unmarked entries too, so a later redo can mark the term again for free.
+ * Explicit redo refreshes legacy caches once under the source-language rule. */
 export function reusableTermPreviews(version: NodeVersion, candidates: readonly NodeVersion[], retryFailed = false): NodeVersion['termPreviews'] {
   const fingerprint = termPreviewFingerprint(version);
-  const current = version.termPreviews?.fingerprint === fingerprint ? version.termPreviews : undefined;
+  const current = version.termPreviews?.fingerprint === fingerprint
+    && (!retryFailed || version.termPreviews.languageMode === 'source') ? version.termPreviews : undefined;
   let entries = current?.entries;
+  let followsSourceLanguage = !current || current.languageMode === 'source';
   const exhaustedTerms = new Set(retryFailed ? [] : current?.exhaustedTerms ?? []);
   let plain: string | undefined;
   for (const candidate of candidates) {
     const cache = candidate.termPreviews;
     const shared = !!version.answerEnrichmentId && version.answerEnrichmentId === candidate.answerEnrichmentId;
-    if (candidate === version || versionLanguage(candidate) !== versionLanguage(version) || !cache || cache.fingerprint !== termPreviewFingerprint(candidate)
+    if (candidate === version || versionLanguage(candidate) !== versionLanguage(version) || !cache
+      || (retryFailed && cache.languageMode !== 'source') || cache.fingerprint !== termPreviewFingerprint(candidate)
       || (!shared && (previewSubject(candidate) !== previewSubject(version) || candidate.contentType !== version.contentType
       || candidate.generatedBy !== version.generatedBy))) continue;
     if (candidate.body !== version.body) {
@@ -47,6 +67,7 @@ export function reusableTermPreviews(version: NodeVersion, candidates: readonly 
     }
     for (const [key, value] of Object.entries(cache.entries)) {
       if (typeof value !== 'string' || (entries && Object.hasOwn(entries, key))) continue;
+      if (cache.languageMode !== 'source') followsSourceLanguage = false;
       if (entries === current?.entries) entries = Object.assign(Object.create(null), entries) as Record<string, string>;
       entries![key] = value;
     }
@@ -58,6 +79,7 @@ export function reusableTermPreviews(version: NodeVersion, candidates: readonly 
   }
   if (!retryFailed && entries === current?.entries && exhaustedTerms.size === (current?.exhaustedTerms?.length ?? 0)) return current;
   return retryFailed || entries || exhaustedTerms.size ? { fingerprint, entries: entries ?? {},
+    ...(followsSourceLanguage ? { languageMode: 'source' as const } : {}),
     ...(exhaustedTerms.size ? { exhaustedTerms: [...exhaustedTerms] } : {}) } : undefined;
 }
 
@@ -132,8 +154,9 @@ export function previewRequest(version: NodeVersion, terms: string[], repairs?: 
     }
     context = merged.map(([from, to]) => context.slice(from, to)).join('\n[…]\n');
   }
-  return { system: configuredPrompt('termPreviewSystem') + '\n\n' + generationLanguagePrompt(versionLanguage(version))
-      + (repairs ? '\n\n' + configuredPrompt('termPreviewRepair') : ''),
+  return { system: configuredPrompt('termPreviewSystem')
+      + (repairs ? '\n\n' + configuredPrompt('termPreviewRepair') : '')
+      + '\n\n' + configuredPrompt('termPreviewLanguage'),
     user: termPreviewUser(previewSubject(version), context, terms.map((term, id) => ({ id, term,
       ...(repairs?.[termPreviewKey(term)] ? { repair: repairs[termPreviewKey(term)] } : {}) }))),
     maxOutputTokens: Math.max(1400, terms.length * 180), rejectTruncated: true };

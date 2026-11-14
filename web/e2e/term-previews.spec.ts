@@ -2,6 +2,134 @@ import { expect, test } from '@playwright/test';
 
 test.use({ browserName: process.env.SCATTER_TEST_BROWSER === 'firefox' ? 'firefox' : 'chromium' });
 
+test('title edits preserve localized previews without any model request', async ({ page }) => {
+  test.setTimeout(90_000);
+  const requests: any[] = [];
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.route('**/*', async route => {
+    const url = new URL(route.request().url());
+    if (url.hostname === 'openrouter.ai' && url.pathname === '/api/v1/chat/completions') {
+      const request = route.request().postDataJSON();
+      requests.push(request);
+      const preview = request.messages[0].content.includes('Return JSON concept explanations');
+      const text = JSON.stringify(preview ? { previews: [{ id: 0, parts: [
+        'Habituation ist die ', 'Abnahme einer Reaktion', ' nach ', 'wiederholter Darbietung', ' eines Reizes.',
+      ] }] } : { terms: ['Habituation'] });
+      await route.fulfill({ contentType: 'text/event-stream', body:
+        `data: ${JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n` });
+      return;
+    }
+    return ['localhost', '127.0.0.1'].includes(url.hostname) ? route.continue() : route.abort();
+  });
+  await page.goto('/sandbox');
+  await page.locator('[data-node-id]').first().waitFor();
+  await page.evaluate(async () => {
+    const win = window as any;
+    win.webpackChunk_N_E.push([[`title-preview-test-${Date.now()}`], {}, (require: any) => {
+      win.testExport = (name: string) => {
+        for (const entry of Object.values(require.c) as any[]) if (entry.exports?.[name]) return entry.exports[name];
+        throw new Error(`Missing test export: ${name}`);
+      };
+    }]);
+    const get = win.testExport, settings = get('useSettingsStore'), graph = get('useGraphStore');
+    settings.setState({ autoTermPreviews: false, autoFreeImages: false, providers: [], activeModelRef: null,
+      generationLanguage: 'en', cameraAutoPan: {} });
+    const version: any = { header: 'Mémoire informatique', headerParts: { subject: 'Mémoire informatique' },
+      body: 'Un [[cache]] conserve des données récentes.', language: 'fr', createdAt: 1,
+      generatedBy: 'explain', contentType: 'explain', width: 600, bodyMaxHeight: 300 };
+    version.termPreviews = { fingerprint: get('termPreviewFingerprint')(version),
+      entries: { cache: 'Un cache est une **mémoire temporaire** qui permet un **accès rapide** aux données.' } };
+    const node = { id: 'title-preview', type: 'explain', frozen: true, position: { x: 0, y: 0 },
+      versions: [version], currentVersionIndex: 0 };
+    const project = { ...graph.getState().project, id: 'title-preview-test', nodes: { [node.id]: node }, arrows: {}, groups: {},
+      rootNodeId: node.id, selection: [node.id], viewport: { x: 450, y: 130, zoom: .9 } };
+    graph.getState().setProject(project);
+    graph.setState({ activeProjectId: project.id, panTo: null });
+    settings.setState({ autoTermPreviews: true,
+      providers: [{ id: 'fixture', preset: 'openrouter', apiKey: 'fixture-not-a-key', enabledModels: ['fixture-model'] }],
+      activeModelRef: { providerId: 'fixture', model: 'fixture-model' }, secondaryUseSameModel: true });
+    const root = await navigator.storage.getDirectory();
+    const write = async (dir: FileSystemDirectoryHandle, name: string, value: unknown) => {
+      const file = await dir.getFileHandle(name, { create: true });
+      const stream = await file.createWritable(); await stream.write(JSON.stringify(value)); await stream.close();
+    };
+    await write(root, 'settings.json', settings.getState());
+    const projects = await root.getDirectoryHandle('projects', { create: true });
+    await write(projects, `${project.id}.json`, project);
+    await write(projects, 'index.json', { activeId: project.id, items: [{ id: project.id, name: project.name, createdAt: 1, updatedAt: 1 }] });
+    sessionStorage.removeItem('scatter.onboarding');
+  });
+  // The main route mounts both the background watcher and the full editor;
+  // the physics sandbox deliberately mounts neither.
+  await page.goto('/');
+  await page.locator('[data-node-id="title-preview"]').waitFor();
+  await page.evaluate(() => {
+    const win = window as any;
+    win.webpackChunk_N_E.push([[`title-preview-runtime-${Date.now()}`], {}, (require: any) => {
+      win.testExport = (name: string) => {
+        for (const entry of Object.values(require.c) as any[]) if (entry.exports?.[name]) return entry.exports[name];
+        throw new Error(`Missing test export: ${name}`);
+      };
+    }]);
+  });
+  const card = page.locator('[data-node-id="title-preview"]');
+  await expect(card).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByRole('button', { name: 'Edit header', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Edit header', exact: true }).fill('Mes notes');
+  await page.mouse.click(1350, 900);
+  await expect(card.locator('.node-title').first()).toHaveText('Mes notes');
+  const showPreview = async () => {
+    await card.locator('.ref-chip:visible').first().hover();
+    await expect(page.getByRole('tooltip').filter({ hasText: 'Un cache est une mémoire temporaire' })).toBeVisible();
+  };
+  await showPreview();
+  await page.mouse.click(1350, 900);
+  await card.click();
+  if (!await page.getByRole('button', { name: 'Edit or export text', exact: true }).isVisible()) {
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  }
+  await page.getByRole('button', { name: 'Edit or export text', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Header', exact: true }).fill('Mes notes de révision');
+  await page.getByRole('button', { name: 'Exit', exact: true }).click();
+  await expect(card.locator('.node-title').first()).toHaveText('Mes notes de révision');
+  await showPreview();
+  expect(await page.evaluate(() => {
+    const node = (window as any).testExport('useGraphStore').getState().project.nodes['title-preview'];
+    return node.versions[node.currentVersionIndex].language;
+  })).toBe('fr');
+  expect(requests).toEqual([]);
+
+  // Reproduce an existing translated node whose saved generation language and
+  // old preview still say English. Only explicit redo refreshes the cache.
+  await page.evaluate(() => {
+    const get = (window as any).testExport, graph = get('useGraphStore');
+    const node = graph.getState().project.nodes['title-preview'];
+    const index = node.currentVersionIndex;
+    const version = { ...node.versions[index], language: 'en',
+      body: 'Bei der [[Habituation]] nimmt eine Reaktion nach wiederholter Darbietung ab.' };
+    version.termPreviews = { fingerprint: get('termPreviewFingerprint')(version),
+      entries: { habituation: 'Habituation is a decrease in response.' } };
+    graph.getState().updateNode(node.id, { versions: node.versions.map((v: any, i: number) => i === index ? version : v) });
+    get('useSettingsStore').setState({ generationLanguage: 'ja' });
+  });
+  await card.locator('.ref-chip:visible').first().hover();
+  await expect(page.getByRole('tooltip').filter({ hasText: 'Habituation is a decrease in response.' })).toBeVisible();
+  expect(requests).toEqual([]);
+  await card.locator('.node-header').click();
+  await page.getByRole('button', { name: 'Redo term marking', exact: true }).click();
+  await expect.poll(() => requests.length).toBe(2);
+  await card.locator('.ref-chip:visible').first().hover();
+  await expect(page.getByRole('tooltip').filter({ hasText: 'Habituation ist die Abnahme einer Reaktion' })).toBeVisible();
+  const previewRequest = requests.find(request => request.messages[0].content.includes('Return JSON concept explanations'));
+  expect(previewRequest.messages[0].content).toContain('language of its surrounding source explanation');
+  expect(previewRequest.messages[0].content).not.toContain('English (en-US)');
+  expect(previewRequest.messages[0].content).not.toContain('Japanese (ja-JP)');
+  expect(errors).toEqual([]);
+});
+
 test('encyclopedic bullet names preview their own descriptions without model requests', async ({ page }, info) => {
   const inference: string[] = [];
   const errors: string[] = [];
@@ -94,7 +222,7 @@ test('Redo terms recovers an abbreviated-name preview, keeps completed previews,
       body: 'A [[cache]] stores a recording by [[Aphex Twin]].', language: 'en',
     }, { state: 'complete' });
     const version = node.versions[node.currentVersionIndex];
-    version.termPreviews = { fingerprint: get('termPreviewFingerprint')(version),
+    version.termPreviews = { fingerprint: get('termPreviewFingerprint')(version), languageMode: 'source',
       entries: { cache: 'A cache is a **temporary store** that enables **faster access**.' }, exhaustedTerms: ['aphex twin'] };
     node.frozen = true;
     node.generating = false;

@@ -465,6 +465,13 @@ MANDATORY: parts is an array of exactly 5 or 7 strings, alternating PLAIN, BOLD,
 Example input: {"topic":"Psychotherapy","terms":[{"id":0,"term":"therapist"},{"id":1,"term":"habituation"}]}
 Example output: {"previews":[{"id":0,"parts":["A therapist is a ","trained professional"," who uses ","structured psychological methods"," to help people manage emotional difficulties and change patterns of thought or behavior."]},{"id":1,"parts":["Habituation is a ","decrease in response"," after ","repeated exposure"," to a stimulus that proves unimportant, such as gradually noticing a familiar background sound less."]}]}`,
   },
+  termPreviewLanguage: {
+    group: "Terms and previews",
+    label: "Term previews: source language",
+    description: "Matches explanations to the **actual source text**, including translated nodes.",
+    help: "No placeholders. Independent of the language selector and saved generation language. Applies to normal and repair requests.",
+    text: `Determine the output language from the explanatory prose in the supplied node context, not from a language selector, stored generation-language metadata, the topic title, or the spelling of a term. Write each preview in the language of its surrounding source explanation. Preserve proper names, quoted foreign terms and code identifiers as appropriate; do not mistake them or the English examples here for the source language. This source-language rule takes precedence over other output-language instructions. Keep JSON keys and numeric IDs unchanged.`,
+  },
   termPreviewReminder: {
     group: "Terms and previews",
     label: "Term previews: response reminder",

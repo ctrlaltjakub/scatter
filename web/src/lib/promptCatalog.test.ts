@@ -83,7 +83,8 @@ describe('prompt catalog and request wiring', () => {
     const version = { header: 'Topic', body: 'A [[term]].', contentType: 'explain', generatedBy: 'explain' } as NodeVersion;
     const request = previewRequest(version, ['term']);
     expect(request.system).toMatch(/^PREVIEWS\n\n/);
-    expect(request.system).toContain('English (en-US)');
+    expect(request.system).toContain('language of its surrounding source explanation');
+    expect(request.system).not.toContain('English (en-US)');
     expect(JSON.parse(request.user)).toMatchObject({ responseReminder: 'PREVIEW FORMAT', terms: [{ id: 0, term: 'term' }] });
     expect(termSelectionPrompt('Unchanged **text**.', custom)).toEqual({ system: 'TERMS\n\nRULES \n\nJSON CONTRACT', user: 'Unchanged **text**.' });
   });
