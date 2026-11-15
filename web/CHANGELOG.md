@@ -3,7 +3,7 @@
 Each version has one entry. Beta versions remain listed until that version is
 released to stable, when its label changes to Stable. Older entries are kept.
 
-## 1.2.1 · Beta — 14 November 2026
+## 1.2.1 · Stable — 15 November 2026
 
 ### New features
 
