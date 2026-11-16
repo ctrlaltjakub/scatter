@@ -34,14 +34,14 @@ export interface FitViewportOptions {
   leftInset: number;
   margin: number;
   minZoom: number;
-  /** Largest zoom the fit may choose. Omitted means the current zoom, which
-   * preserves the ordinary node-navigation rule of never zooming in. */
+  /** Explicit fits cap at 100%. Omitted preserves the current zoom, reducing it
+   * only if the bounds cannot fit, including when manually zoomed above 100%. */
   maxZoom?: number;
   /** Center on this world-space x coordinate. By default, center the actual
    * vertical bounds (node plus panels); supplying y fixes that center too. */
   center?: { x: number; y?: number };
   /** `x` is used when revealing a right panel: keep the vertical position and
-   * zoom (up to 100%), moving only enough to expose the horizontal bounds. */
+   * zoom, moving only enough to expose the horizontal bounds. */
   axis?: 'both' | 'x';
 }
 
@@ -69,10 +69,10 @@ export function fitBBoxInViewport(
   const availW = Math.max(50, right - left);
   const availH = Math.max(50, bottom - options.margin);
 
-  let zoom = Math.min(1, viewport.zoom);
+  let zoom = viewport.zoom;
   if (options.axis !== 'x' && bboxW > 0 && bboxH > 0) {
     const fitZoom = Math.min(availW / bboxW, availH / bboxH);
-    const zoomCeiling = Math.min(1, options.maxZoom ?? viewport.zoom);
+    const zoomCeiling = options.maxZoom == null ? viewport.zoom : Math.min(1, options.maxZoom);
     zoom = Math.max(options.minZoom, Math.min(zoomCeiling, fitZoom));
   }
 

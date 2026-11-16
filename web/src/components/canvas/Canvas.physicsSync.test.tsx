@@ -177,6 +177,44 @@ afterEach(() => {
 });
 
 describe('Canvas physics sync', () => {
+  it.each(['focus', 'expand', 'reading', 'delete', 'newNodes', 'panels', 'linked-term'] as const)(
+    'preserves close-up zoom during %s navigation, while explicit fits still cap at 100%%', reason => {
+      const frames = new Map<number, FrameRequestCallback>();
+      let nextFrame = 0;
+      vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { frames.set(++nextFrame, cb); return nextFrame; });
+      vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+      const frame = (time: number) => act(() => {
+        const pending = [...frames.values()]; frames.clear(); pending.forEach(cb => cb(time));
+      });
+      seedProject(1);
+      useGraphStore.getState().setSelection(['n0']);
+      useGraphStore.getState().setViewport({ x: -1400, y: -400, zoom: 1.5 });
+      const { container } = renderCanvas();
+      Object.defineProperties(container.querySelector('.canvas-host')!, {
+        clientWidth: { value: 1800 }, clientHeight: { value: 1100 },
+      });
+      act(() => {
+        const graph = useGraphStore.getState();
+        if (reason === 'panels') graph.requestPanelReveal('n0');
+        else graph.requestPanTo('n0', undefined, reason === 'linked-term' ? undefined : reason);
+      });
+      frame(0); frame(16); frame(400); frame(1000);
+      expect(useGraphStore.getState().panTo).toBeNull();
+      expect(useLiveViewportStore.getState().zoom).toBe(1.5);
+      expect(useLiveViewportStore.getState().x).toBeGreaterThan(-1400);
+      expect(useGraphStore.getState().project!.viewport.zoom).toBe(1.5);
+      act(() => useGraphStore.getState().requestFitNode('n0'));
+      frame(1100); frame(1116); frame(2100);
+      expect(useLiveViewportStore.getState().zoom).toBe(1);
+      act(() => {
+        useGraphStore.getState().setViewport({ x: -1400, y: -400, zoom: 1.5 });
+        useGraphStore.getState().requestFitNodes(['n0']);
+      });
+      frame(2200); frame(2216); frame(3100);
+      expect(useLiveViewportStore.getState().zoom).toBe(1);
+    },
+  );
+
   it('does not move the camera toward a provisional position while placement is pending', () => {
     const frames = new Map<number, FrameRequestCallback>();
     let nextFrame = 0;

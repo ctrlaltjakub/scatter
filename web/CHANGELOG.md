@@ -3,6 +3,19 @@
 Each version has one entry. Beta versions remain listed until that version is
 released to stable, when its label changes to Stable. Older entries are kept.
 
+## 1.2.2 · Beta — 16 November 2026
+
+### Fixes
+
+- Node navigation keeps the current zoom when the node and its panels fit.
+  - Focusing a node, following a linked term, expanding bullets, starting the
+    reading ruler and returning to a parent no longer force zoom down to 100%.
+  - When more room is needed, the camera zooms out only enough to fit the content.
+- Opening a node's right-side panel preserves zoom and vertical reading position,
+  including above 100% zoom.
+- Explicit Fit node to screen and group fits still use a 100% zoom ceiling.
+  The camera settings description now distinguishes fits from ordinary navigation.
+
 ## 1.2.1 · Stable — 15 November 2026
 
 ### New features

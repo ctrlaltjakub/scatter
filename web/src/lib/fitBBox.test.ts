@@ -86,12 +86,10 @@ describe('extendBBoxForPanels', () => {
 });
 
 describe('fitBBoxInViewport', () => {
-  it('caps all fit targets at 100%, even from a manually enlarged viewport', () => {
-    for (const axis of ['both', 'x'] as const) {
-      expect(fitBBoxInViewport({ minX: 0, minY: 0, maxX: 100, maxY: 100 }, { x: 0, y: 0, zoom: 1.5 }, {
-        canvasWidth: 1600, canvasHeight: 1000, leftInset: 0, margin: 10, minZoom: .1, maxZoom: 1.5, axis,
-      }).zoom).toBe(1);
-    }
+  it('caps explicit fits at 100%, even from a manually enlarged viewport', () => {
+    expect(fitBBoxInViewport({ minX: 0, minY: 0, maxX: 100, maxY: 100 }, { x: 0, y: 0, zoom: 1.5 }, {
+      canvasWidth: 1600, canvasHeight: 1000, leftInset: 0, margin: 10, minZoom: .1, maxZoom: 1.5,
+    }).zoom).toBe(1);
   });
   const screen = {
     canvasWidth: 1000,
@@ -100,6 +98,32 @@ describe('fitBBoxInViewport', () => {
     margin: 20,
     minZoom: 0.2,
   };
+
+  it.each([0.25, 0.75, 1, 1.25, 1.5])('keeps %s zoom when focusing visible or offscreen content that fits', zoom => {
+    const bounds = { minX: 300, minY: 100, maxX: 500, maxY: 300 };
+    const visible = { x: 200, y: 100, zoom };
+    expect(fitBBoxInViewport(bounds, visible, screen)).toEqual(visible);
+    const panned = fitBBoxInViewport(bounds, { x: -1200, y: -900, zoom }, screen);
+    expect(panned).toEqual({ x: 260 - bounds.minX * zoom, y: 20 - bounds.minY * zoom, zoom });
+    // Repeating the same navigation must not keep reducing zoom.
+    expect(fitBBoxInViewport(bounds, panned, screen)).toEqual(panned);
+  });
+
+  it('reduces an enlarged view only as much as needed to fit the bounds', () => {
+    expect(fitBBoxInViewport(
+      { minX: 0, minY: 0, maxX: 600, maxY: 400 },
+      { x: -1000, y: -1000, zoom: 1.5 }, screen,
+    )).toEqual({ x: 260, y: 20, zoom: 1.2 });
+  });
+
+  it.each([1.25, 1.5])('reveals a panel at %s zoom without changing zoom or the vertical reading position', zoom => {
+    const viewport = { x: 0, y: 137, zoom };
+    const result = fitBBoxInViewport(
+      { minX: 0, minY: -500, maxX: 1200, maxY: 2000 }, viewport,
+      { ...screen, axis: 'x', center: { x: 600 }, maxZoom: 1 },
+    );
+    expect(result).toEqual({ x: 980 - 1200 * zoom, y: viewport.y, zoom });
+  });
 
   it.each([0, 240])('uses the reduced gap and one-third outer margin without clipping panels (sidebar: %s)', (leftInset) => {
     const bounds = extendBBoxForPanels({ minX: 0, minY: 0, maxX: 600, maxY: 900 }, {

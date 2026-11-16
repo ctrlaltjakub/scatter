@@ -26,7 +26,7 @@ export function CameraSettings() {
   const setPreference = useSettingsStore(s => s.setCameraAutoPan);
   return <CollapsibleSection title="Automatic camera movement"
     description={<>Choose when the app automatically <strong>pans or adjusts zoom</strong>.</>}>
-    <p className="field-help">Manual navigation, search results, linked terms, and <strong>Fit node to screen</strong> still work. Camera fits never exceed <strong>100% zoom</strong>; manual zoom can go higher.</p>
+    <p className="field-help">Manual navigation, search results, linked terms, and <strong>Fit node to screen</strong> still work. Node navigation preserves your zoom unless the node and its panels need more room. Explicit node and group fits are capped at <strong>100% zoom</strong>; manual zoom can go higher.</p>
     {BEHAVIOR_KEYS.map(key => <SettingsToggle key={key}
       title={BEHAVIORS[key].title} description={BEHAVIORS[key].description} checked={preferences[key]}
       onChange={value => setPreference(key, value)} />)}
