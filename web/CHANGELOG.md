@@ -3,6 +3,23 @@
 Each version has one entry. Beta versions remain listed until that version is
 released to stable, when its label changes to Stable. Older entries are kept.
 
+## 1.3.0 · Stable — 22 November 2026
+
+### New features
+
+- Generated term previews now aim to add information beyond the surrounding text.
+- **Redo terms** keeps terms you marked manually and regenerates previews for
+  both manual and automatic marks. With automatic previews off, only manually
+  marked terms get fresh previews.
+
+### Fixes
+
+- Term preview cards fit their longest rendered line instead of leaving an empty
+  strip beside the text.
+- Selecting a sidebar group leaves the camera still if every member is visible.
+  Otherwise it centers the group in the visible canvas, excluding the sidebar.
+  It never zooms in and only zooms out when the group cannot fit.
+
 ## 1.2.3 · Stable — 22 November 2026
 
 ### New features
