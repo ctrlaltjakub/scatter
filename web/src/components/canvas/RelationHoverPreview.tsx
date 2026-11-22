@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type RefObject,
 } from 'react';
 import { createPortal, flushSync } from 'react-dom';
@@ -28,7 +29,6 @@ import {
   openingParagraphPreview,
   previewTailParts,
   previewFormattedParts,
-  type FittedRelationPreview,
 } from '@/lib/relationPreview';
 
 const SHOW_DELAY_MS = 120;
@@ -141,7 +141,7 @@ function resolveTarget(
   };
 }
 
-function writeMeasure(element: HTMLElement, candidate: string, markdown: string) {
+function writeMeasure(element: HTMLElement, candidate: string, markdown: string, full = false) {
   const parts = previewTailParts(candidate);
   const append = (parent: HTMLElement, from: number, to: number) => {
     for (const part of previewFormattedParts(markdown, from, to)) {
@@ -150,15 +150,17 @@ function writeMeasure(element: HTMLElement, candidate: string, markdown: string)
       parent.append(span);
     }
   };
-  element.replaceChildren();
-  append(element, 0, parts.head.length);
+  const lines = document.createElement('span');
+  element.replaceChildren(lines);
+  append(lines, 0, full ? candidate.length : parts.head.length);
   const tail = document.createElement('span');
-  tail.className = 'relation-hover-preview-tail';
-  append(tail, parts.head.length, candidate.length);
+  tail.className = full ? 'relation-hover-preview-end' : 'relation-hover-preview-tail';
+  if (!full) append(tail, parts.head.length, candidate.length);
   const icon = document.createElement('span');
   icon.className = 'relation-hover-preview-icon-measure';
   tail.append(icon);
-  element.append(tail);
+  lines.append(tail);
+  return lines;
 }
 
 function PreviewText({ markdown, from = 0, to = Infinity }: { markdown: string; from?: number; to?: number }) {
@@ -170,57 +172,61 @@ function PreviewText({ markdown, from = 0, to = Infinity }: { markdown: string; 
 
 function PreviewCopy({
   text,
+  typography,
   compact = false,
   full = false,
 }: {
   text: string;
+  typography: CSSProperties;
   compact?: boolean;
   full?: boolean;
 }) {
   const plain = useMemo(() => termLabel(text).text, [text]);
-  const contentRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<HTMLDivElement>(null);
-  const [fitted, setFitted] = useState<FittedRelationPreview | null>(null);
+  const [fitted, setFitted] = useState<{ text: string; width?: number } | null>(null);
 
   useLayoutEffect(() => {
-    if (compact || full) {
-      setFitted({ text: plain, leading: plain, faded: '', truncated: false });
+    if (compact) {
+      setFitted({ text: plain });
       return;
     }
-    const content = contentRef.current;
     const measure = measureRef.current;
-    if (!content || !measure) return;
+    if (!measure) return;
 
+    let active = true;
     const fit = () => {
-      const width = content.clientWidth;
-      if (width <= 0) return;
-      measure.style.width = `${width}px`;
-      const lineHeight = Number.parseFloat(getComputedStyle(content).lineHeight) || 18.9;
-      const next = fitRelationPreview(plain, (candidate) => {
+      if (!active) return;
+      const width = measure.clientWidth;
+      if (!width) return;
+      const lineHeight = Number.parseFloat(getComputedStyle(measure).lineHeight) || 18.9;
+      const shown = full ? plain : fitRelationPreview(plain, (candidate) => {
         writeMeasure(measure, candidate, text);
         return measure.scrollHeight <= lineHeight * PREVIEW_LINE_LIMIT + LINE_MEASURE_TOLERANCE_PX
           && measure.scrollWidth <= width + 0.75;
-      });
-      setFitted((previous) => (
-        previous?.text === next.text ? previous : next
-      ));
+      }).text;
+      // Measure the inline fragments at the maximum line length, not at the
+      // previous card's width. offsetWidth is in unscaled layout pixels.
+      const lines = writeMeasure(measure, shown, text, full);
+      const snug = Math.min(width, lines.offsetWidth + 1);
+      measure.replaceChildren();
+      setFitted(previous => previous?.text === shown && previous.width === snug
+        ? previous : { text: shown, width: snug });
     };
 
     fit();
     const observer = new ResizeObserver(fit);
-    observer.observe(content);
+    observer.observe(measure);
     void document.fonts?.ready.then(fit);
-    return () => observer.disconnect();
-  }, [compact, full, plain, text]);
+    return () => { active = false; observer.disconnect(); };
+  }, [compact, full, plain, text, typography.fontFamily, typography.fontSizeAdjust]);
 
   const shown = fitted?.text || plain;
   const parts = previewTailParts(shown);
   return (
     <>
       <div
-        ref={contentRef}
         className="relation-hover-preview-copy"
-        style={{ visibility: fitted ? 'visible' : 'hidden' }}
+        style={{ width: compact ? undefined : fitted?.width, visibility: fitted ? 'visible' : 'hidden' }}
         aria-hidden="true"
       >
         {compact ? (
@@ -228,12 +234,17 @@ function PreviewCopy({
             {shown}
             <MousePointerClick size={15} strokeWidth={1.8} aria-hidden="true" />
           </span>
+        ) : full ? (
+          <>
+            <PreviewText markdown={text} />
+            <span className="relation-hover-preview-end"><MousePointerClick size={15} strokeWidth={1.8} aria-hidden="true" /></span>
+          </>
         ) : (
           <>
             <PreviewText markdown={text} to={parts.head.length} />
             <span className="relation-hover-preview-tail">
               <PreviewText markdown={text} from={parts.head.length} to={shown.length - parts.faded.length} />
-              <span className={full ? undefined : 'relation-hover-preview-fade'}>
+              <span className="relation-hover-preview-fade">
                 <PreviewText markdown={text} from={shown.length - parts.faded.length} to={shown.length} />
               </span>
               <MousePointerClick size={15} strokeWidth={1.8} aria-hidden="true" />
@@ -241,7 +252,7 @@ function PreviewCopy({
           </>
         )}
       </div>
-      {!compact && !full && (
+      {!compact && (
         <div
           ref={measureRef}
           className="relation-hover-preview-copy relation-hover-preview-measure"
@@ -329,19 +340,20 @@ function RelationPreviewCard({ target }: { target: RelationTarget }) {
     <div
       ref={cardRef}
       id={PREVIEW_ID}
-      className={`relation-hover-preview${compact ? ' is-compact' : ''}${full ? ' is-explanation' : ''}`}
+      className={`relation-hover-preview term-preview-card${compact ? ' is-compact' : ''}${full ? ' is-explanation' : ''}`}
       role="tooltip"
       lang={languageInfo(language).locale} dir={languageDirection(language)}
       aria-label={`${accessibleText} Click the highlighted text to ${clickAction}.`}
       style={{
         ...typography,
+        '--preview-available': `${Math.max(1, (window.innerWidth - currentSidebarInsetPx() - 16) / Math.max(scale, 0.01))}px`,
         left: position?.left ?? 0,
         top: position?.top ?? 0,
         visibility: position ? 'visible' : 'hidden',
         transform: `scale(${scale})`,
-      }}
+      } as CSSProperties}
     >
-      <PreviewCopy text={text} compact={compact} full={full} />
+      <PreviewCopy text={text} typography={typography} compact={compact} full={full} />
     </div>
   );
 }

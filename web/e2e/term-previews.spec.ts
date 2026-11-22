@@ -1,6 +1,23 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
+import { LANGUAGES } from '../src/lib/languages';
 
 test.use({ browserName: process.env.SCATTER_TEST_BROWSER === 'firefox' ? 'firefox' : 'chromium' });
+
+// Measure the actual painted lines, including emphasis and the click icon,
+// rather than just comparing the widths of two CSS boxes.
+async function expectSnugCard(tooltip: Locator) {
+  await expect.poll(() => tooltip.evaluate(card => {
+    const copy = card.querySelector('.relation-hover-preview-copy')!;
+    const range = document.createRange();
+    range.selectNodeContents(copy);
+    const lineBounds = range.getBoundingClientRect();
+    const icon = copy.querySelector('svg')!.getBoundingClientRect();
+    const box = card.getBoundingClientRect();
+    const scale = box.width / (card as HTMLElement).offsetWidth;
+    return Math.max(Math.abs((Math.min(lineBounds.left, icon.left) - box.left) / scale - 9),
+      Math.abs((box.right - Math.max(lineBounds.right, icon.right)) / scale - 9));
+  })).toBeLessThan(3);
+}
 
 test('title edits preserve localized previews without any model request', async ({ page }) => {
   test.setTimeout(90_000);
@@ -177,9 +194,54 @@ test('encyclopedic bullet names preview their own descriptions without model req
   await page.screenshot({ path: info.outputPath('bullet-description-preview.png') });
   await second.hover();
   await expect(page.getByRole('tooltip').filter({ hasText: 'Sets of numbers between two bounds.' })).toBeVisible();
+  await expectSnugCard(page.locator('#scatter-relation-hover-preview'));
   await expect(page.getByText('This old AI preview must not be used.')).toHaveCount(0);
   expect(inference).toEqual([]);
   expect(errors).toEqual([]);
+});
+
+test('term previews fit their wrapped lines across languages and camera zooms', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1200, height: 900 });
+  await page.route('**/*', route => ['localhost', '127.0.0.1'].includes(new URL(route.request().url()).hostname)
+    ? route.continue() : route.abort());
+  await page.goto('/sandbox');
+  await page.locator('.node[data-node-id]').first().waitFor();
+  await page.evaluate(() => {
+    const win = window as any;
+    win.webpackChunk_N_E.push([['preview-layout-test'], {}, (req: any) => {
+      win.previewExport = (name: string) => {
+        for (const module of Object.values(req.c) as any[]) if (module.exports?.[name]) return module.exports[name];
+        throw new Error('Missing export: ' + name);
+      };
+    }]);
+  });
+  for (const [i, language] of LANGUAGES.entries()) {
+    const text = language.id === 'de'
+      ? 'Die **Wetterstation** zeichnet Veränderungen auf. Luftdruckmessungen und Temperaturunterschiede liefern Vergleichswerte für die **Wettervorhersage**.'
+      : (language.sample + (['zh', 'ja'].includes(language.id) ? '' : ' ')).repeat(3).trim();
+    const zoom = i % 2 ? 0.85 : 1.7;
+    await page.mouse.move(10, 10);
+    await page.evaluate(({ language, text, zoom }) => {
+      const get = (window as any).previewExport;
+      const graph = get('useGraphStore').getState();
+      get('useSettingsStore').setState({ autoFreeImages: false, autoTermPreviews: true, providers: [], activeModelRef: null });
+      const version = { header: 'Preview layout', body: 'A [[sample]] term.', language,
+        generatedBy: 'explain', contentType: 'explain', createdAt: 1, width: 420 };
+      const node = { id: 'preview-layout', type: 'root', frozen: true, position: { x: 0, y: 0 },
+        currentVersionIndex: 0, versions: [{ ...version, termPreviews: {
+          fingerprint: get('termPreviewFingerprint')(version), entries: { sample: text },
+        } }] };
+      graph.setProject({ ...graph.project, id: 'preview-layout-' + language, rootNodeId: node.id, nodes: { [node.id]: node },
+        groups: {}, arrows: {}, selection: [], viewport: { x: 370, y: 500, zoom } }, { resetRuntime: true });
+    }, { language: language.id, text, zoom });
+    await page.locator('[data-node-id="preview-layout"] .ref-chip:visible').first().hover();
+    const card = page.locator('#scatter-relation-hover-preview');
+    await expect(card).toHaveAttribute('lang', language.locale);
+    await expect(card).toContainText(text.replaceAll('**', ''));
+    await page.evaluate(() => document.fonts.ready);
+    await expectSnugCard(card);
+  }
 });
 
 test('Redo terms preserves a manual mark, refreshes both previews, and renders emphasis', async ({ page }, info) => {

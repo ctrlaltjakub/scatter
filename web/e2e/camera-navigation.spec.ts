@@ -39,7 +39,7 @@ const camera = (page: Page) => page.evaluate(() => {
 const arrived = (page: Page) => expect.poll(() =>
   page.evaluate(() => (window as any).cameraExport('useGraphStore').getState().panTo)).toBeNull();
 
-test('sidebar group selection leaves a visible group still and reveals an offscreen group without zooming in', async ({ page }) => {
+test('sidebar group selection leaves a visible group still and centers an offscreen group without zooming in', async ({ page }) => {
   await scene(page, 0.75);
   const group = await page.evaluate(() => {
     const graph = (window as any).cameraExport('useGraphStore').getState();
@@ -59,10 +59,12 @@ test('sidebar group selection leaves a visible group still and reveals an offscr
   await page.evaluate(() => (window as any).cameraExport('useGraphStore').getState().setViewport({ x: -1200, y: 100, zoom: 0.75 }));
   await row.click();
   await arrived(page);
-  expect(await camera(page)).toMatchObject({ zoom: 0.75, y: 100 });
+  expect((await camera(page)).zoom).toBe(0.75);
   const bounds = await page.locator('.node[data-node-id="group-member"]').boundingBox();
-  expect(bounds!.x).toBeGreaterThanOrEqual(239);
-  expect(bounds!.x + bounds!.width).toBeLessThan(1920);
+  const host = (await page.locator('.canvas-host').boundingBox())!;
+  const sidebar = (await page.locator('.sidebar').boundingBox())!;
+  expect(Math.abs(bounds!.x + bounds!.width / 2 - (sidebar.x + sidebar.width + host.x + host.width) / 2)).toBeLessThan(2);
+  expect(Math.abs(bounds!.y + bounds!.height / 2 - (host.y + host.height / 2))).toBeLessThan(2);
 });
 
 for (const zoom of [0.75, 1.25, 1.5]) {

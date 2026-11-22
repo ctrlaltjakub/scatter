@@ -25,7 +25,7 @@ import { retryGeneration, hasRetryArgs } from '@/lib/generate';
 import { hasImageRetryArgs, retryImageGeneration } from '@/lib/imageGeneration';
 import { nodeWidth, nodeRenderedH } from '@/lib/nodeSize';
 import { extendBBoxForPanels, fitBBoxInViewport, NODE_BOTTOM_PANEL_GAP } from '@/lib/fitBBox';
-import { FIT_MARGIN_PX, SIDEBAR_WIDTH } from '@/lib/nodeVisibility';
+import { bboxFullyVisible, FIT_MARGIN_PX, SIDEBAR_WIDTH } from '@/lib/nodeVisibility';
 import { currentContentType } from '@/lib/nodeContentType';
 import { isStillImageMedia } from '@/lib/imageEditActions';
 import { computeEdgePan } from '@/lib/edgePan';
@@ -824,6 +824,7 @@ export function Canvas(props: Props) {
     let phase: 'init' | 'animate' | 'follow' = 'init';
     let startV = { x: 0, y: 0, zoom: 1 };
     let startTime = 0;
+    let centeringGroup = false;
 
     const posOf = (n: { id: string; position: { x: number; y: number } }) => {
       const lp = useLivePositionsStore.getState().positions[n.id];
@@ -926,20 +927,27 @@ export function Canvas(props: Props) {
       // never frames a node underneath it. It's fixed screen-space chrome, so
       // the inset is constant px (NOT scaled by zoom). A transient hover-peek
       // is intentionally ignored so it can't jolt the camera.
+      const bbox = { minX: wMinX, minY: wMinY, maxX: wMaxX, maxY: wMaxY };
+      const leftInset = sidebarCollapsedRef.current ? 0 : SIDEBAR_WIDTH;
+      // Once a group needs a pan, finish centering it even if it becomes fully
+      // visible partway through the animation. Already-visible groups stay put.
+      if (groupReveal && !centeringGroup) centeringGroup = !bboxFullyVisible({
+        bbox, viewport: v, containerW: cw, containerH: ch, marginPx: 0, leftInsetPx: leftInset,
+      });
       return fitBBoxInViewport(
-        { minX: wMinX, minY: wMinY, maxX: wMaxX, maxY: wMaxY },
+        bbox,
         v,
         {
           canvasWidth: cw,
           canvasHeight: ch,
-          leftInset: sidebarCollapsedRef.current ? 0 : SIDEBAR_WIDTH,
+          leftInset,
           // A group up against the workspace edge is still visible. Don't
           // move or shrink it merely to add padding (or fit hidden panels).
           margin: groupReveal ? 0 : FIT_MARGIN_PX,
           minZoom: MIN_CAMERA_ZOOM,
           axis: panTo.kind === 'node' ? panTo.axis : undefined,
-          center,
-          // Selecting a group uses the same minimum-pan, zoom-out-only fit as node navigation.
+          center: centeringGroup ? { x: (wMinX + wMaxX) / 2 } : center,
+          // A group reveal can zoom out to fit, but never zooms in.
           ...((panTo.kind === 'nodes' && !groupReveal) || center ? { maxZoom: panTo.automatic === 'rootGeneration' ? Math.min(1, v.zoom) : 1 } : {}),
         },
       );

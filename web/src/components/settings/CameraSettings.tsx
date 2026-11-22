@@ -8,7 +8,7 @@ import { SettingsToggle } from './SettingsSection';
 // Exhaustive: adding a preference requires a visible settings control too.
 const BEHAVIORS: Record<keyof CameraAutoPan, { title: string; description: string }> = {
   focus: { title: 'When focusing a node', description: 'Bring a clicked node and its panels into view.' },
-  groups: { title: 'When selecting a group', description: 'Pan only if a group is out of view. Zoom out only if its nodes cannot fit at the current zoom. Also applies to the canvas label for ungrouped nodes.' },
+  groups: { title: 'When selecting a group', description: 'Center the group if any of its nodes are out of view. Zoom out only if needed to fit them all. Also applies to the canvas label for ungrouped nodes.' },
   newNodes: { title: 'When creating a node', description: 'Bring the new node into view alongside its parent.' },
   branchProjects: { title: 'When creating a project from a branch', description: 'Fit the copied branch when its new project opens.' },
   generation: { title: 'While generating content', description: 'Keep following a growing node after the camera moves to it.' },
