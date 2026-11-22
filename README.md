@@ -1,5 +1,5 @@
 <h1 align="center">
-  <a href="https://www.scatter.study/app">
+  <a href="https://scatter.study/">
     <img src="assets/readme/open-app.svg" width="416" alt="Scatter — open scatter.study">
   </a>
 </h1>
