@@ -3,6 +3,14 @@
 Each version has one entry. Beta versions remain listed until that version is
 released to stable, when its label changes to Stable. Older entries are kept.
 
+## 1.2.3 · Beta — 22 November 2026
+
+### New features
+
+- WASD camera panning is twice as fast.
+  - Diagonal movement remains normalized to the same speed as horizontal or
+    vertical movement. Mouse and touchpad controls and Q/E zoom are unchanged.
+
 ## 1.2.2 · Stable — 16 November 2026
 
 ### Fixes

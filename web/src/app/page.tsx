@@ -173,7 +173,7 @@ export default function Page() {
       a: [1, 0],
       d: [-1, 0],
     };
-    const PAN_STEP = 4.5; // screen px/frame — 50% faster; diagonals stay normalized
+    const PAN_STEP = 9; // screen px/frame — twice the previous speed; diagonals stay normalized
     const held = new Set<string>();
     let panRaf: number | null = null;
 
