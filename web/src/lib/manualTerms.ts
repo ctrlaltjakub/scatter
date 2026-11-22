@@ -3,8 +3,8 @@ import { useNodeStatusStore, type StatusEntry } from '@/store/useNodeStatusStore
 import type { NodeTextSelection } from '@/store/useNodeTextSelectionStore';
 import type { NodeVersion, ScatterNode } from '@/store/types';
 import { answerMarkingFingerprint, pendingAnswerTermMarking, shareAnswerEnrichment } from './chat/sharedEnrichment';
-import { markSelectedTerm } from './termMarking';
-import { termPreviewFingerprint, termPreviewKey } from './termPreviewCore';
+import { manualTermSelection, markSelectedTerm } from './termMarking';
+import { termPreviewFingerprint } from './termPreviewCore';
 import { generateTermPreviews, registerManualTermMark } from './termPreviews';
 
 const marking = (status: StatusEntry | undefined) => status?.clearedAt == null
@@ -33,8 +33,8 @@ export function markTermFromSelection(projectId: string, selection: NodeTextSele
   let next: NodeVersion = { ...source, body: marked.body };
   if (node.chat && !source.answerEnrichmentId) next = shareAnswerEnrichment(next, `${projectId}:${node.id}:${source.createdAt}`);
   const cache = source.termPreviews?.fingerprint === termPreviewFingerprint(source) ? source.termPreviews : undefined;
-  next.termPreviews = { ...cache, fingerprint: termPreviewFingerprint(next), entries: cache?.entries ?? {},
-    manualTerms: [...new Set([...(cache?.manualTerms ?? []), termPreviewKey(marked.term)])] };
+  const { manualTerms, manualTermOffsets } = manualTermSelection(marked.body, cache, marked.range[0]);
+  next.termPreviews = { ...cache, fingerprint: termPreviewFingerprint(next), entries: cache?.entries ?? {}, manualTerms, manualTermOffsets };
   if (next.chat) next.answerTermMarking = { fingerprint: answerMarkingFingerprint(next), state: 'complete' };
   // Markers add four source characters. Keep existing relation anchors at the
   // same visible occurrence, including repeated passages in this version.

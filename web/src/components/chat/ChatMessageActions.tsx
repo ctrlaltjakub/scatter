@@ -94,7 +94,7 @@ export const ChatAssistantActions = memo(function ChatAssistantActions({ nodeId,
         data-tip={askingAbout ? 'Stop asking about this answer' : 'Ask a follow-up about this exact answer'}
         onClick={() => askAboutChatAnswer(nodeId, ref)}><MessageSquareQuote size={14} />Ask about</button>
       <button type="button" disabled={generating || markingTerms || !version.body.trim()}
-        data-tip={termError ?? (markingTerms ? 'Terms are being marked' : 'Redo clickable term marking for this answer. Undo restores the previous markings.')}
+        data-tip={termError ?? (markingTerms ? 'Terms are being marked' : 'Re-mark terms and regenerate their previews. Manually marked terms stay marked. Undo restores the previous markings.')}
         onClick={() => void redoChatTerms(nodeId, ref)}><ListRestart size={14} />{markingTerms ? 'Marking terms…' : 'Redo terms'}</button>
       <button type="button" disabled={!report && !canCheck} aria-expanded={!!report && showingFacts} aria-pressed={showingFacts}
         data-tip={report ? 'Show or hide the evidence for this answer' : available.reason ?? 'Check only this answer against web sources'}

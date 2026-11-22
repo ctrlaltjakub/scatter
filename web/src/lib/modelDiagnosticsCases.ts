@@ -4,7 +4,7 @@ import { buildMessages, buildFollowUpClassifierPrompt, withNodeWebSearch } from 
 import { effectivePrompt, substitute } from './promptDefaults';
 import { chatFormattingPrompt } from './chatFormatting';
 import { termSelectionPrompt } from './termSelectionPrompt';
-import { applyTermSelection, markSelectedTerm, markedTerms, stripTermMarkers } from './termMarking';
+import { applyTermSelection, manualTermSelection, markSelectedTerm, markedTerms, stripTermMarkers } from './termMarking';
 import { previewRequest, previewTerms, inspectTermPreviews, retainTermPreviews, termPreviewFingerprint, termPreviewFor } from './termPreviewCore';
 import { GenerationResponseError, parseResponseJson, validateEncyclopedicOutput } from './generationValidation';
 import { parseFactCheckFinding } from './factCheckCore';
@@ -127,10 +127,13 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
 
   const secondary = (id: string, label: string, system: string, user: string, tokens: number, validate?: (text: string) => void) =>
     cases.push({ id, label, role: 'secondary', kind: 'text', requests: 1, tokens, messages: pair(system, user), validate });
-  const terms = termSelectionPrompt(DIAGNOSTIC_TEXT, settings.customPrompts);
+  const manualSample = DIAGNOSTIC_TEXT.replace('**unit of length**', '**[[unit of length]]**');
+  const redoSample = manualTermSelection(manualSample, { manualTerms: ['unit of length'] }).body;
+  const terms = termSelectionPrompt(redoSample, settings.customPrompts);
   secondary('terms', 'Mark / re-mark terms · including copied answers', terms.system, terms.user, 2000, text => {
-    const body = applyTermSelection(DIAGNOSTIC_TEXT, text);
-    assertDiagnostic(body && markedTerms(body).length > 0, 'Term selection returned invalid JSON or no usable terms. Check the secondary model, then retry Redo terms on the affected answer.');
+    const body = applyTermSelection(redoSample, text);
+    assertDiagnostic(body && markedTerms(body).some(term => term !== 'unit of length'), 'Term selection returned invalid JSON or no new usable terms. Check the secondary model, then retry Redo terms on the affected answer.');
+    assertDiagnostic(body.includes('**[[unit of length]]**'), 'Re-marking lost a manual term selection. Report this app error; no extra model call is needed.');
     assertDiagnostic(body && stripTermMarkers(body) === stripTermMarkers(DIAGNOSTIC_TEXT), 'Term marking changed the source text instead of only marking terms.');
     if (body) {
       // Exercise the saved editor form too, within the same paid term-selection

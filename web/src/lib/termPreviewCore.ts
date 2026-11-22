@@ -4,14 +4,15 @@ import { GenerationOutputLimitError } from './generationLimits';
 import type { NodeVersion } from '@/store/types';
 import { parseBody, stripChips } from './bulletParse';
 import { wholeTerm } from './bulletTerms';
-import { markedTerms, stripTermMarkers } from './termMarking';
+import { manualTermSelection, markedTerms, stripTermMarkers, termPreviewKey } from './termMarking';
+import { newId } from './ids';
 import { stringHash as hashPrompt } from './stringHash';
 import { semanticHeaderText } from './nodeHeaderText';
 import { termPreviewUser } from './termPreviewPrompt';
 import { openingParagraphPreview } from './relationPreview';
 
 export const TERM_PREVIEW_BATCH_SIZE = 24;
-export const termPreviewKey = (term: string) => term.trim().replace(/\s+/g, ' ').toLowerCase();
+export { termPreviewKey };
 const previewSubject = (version: NodeVersion) => version.headerParts
   ? semanticHeaderText(version.headerParts) : version.header;
 export function termPreviewFingerprint(version: NodeVersion): string {
@@ -21,6 +22,7 @@ export function termPreviewFingerprint(version: NodeVersion): string {
     ? [version.answerEnrichmentId, version.body]
     : [previewSubject(version), version.body, version.contentType, version.generatedBy];
   if (versionLanguage(version) !== 'en') values.push(versionLanguage(version));
+  if (version.termPreviewRevision) values.push(version.termPreviewRevision);
   const source = JSON.stringify(values);
   return `${source.length}:${hashPrompt(source)}`;
 }
@@ -30,7 +32,7 @@ export function termPreviewFingerprint(version: NodeVersion): string {
 export function termPreviewWorkFingerprint(version: NodeVersion): string {
   const kind = version.contentType ?? (['chat', 'explain', 'interactive', 'media'].includes(version.generatedBy)
     ? version.generatedBy : 'encyclopedic');
-  const source = JSON.stringify([version.answerEnrichmentId ?? kind, version.body, versionLanguage(version)]);
+  const source = JSON.stringify([version.answerEnrichmentId ?? kind, version.body, versionLanguage(version), version.termPreviewRevision]);
   return `${source.length}:${hashPrompt(source)}`;
 }
 
@@ -55,31 +57,42 @@ export function retainTermPreviews(source: NodeVersion, next: NodeVersion): Node
   return { ...source.termPreviews, fingerprint: termPreviewFingerprint(next) };
 }
 
-/** Re-marking changes delimiters, not meaning. Reuse only verified caches with
- * the exact same prose, subject and node kind; real edits still invalidate them.
- * Keep unmarked entries too, so a later redo can mark the term again for free.
- * Explicit redo refreshes legacy caches once under the source-language rule. */
-export function reusableTermPreviews(version: NodeVersion, candidates: readonly NodeVersion[], retryFailed = false): NodeVersion['termPreviews'] {
+/** Only explicit redo starts a new revision. Copies and title-only edits can
+ * still share its work, but old cache entries and late responses cannot. */
+export function prepareTermRedo(source: NodeVersion, next: NodeVersion): NodeVersion {
+  const cache = source.termPreviews?.fingerprint === termPreviewFingerprint(source) ? source.termPreviews : undefined;
+  const { body, manualTerms, manualTermOffsets } = manualTermSelection(source.body, cache);
+  const draft = { ...next, body, termPreviewRevision: newId() };
+  draft.termPreviews = { fingerprint: termPreviewFingerprint(draft), entries: {}, languageMode: 'source',
+    ...(manualTerms.length ? { manualTerms, manualTermOffsets } : {}) };
+  return draft;
+}
+
+/** Re-key the empty redo cache after the selector adds new delimiters. */
+export function finishTermRedo(draft: NodeVersion, body: string): NodeVersion {
+  const next = { ...draft, body };
+  return { ...next, termPreviews: { ...draft.termPreviews!, fingerprint: termPreviewFingerprint(next) } };
+}
+
+/** Automatic enrichment reuses verified previews for equivalent content within one revision. */
+export function reusableTermPreviews(version: NodeVersion, candidates: readonly NodeVersion[]): NodeVersion['termPreviews'] {
   const fingerprint = termPreviewFingerprint(version);
-  const current = version.termPreviews?.fingerprint === fingerprint
-    && (!retryFailed || version.termPreviews.languageMode === 'source') ? version.termPreviews : undefined;
+  const current = version.termPreviews?.fingerprint === fingerprint ? version.termPreviews : undefined;
   let entries = current?.entries;
   let followsSourceLanguage = !current || current.languageMode === 'source';
-  const exhaustedTerms = new Set(retryFailed ? [] : current?.exhaustedTerms ?? []);
-  const manualTerms = new Set(current?.manualTerms ?? []);
+  const exhaustedTerms = new Set(current?.exhaustedTerms ?? []);
   let plain: string | undefined;
   for (const candidate of candidates) {
     const cache = candidate.termPreviews;
     const shared = !!version.answerEnrichmentId && version.answerEnrichmentId === candidate.answerEnrichmentId;
     if (candidate === version || versionLanguage(candidate) !== versionLanguage(version) || !cache
-      || (retryFailed && cache.languageMode !== 'source') || cache.fingerprint !== termPreviewFingerprint(candidate)
+      || version.termPreviewRevision !== candidate.termPreviewRevision || cache.fingerprint !== termPreviewFingerprint(candidate)
       || (!shared && (previewSubject(candidate) !== previewSubject(version) || candidate.contentType !== version.contentType
       || candidate.generatedBy !== version.generatedBy))) continue;
     if (candidate.body !== version.body) {
       plain ??= stripTermMarkers(version.body);
       if (stripTermMarkers(candidate.body) !== plain) continue;
     }
-    for (const term of cache.manualTerms ?? []) manualTerms.add(term);
     for (const [key, value] of Object.entries(cache.entries)) {
       if (typeof value !== 'string' || (entries && Object.hasOwn(entries, key))) continue;
       if (cache.languageMode !== 'source') followsSourceLanguage = false;
@@ -88,15 +101,14 @@ export function reusableTermPreviews(version: NodeVersion, candidates: readonly 
     }
     // Once this version has its own cache, its retry state is authoritative.
     // Older failed attempts must not suppress an explicit retry on this version.
-    if (!retryFailed && !current && candidate.body === version.body) {
+    if (!current && candidate.body === version.body) {
       for (const term of cache.exhaustedTerms ?? []) exhaustedTerms.add(term);
     }
   }
-  if (!retryFailed && entries === current?.entries && exhaustedTerms.size === (current?.exhaustedTerms?.length ?? 0)
-    && manualTerms.size === (current?.manualTerms?.length ?? 0)) return current;
-  return retryFailed || entries || exhaustedTerms.size ? { fingerprint, entries: entries ?? {},
+  if (entries === current?.entries && exhaustedTerms.size === (current?.exhaustedTerms?.length ?? 0)) return current;
+  return entries || exhaustedTerms.size ? { fingerprint, entries: entries ?? {},
     ...(followsSourceLanguage ? { languageMode: 'source' as const } : {}),
-    ...(manualTerms.size ? { manualTerms: [...manualTerms] } : {}),
+    ...(current?.manualTerms ? { manualTerms: current.manualTerms, manualTermOffsets: current.manualTermOffsets } : {}),
     ...(exhaustedTerms.size ? { exhaustedTerms: [...exhaustedTerms] } : {}) } : undefined;
 }
 

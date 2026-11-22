@@ -4,7 +4,7 @@ import { useNodeStatusStore } from '@/store/useNodeStatusStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import type { NodeTextSelection } from '@/store/useNodeTextSelectionStore';
 import { LANGUAGES } from './languages';
-import { markSelectedTerm, stripTermMarkers } from './termMarking';
+import { applyTermSelection, manualTermSelection, markSelectedTerm, stripTermMarkers } from './termMarking';
 import { markTermFromSelection } from './manualTerms';
 import { termPreviewFingerprint, termPreviewFor } from './termPreviewCore';
 import { watchFocusedTermPreviews, termPreviewProcess } from './termPreviews';
@@ -29,6 +29,16 @@ function seed(body = 'A [[cache]] uses memory and storage. Memory can be reused.
 const response = (term: string) => JSON.stringify({ previews: [{ id: 0, parts: [`A ${term} explanation.`] }] });
 
 describe('selected occurrence marking', () => {
+  it('distinguishes a selected occurrence from an identical automatic mark across successive redos', () => {
+    const body = '[[Écho]] uses `[[literal]]`: ذاكرة or [[ذاكرة]].';
+    const selected = manualTermSelection(body, undefined, body.lastIndexOf('[['));
+    expect(selected.body).toBe('Écho uses `[[literal]]`: ذاكرة or [[ذاكرة]].');
+    const remarked = applyTermSelection(selected.body, '{"terms":["Écho","ذاكرة"]}')!;
+    expect(remarked).toContain('[[ذاكرة]] or [[ذاكرة]]');
+    expect(manualTermSelection(remarked, selected)).toEqual(selected);
+    // Older projects stored only the term name. Preserve just its already-marked occurrence.
+    expect(manualTermSelection(body, { manualTerms: ['ذاكرة'] })).toEqual(selected);
+  });
   it('marks only the selected repetition', () => {
     const body = 'memory and memory';
     expect(markSelectedTerm(selection(body, 'memory', 11))?.body).toBe('memory and [[memory]]');

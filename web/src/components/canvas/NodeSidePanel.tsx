@@ -614,7 +614,7 @@ export function NodeSidePanel() {
               type="button"
               disabled={!!node.generating || emptyText}
               onClick={() => void redoTermMarking(node.id)}
-              data-tip="Re-mark the clickable terms in the current text (new version)"
+              data-tip="Re-mark terms and regenerate their previews in a new version. Manually marked terms stay marked."
               aria-label="Redo term marking"
             >
               <ListRestart size={14} />

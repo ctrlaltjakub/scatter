@@ -74,7 +74,7 @@ export function AnswerSideActions({ node }: { node: ScatterNode }) {
       </div>
       <div className="versions-row-actions">
         <button type="button" disabled={!!node.generating || marking || !version.body.trim()} aria-label="Redo term marking"
-          data-tip="Re-mark clickable terms and retry missing previews. Undo restores the previous markings."
+          data-tip="Re-mark terms and regenerate their previews. Manually marked terms stay marked. Undo restores the previous markings."
           onClick={() => void (version.chat && !version.markdownNote
             ? redoChatTerms(node.id, { turnId: version.chat.turnId, versionCreatedAt: version.createdAt })
             : redoTermMarking(node.id))}><ListRestart size={14} /></button>

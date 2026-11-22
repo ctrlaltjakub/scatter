@@ -14,6 +14,7 @@ import { useSettingsStore } from '@/store/useSettingsStore';
 import { showChatAlternative, spawnChatAnswer } from './chat/actions';
 import { saveManualEdit } from './generate';
 import { saveNodeHeader } from './nodeHeaderActions';
+import { markTermFromSelection } from './manualTerms';
 
 const complete = vi.hoisted(() => vi.fn());
 vi.mock('./secondaryTaskCompletion', () => ({ secondaryTaskCompletion: complete }));
@@ -313,7 +314,7 @@ describe('background preview lifecycle', () => {
     expect(complete).toHaveBeenCalledOnce();
     expect(chatVersion(12).answerTermMarking?.state).toBe('complete');
   });
-  it('manual retry clears exhausted preview failures but retains completed entries', async () => {
+  it('manual redo clears exhausted failures and requests fresh previews for every marked term', async () => {
     seedChat();
     const node = useGraphStore.getState().project!.nodes.n!;
     useGraphStore.getState().updateNode('n', updateChatAnswer(node, { turnId: 'second', versionCreatedAt: 12 },
@@ -322,11 +323,11 @@ describe('background preview lifecycle', () => {
     await generateTermPreviews('n', 12);
     expect(answerEnrichmentError(chatVersion(12))).toContain('Some term previews');
     complete.mockReset();
-    complete.mockResolvedValue(result([0])).mockResolvedValueOnce('{"terms":["cache","latency"]}');
+    complete.mockResolvedValue(result([0, 1])).mockResolvedValueOnce('{"terms":["cache","latency"]}');
     await redoChatTerms('n', { turnId: 'second', versionCreatedAt: 12 });
     await vi.waitFor(() => expect(termPreviewFor(chatVersion(12), 'latency')).toBe(explanation));
     expect(termPreviewFor(chatVersion(12), 'cache')).toBe(explanation);
-    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'latency' }]);
+    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'cache' }, { id: 1, term: 'latency' }]);
     expect(answerEnrichmentError(chatVersion(12))).toBeUndefined();
     expect(complete).toHaveBeenCalledTimes(2);
   });
@@ -357,7 +358,7 @@ describe('background preview lifecycle', () => {
     await generateTermPreviews('n', latest().createdAt);
     expect(complete).toHaveBeenCalledTimes(2);
   });
-  it.each(['encyclopedic', 'explain', 'answer', 'chat'] as const)('redo recovers abbreviated-name previews in %s without regenerating completed entries', async contentType => {
+  it.each(['encyclopedic', 'explain', 'answer', 'chat'] as const)('redo refreshes both abbreviated-name and previously completed previews in %s', async contentType => {
     seed('A [[cache]] stores a recording by [[Aphex Twin]].');
     if (contentType === 'chat') {
       const project = seedChat();
@@ -372,15 +373,15 @@ describe('background preview lifecycle', () => {
     const abbreviated = ['Aphex Twin is the alias of ', 'Richard D. James', ', a musician known for ', 'experimental electronic music', '.'];
     const expected = 'Aphex Twin is the alias of **Richard D. James**, a musician known for **experimental electronic music**.';
     complete.mockResolvedValueOnce('{"terms":["cache","Aphex Twin"]}')
-      .mockResolvedValue(JSON.stringify({ previews: [{ id: 0, parts: abbreviated }] }));
+      .mockResolvedValue(JSON.stringify({ previews: [{ id: 0, parts: ['A refreshed cache explanation.'] }, { id: 1, parts: abbreviated }] }));
     if (contentType === 'chat') await redoChatTerms('n', { turnId: 'second', versionCreatedAt: 12 });
     else await redoTermMarking('n');
     const latest = () => contentType === 'chat' ? chatVersion(12) : useGraphStore.getState().project!.nodes.n!.versions.at(-1)!;
     await vi.waitFor(() => expect(termPreviewFor(latest(), 'Aphex Twin')).toBe(expected));
-    expect(termPreviewFor(latest(), 'cache')).toBe(explanation);
+    expect(termPreviewFor(latest(), 'cache')).toBe('A refreshed cache explanation.');
     expect(answerEnrichmentError(latest())).toBeUndefined();
     expect(complete).toHaveBeenCalledTimes(2); // marking + one preview; no repairs
-    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'Aphex Twin' }]);
+    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'cache' }, { id: 1, term: 'Aphex Twin' }]);
     await generateTermPreviews('n', latest().createdAt);
     expect(complete).toHaveBeenCalledTimes(2);
   });
@@ -419,14 +420,14 @@ describe('background preview lifecycle', () => {
     useGraphStore.getState().updateNode('n', { versions: [...node.versions, { ...failed, createdAt: 13, answerEnrichmentId: undefined,
       termPreviews: { ...failed.termPreviews!, fingerprint: termPreviewFingerprint({ ...failed, answerEnrichmentId: undefined }) } }] });
     complete.mockReset();
-    complete.mockResolvedValue(result([0])).mockResolvedValueOnce('{"terms":["cache","latency"]}');
+    complete.mockResolvedValue(result([0, 1])).mockResolvedValueOnce('{"terms":["cache","latency"]}');
     if (contentType === 'chat') await redoChatTerms('n', { turnId: 'second', versionCreatedAt: 12 });
     else await redoTermMarking('n');
     const latest = () => contentType === 'chat' ? chatVersion(12) : useGraphStore.getState().project!.nodes.n!.versions.at(-1)!;
     await vi.waitFor(() => expect(termPreviewFor(latest(), 'latency')).toBe(explanation));
     expect(termPreviewFor(latest(), 'cache')).toBe(explanation);
     expect(complete).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'latency' }]);
+    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'cache' }, { id: 1, term: 'latency' }]);
     await generateTermPreviews('n', latest().createdAt);
     expect(complete).toHaveBeenCalledTimes(2);
   });
@@ -506,7 +507,7 @@ describe('background preview lifecycle', () => {
     expect(useGraphStore.getState().project!.nodes[id]!.versions[0]).toBe(copied);
     expect(termPreviewFor(copied, 'cache')).toBe(explanation);
     expect(complete).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'latency' }]);
+    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'cache' }, { id: 1, term: 'latency' }]);
   });
   it('manual editing detaches the working version from pending shared results', async () => {
     seedChat();
@@ -542,7 +543,7 @@ describe('background preview lifecycle', () => {
     await generateTermPreviews('n', 10);
     expect(complete).toHaveBeenCalledTimes(1);
   });
-  it.each(['encyclopedic', 'explain', 'answer'] as const)('reuses previews through re-marking %s nodes, generating only new terms', async (contentType) => {
+  it.each(['encyclopedic', 'explain', 'answer'] as const)('regenerates previews for existing and new terms in %s without changing history', async (contentType) => {
     seed('A **[[cache]]** improves latency.');
     const initial: NodeVersion = { ...current(), contentType, wikimediaImages: {
       schemaVersion: 1, bodyFingerprint: '', providerId: 'test', model: 'test', searchedAt: 0, resultLimit: 0, results: [],
@@ -557,13 +558,13 @@ describe('background preview lifecycle', () => {
     await vi.waitFor(() => expect(termPreviewFor(latest(), 'latency')).toBe(explanation));
     expect(termPreviewFor(latest(), 'cache')).toBe(explanation);
     expect(complete).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'latency' }]);
+    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'cache' }, { id: 1, term: 'latency' }]);
     expect(useGraphStore.temporal.getState().pastStates).toHaveLength(1);
     useGraphStore.temporal.getState().undo();
     expect(current().body).toBe(initial.body);
     expect(termPreviewFor(current(), 'cache')).toBe(explanation);
   });
-  it('reuses chat previews received during re-marking and only requests newly marked terms', async () => {
+  it('does not reuse chat previews received while re-marking', async () => {
     const project = seedChat();
     useGraphStore.getState().updateNode('n', updateChatAnswer(project.nodes.n,
       { turnId: 'second', versionCreatedAt: 12 }, { body: 'A **[[cache]]** improves latency.' }));
@@ -581,7 +582,7 @@ describe('background preview lifecycle', () => {
     await vi.waitFor(() => expect(termPreviewFor(chatVersion(12), 'latency')).toBe(explanation));
     expect(termPreviewFor(chatVersion(12), 'Cache')).toBe(explanation);
     expect(complete).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'latency' }]);
+    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'cache' }, { id: 1, term: 'latency' }]);
   });
   it('recovers previews from matching older versions without additional requests', async () => {
     seed('A [[cache]] improves [[latency]].');
@@ -594,14 +595,14 @@ describe('background preview lifecycle', () => {
     expect(complete).toHaveBeenCalledTimes(1);
     expect(termPreviewFor(useGraphStore.getState().project!.nodes.n!.versions[2], 'cache')).toBe(explanation);
   });
-  it('does not request previews again when chat re-marking leaves the same terms', async () => {
+  it('refreshes previews even when chat re-marking leaves the same terms', async () => {
     seedChat();
     await generateTermPreviews('n', 12);
     complete.mockClear();
     complete.mockImplementationOnce(async () => '{"terms":["cache"]}');
     await redoChatTerms('n', { turnId: 'second', versionCreatedAt: 12 });
-    expect(termPreviewFor(chatVersion(12), 'cache')).toBe(explanation);
-    expect(complete).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(termPreviewFor(chatVersion(12), 'cache')).toBe(explanation));
+    expect(complete).toHaveBeenCalledTimes(2);
   });
   it('deduplicates pending work and uses the independent ASCII status lane', async () => {
     let resolve!: (value: string) => void;
@@ -636,6 +637,27 @@ describe('background preview lifecycle', () => {
     await redoChatTerms('n', { turnId: 'second', versionCreatedAt: 12 });
     expect(complete).toHaveBeenCalledOnce();
     expect(chatVersion(12).termPreviews?.entries ?? {}).toEqual({});
+  });
+  it.each(['chat', 'explain'] as const)('preserves the manually selected occurrence on %s and refreshes it even with automatic previews off', async kind => {
+    useSettingsStore.setState({ autoTermPreviews: false });
+    const body = 'A [[cache]] works with memory and **memory**. Use `[[literal]]`.';
+    const ref = { turnId: 'second', versionCreatedAt: 12 };
+    const project = kind === 'chat' ? seedChat() : seed(body);
+    if (kind === 'chat') useGraphStore.getState().updateNode('n', updateChatAnswer(project.nodes.n!, ref, { body }));
+    else useGraphStore.getState().updateNode('n', { versions: [{ ...current(), contentType: kind }] });
+    const versionIndex = kind === 'chat' ? project.nodes.n!.versions.findIndex(v => v.createdAt === 12) : 0;
+    const start = body.lastIndexOf('memory'), end = start + 6;
+    expect(markTermFromSelection(project.id, { nodeId: 'n', versionIndex, sourceBody: body, start, end, text: 'memory',
+      parts: [{ sourceField: 'ft', start, end, text: 'memory' }] })).toBe(true);
+    const latest = () => kind === 'chat' ? chatVersion(12) : useGraphStore.getState().project!.nodes.n!.versions.at(-1)!;
+    await vi.waitFor(() => expect(termPreviewFor(latest(), 'memory')).toBe(explanation));
+    complete.mockClear();
+    complete.mockResolvedValueOnce('{"terms":["works"]}').mockResolvedValueOnce('{"previews":[{"id":0,"parts":["A newly generated preview."]}]}');
+    if (kind === 'chat') await redoChatTerms('n', ref); else await redoTermMarking('n');
+    await vi.waitFor(() => expect(termPreviewFor(latest(), 'memory')).toBe('A newly generated preview.'));
+    expect(latest().body).toBe('A cache [[works]] with memory and **[[memory]]**. Use `[[literal]]`.');
+    expect(JSON.parse(complete.mock.calls[1]![0].user).terms).toEqual([{ id: 0, term: 'memory' }]);
+    expect(complete).toHaveBeenCalledTimes(2);
   });
   it('a cancelled shared preview cannot clear the replacement redo status', async () => {
     seedChat();
@@ -773,7 +795,7 @@ describe('background preview lifecycle', () => {
     } finally { finish(result([0])); stop(); }
   });
   it('retains previews and their language throughout title-only editor autosaves, but invalidates them after a body edit', async () => {
-    useGraphStore.getState().updateNode('n', { versions: [{ ...current(), language: 'ja' }] });
+    useGraphStore.getState().updateNode('n', { versions: [{ ...current(), language: 'ja', termPreviewRevision: 'explicit-redo' }] });
     const stop = watchFocusedTermPreviews();
     try {
       await vi.waitFor(() => expect(termPreviewFor(current(), 'cache')).toBe(explanation));

@@ -37,14 +37,16 @@ export const termPreviewProcess = (createdAt: number) => `term-previews-${create
 
 /** Background enrichment never creates an undo entry or changes body text.
  * Results stay with the captured project and matching source prose. */
-export async function generateTermPreviews(nodeId: string, createdAt: number, retryFailed = false,
+export async function generateTermPreviews(nodeId: string, createdAt: number, explicitRedo = false,
   options?: { terms: readonly string[] }): Promise<void> {
-  const requested = options && new Set(options.terms.map(termPreviewKey));
-  if (!requested && !useSettingsStore.getState().autoTermPreviews) return;
   const project = useGraphStore.getState().project;
   const node = project?.nodes[nodeId];
   let version = node?.versions.find(v => v.createdAt === createdAt);
   if (!project || !node || !version || version.contentType === 'interactive' || version.chat?.state === 'generating') return;
+  const enabled = useSettingsStore.getState().autoTermPreviews;
+  const requested = options ? new Set(options.terms.map(termPreviewKey))
+    : explicitRedo && !enabled ? new Set(version.termPreviews?.manualTerms) : undefined;
+  if (!enabled && !requested?.size) return;
   // Chat completion belongs to each answer. A different turn may be streaming
   // or have failed while the user re-marks an already completed answer.
   if (!node.chat && (node.generating || (!requested && node.generationError))) return;
@@ -56,11 +58,10 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
   if (version.answerEnrichmentId && pendingAnswerTermMarking.has(version.answerEnrichmentId)) return;
   const fingerprint = termPreviewFingerprint(version);
   const allTerms = previewTerms(version).filter(term => !requested || requested.has(termPreviewKey(term)));
-  const ownEntries = version.termPreviews?.fingerprint === fingerprint
-    && (!retryFailed || version.termPreviews.languageMode === 'source') ? version.termPreviews.entries : {};
+  const ownEntries = version.termPreviews?.fingerprint === fingerprint ? version.termPreviews.entries : {};
   if (allTerms.every(term => Object.hasOwn(ownEntries, termPreviewKey(term)))) return;
   const reused = reusableTermPreviews(version, version.answerEnrichmentId
-    ? [...node.versions, ...enrichmentMembers(project, nodeId, version).map(member => member.version)] : node.versions, retryFailed);
+    ? [...node.versions, ...enrichmentMembers(project, nodeId, version).map(member => member.version)] : node.versions);
   if (reused && reused !== version.termPreviews) {
     const versions = node.versions.map(v => v.createdAt === createdAt ? { ...version!, termPreviews: reused } : v);
     updateGenNode(project.id, nodeId, { versions });
@@ -131,7 +132,7 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
       if (!latestNode) continue;
       const versions = [...latestNode.versions];
       versions[current.index] = { ...current.version, termPreviews: { fingerprint: currentFingerprint, entries: { ...previous?.entries, ...applicable },
-        ...(previous?.manualTerms ? { manualTerms: previous.manualTerms } : {}),
+        ...(previous?.manualTerms ? { manualTerms: previous.manualTerms, manualTermOffsets: previous.manualTermOffsets } : {}),
         // A partial legacy cache can still contain explanations in the old
         // forced language. Only an explicit redo refreshes those paid entries.
         ...(!previous || previous.languageMode === 'source' || !Object.keys(previous.entries).length ? { languageMode: 'source' as const } : {}),
@@ -150,7 +151,7 @@ export async function generateTermPreviews(nodeId: string, createdAt: number, re
   } catch (error) {
     if (!controller.signal.aborted) {
       const message = signal.aborted ? 'Term preview generation timed out. Use Redo terms to retry.'
-        : 'Term previews could not finish. Use Redo terms to retry; completed previews are kept.';
+        : 'Term previews could not finish. Use Redo terms to re-mark the text and refresh its previews.';
       for (const current of currentVersions()) {
         const latest = useGraphStore.getState().project?.nodes[current.nodeId];
         if (!latest) continue;

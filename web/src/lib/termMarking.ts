@@ -86,10 +86,36 @@ export function stripTermMarkers(body: string): string {
 
 /** Apply a presentation to real marked terms, leaving code, URLs and math untouched. */
 export function replaceTermMarkers(body: string, replace: (inner: string) => string): string {
+  return mapTermMarkers(body, inner => replace(inner));
+}
+
+function mapTermMarkers(body: string, replace: (inner: string, start: number) => string): string {
   if (!body.includes('[[')) return body;
   const protectedRanges = literalRanges(parseChatMarkdown(body));
   return body.replace(/\[\[([\s\S]*?)\]\]/g, (match, inner: string, start: number) =>
-    protectedRanges.some((range) => overlaps(range, [start, start + match.length])) ? match : replace(inner));
+    protectedRanges.some((range) => overlaps(range, [start, start + match.length])) ? match : replace(inner, start));
+}
+
+export const termPreviewKey = (term: string) => term.trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** Strip automatic marks only. Offsets in unmarked source stay valid when the
+ * selector changes other delimiters. Older projects recorded names, not offsets:
+ * keep their already-marked occurrences, never mark unselected plain text. */
+export function manualTermSelection(body: string, cache?: { manualTerms?: string[]; manualTermOffsets?: number[] }, addedAt?: number) {
+  const keys = new Set(cache?.manualTerms);
+  const offsets = cache?.manualTermOffsets && new Set(cache.manualTermOffsets);
+  const manualTerms = new Set<string>(), manualTermOffsets: number[] = [];
+  let delimiters = 0;
+  const kept = mapTermMarkers(body, (inner, start) => {
+    const offset = start - delimiters;
+    delimiters += 4;
+    const key = termPreviewKey(termLabel(inner).text);
+    if (start !== addedAt && !(keys.has(key) && (!offsets || offsets.has(offset)))) return inner;
+    manualTerms.add(key);
+    manualTermOffsets.push(offset);
+    return '[[' + inner + ']]';
+  });
+  return { body: kept, manualTerms: [...manualTerms], manualTermOffsets };
 }
 
 interface Run { text: string; starts: number[]; ends: number[]; formats: Array<{ raw: Range; text: Range }> }
@@ -210,9 +236,10 @@ export function markSelectedTerm(selection: NodeTextSelection): { body: string; 
 /** Shared by chat, encyclopedic generation, rewrites, selected fragments and
  * Redo terms. The AI only chooses names; it never supplies replacement prose. */
 export async function markTerms(body: string, signal: AbortSignal,
-  complete = secondaryTaskCompletion): Promise<{ body: string; failed: number }> {
+  complete = secondaryTaskCompletion, exclude: readonly string[] = []): Promise<{ body: string; failed: number }> {
   const custom = useSettingsStore.getState().customPrompts;
   const index = indexSource(body), batches = termBatches(body);
+  const blocked = new Set(exclude.map(title => termPreviewKey(termLabel(title).text)));
   let offset = 0;
   const bounds = batches.map((batch): Range => { const start = offset; offset += batch.text.length; return [start, offset]; });
   const ranges: Range[] = [];
@@ -232,7 +259,7 @@ export async function markTerms(body: string, signal: AbortSignal,
           signal.throwIfAborted();
           const terms = parseSelection(output);
           if (terms === null) continue;
-          ranges.push(...selectionRanges(index, terms, bounds[i]!));
+          ranges.push(...selectionRanges(index, blocked.size ? terms.filter(term => !blocked.has(termPreviewKey(term))) : terms, bounds[i]!));
           accepted = true; break;
         } catch (error) { if (signal.aborted) throw error; }
       }

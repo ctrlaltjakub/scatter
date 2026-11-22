@@ -362,14 +362,18 @@ export interface NodeVersion {
   emptyText?: boolean;
   /** Preserve the initial 4:5 frame while its first answer streams. */
   initialTextFrame?: boolean;
+  /** A deliberate re-mark starts a fresh preview set, isolated from older versions and in-flight work. */
+  termPreviewRevision?: string;
   /** Derived term explanations for this exact text; persisted, not a new edit. */
   termPreviews?: {
     fingerprint: string;
     entries: Record<string, string>;
-    /** Legacy previews remain readable; explicit Redo terms refreshes them once. */
+    /** Previews generated in the language of the source prose. */
     languageMode?: 'source';
     /** Explicit selections can show previews with automatic enrichment off. */
     manualTerms?: string[];
+    /** Selected occurrences, measured in the Markdown source without term delimiters. */
+    manualTermOffsets?: number[];
     exhaustedTerms?: string[];
     error?: string;
   };

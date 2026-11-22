@@ -182,7 +182,7 @@ test('encyclopedic bullet names preview their own descriptions without model req
   expect(errors).toEqual([]);
 });
 
-test('Redo terms recovers an abbreviated-name preview, keeps completed previews, and renders emphasis', async ({ page }, info) => {
+test('Redo terms preserves a manual mark, refreshes both previews, and renders emphasis', async ({ page }, info) => {
   const requests: any[] = [];
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -195,9 +195,9 @@ test('Redo terms recovers an abbreviated-name preview, keeps completed previews,
       requests.push(request);
       const user = request.messages.at(-1).content;
       const preview = user.includes('"terms":');
-      const text = JSON.stringify(preview ? { previews: [{ id: 0, parts: [
+      const text = JSON.stringify(preview ? { previews: [{ id: 0, parts: ['Refreshed cache preview ' + requests.length + '.'] }, { id: 1, parts: [
         'Aphex Twin is the alias of ', 'Richard D. James', ', a musician known for ', 'experimental electronic music', '.',
-      ] }] } : { terms: ['cache', 'Aphex Twin'] });
+      ] }] } : { terms: ['Aphex Twin'] });
       await route.fulfill({ contentType: 'text/event-stream', body:
         `data: ${JSON.stringify({ choices: [{ delta: { content: text }, finish_reason: 'stop' }] })}\n\ndata: [DONE]\n\n` });
     } else if (['localhost', '127.0.0.1'].includes(url.hostname)) await route.continue();
@@ -223,7 +223,7 @@ test('Redo terms recovers an abbreviated-name preview, keeps completed previews,
     }, { state: 'complete' });
     const version = node.versions[node.currentVersionIndex];
     version.termPreviews = { fingerprint: get('termPreviewFingerprint')(version), languageMode: 'source',
-      entries: { cache: 'A cache is a **temporary store** that enables **faster access**.' }, exhaustedTerms: ['aphex twin'] };
+      manualTerms: ['cache'], entries: { cache: 'A cache is a **temporary store** that enables **faster access**.' }, exhaustedTerms: ['aphex twin'] };
     node.frozen = true;
     node.generating = false;
     node.streamingText = false;
@@ -249,7 +249,7 @@ test('Redo terms recovers an abbreviated-name preview, keeps completed previews,
   await expect(card.getByText('Some term previews could not be generated', { exact: false })).toHaveCount(0);
   expect(requests).toHaveLength(2);
   expect(requests.every(request => request.model === 'openai/gpt-6-luna')).toBe(true);
-  expect(JSON.parse(requests[1].messages.at(-1).content).terms).toEqual([{ id: 0, term: 'Aphex Twin' }]);
+  expect(JSON.parse(requests[1].messages.at(-1).content).terms).toEqual([{ id: 0, term: 'cache' }, { id: 1, term: 'Aphex Twin' }]);
   await card.locator('.chat-markdown').getByText('Aphex Twin', { exact: true }).hover();
   const preview = page.getByRole('tooltip').filter({ hasText: 'Richard D. James' });
   await expect(preview).toBeVisible();
@@ -257,10 +257,10 @@ test('Redo terms recovers an abbreviated-name preview, keeps completed previews,
   await page.screenshot({ path: info.outputPath('recovered-preview.png') });
   await redo.click();
   await expect(redo).toBeEnabled();
-  expect(requests).toHaveLength(3); // second redo only marks terms; both previews are already cached
-  expect(await page.evaluate(() => {
+  await expect.poll(() => page.evaluate(() => {
     const node = (window as any).testExport('useGraphStore').getState().project.nodes['preview-chat'];
     return node.versions[node.currentVersionIndex].termPreviews.entries.cache;
-  })).toBe('A cache is a **temporary store** that enables **faster access**.');
+  })).toBe('Refreshed cache preview 4.');
+  expect(requests).toHaveLength(4); // one marking + one preview batch per explicit redo
   expect(errors).toEqual([]);
 });

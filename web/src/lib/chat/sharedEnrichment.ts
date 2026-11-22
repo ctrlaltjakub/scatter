@@ -12,7 +12,7 @@ export function answerEnrichmentError(version: NodeVersion): string | undefined 
     return version.answerTermMarking.error;
   if (version.termPreviews?.fingerprint !== termPreviewFingerprint(version)) return;
   return version.termPreviews.error ?? (version.termPreviews.exhaustedTerms?.length
-    ? 'Some term previews could not be generated. Use Redo terms to retry; completed previews are kept.' : undefined);
+    ? 'Some term previews could not be generated. Use Redo terms to re-mark the text and refresh its previews.' : undefined);
 }
 
 /** Re-key a verified cache when a chat answer becomes a detached answer.

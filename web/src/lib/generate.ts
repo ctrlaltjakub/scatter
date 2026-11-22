@@ -11,9 +11,9 @@ import { useLiveViewportStore } from '@/store/useLiveViewportStore';
 import { useSettingsStore } from '@/store/useSettingsStore';
 import { useNodeStatusStore } from '@/store/useNodeStatusStore';
 import { markChatTerms } from './chat/termMarking';
-import { markTerms, stripTermMarkers } from './termMarking';
+import { markTerms } from './termMarking';
 import { generateTermPreviews } from './termPreviews';
-import { retainTermPreviews } from './termPreviewCore';
+import { finishTermRedo, prepareTermRedo, retainTermPreviews } from './termPreviewCore';
 import { generateImageQuestionTitle } from './generateImageQuestionTitle';
 import {
   useRewriteStore,
@@ -713,13 +713,14 @@ function writeVersionBodyInPlace(
   nodeId: string,
   versionIndex: number,
   body: string,
+  explicitRedo: boolean,
 ): void {
   const node = getGenProject(projId)?.nodes[nodeId];
   if (!node) return;
   const versions = [...node.versions];
   const cur = versions[versionIndex];
   if (!cur) return;
-  versions[versionIndex] = { ...cur, body };
+  versions[versionIndex] = explicitRedo ? finishTermRedo(cur, body) : { ...cur, body };
   updateGenNode(projId, nodeId, { versions });
 }
 
@@ -730,7 +731,7 @@ function writeVersionBodyInPlace(
  * or undo step (writes go through updateGenNode, which is undo-paused). Restores
  * `retryArgs` so the Retry button replays the user's action, not the chip pass.
  */
-async function addChipsToCurrentVersion(nodeId: string, targetVersionIndex?: number, retryPreviews = false): Promise<void> {
+async function addChipsToCurrentVersion(nodeId: string, targetVersionIndex?: number, explicitRedo = false): Promise<void> {
   const projId = useGraphStore.getState().activeProjectId;
   if (!projId) return;
   const node = getGenProject(projId)?.nodes[nodeId];
@@ -754,10 +755,12 @@ async function addChipsToCurrentVersion(nodeId: string, targetVersionIndex?: num
     ? registerGenerationController(generationSession.id, ctrl)
     : () => undefined;
   setGenFlags(nodeId, { generating: true, generatingVersionIndex: idx, generationError: undefined });
-  if (imageVersion?.contentType === 'answer') setNodeStatus(nodeId, 'MARKING TERMS');
+  if (explicitRedo || imageVersion?.contentType === 'answer') setNodeStatus(nodeId, 'MARKING TERMS');
   try {
     const chipped = imageVersion?.contentType === 'answer'
       ? (await markChatTerms(plainBody, ctrl.signal)).body
+      // Exclude redundant headings from the model's choices, not from explicit user marks.
+      : explicitRedo ? (await markTerms(plainBody, ctrl.signal, undefined, redundantChipHeaders(projId, nodeId))).body
       : await streamChipPass({
       nodeId,
       projId,
@@ -765,7 +768,7 @@ async function addChipsToCurrentVersion(nodeId: string, targetVersionIndex?: num
       signal: ctrl.signal,
     });
     const targetIndex = getGenProject(projId)?.nodes[nodeId]?.versions.findIndex(version => version.createdAt === imageVersion?.createdAt) ?? -1;
-    if (!ctrl.signal.aborted && targetIndex >= 0) writeVersionBodyInPlace(projId, nodeId, targetIndex, chipped);
+    if (!ctrl.signal.aborted && targetIndex >= 0) writeVersionBodyInPlace(projId, nodeId, targetIndex, chipped, explicitRedo);
   } catch {
     // Leave the plain body — never worse than today's chip-free text.
   } finally {
@@ -774,18 +777,18 @@ async function addChipsToCurrentVersion(nodeId: string, targetVersionIndex?: num
     setGenFlags(nodeId, { generating: false });
     useNodeStatusStore.getState().clearStatus(nodeId);
     if (!ctrl.signal.aborted && imageVersion && useGraphStore.getState().activeProjectId === projId) {
-      void generateTermPreviews(nodeId, imageVersion.createdAt, retryPreviews);
+      void generateTermPreviews(nodeId, imageVersion.createdAt, explicitRedo);
     }
   }
 }
 
 /**
  * "Redo terms marking" (side-panel button): clone the current version with its
- * chips stripped into a NEW version — one undoable step, mirroring
+ * automatic chips stripped into a NEW version — one undoable step, mirroring
  * finishRewrite's commit — advance to it, then run the chip pass over it in
  * place. The text is identical modulo [[chip]] markup, so every per-version
  * sizing field carries over (no card-size jump); a failed/aborted chip pass
- * leaves the plain body, same fallback as every other chip pass.
+ * leaves the source text and the user's marks intact.
  */
 function nextTextVersionTimestamp(node: ScatterNode): number {
   return node.versions.reduce((next, version) => Math.max(next, version.createdAt + 1), Date.now());
@@ -797,11 +800,10 @@ export async function redoTermMarking(nodeId: string): Promise<void> {
   if (currentContentType(node) === 'media') return;  // text panels only
   const cur = node.versions[node.currentVersionIndex];
   if (!cur) return;
-  const plain = stripTermMarkers(cur.body);
-  if (!plain.trim()) return;
+  if (!cur.body.trim()) return;
 
   const { media: _media, ...rest } = cur;            // never carry a MediaRef
-  const newVersion: NodeVersion = { ...rest, answerEnrichmentId: undefined, body: plain, createdAt: nextTextVersionTimestamp(node) };
+  const newVersion = prepareTermRedo(cur, { ...rest, answerEnrichmentId: undefined, createdAt: nextTextVersionTimestamp(node) });
   const versions = [...node.versions, newVersion];
   const projectId = activeGenerationProjectId();
   const generationSession = projectId ? beginGenerationSession({
@@ -816,7 +818,7 @@ export async function redoTermMarking(nodeId: string): Promise<void> {
     currentVersionIndex: versions.length - 1,
   });
   if (generationSession) trackGenerationVersions(generationSession);
-  await addChipsToCurrentVersion(nodeId, undefined, true); // undo-paused in-place writes; retry missing previews
+  await addChipsToCurrentVersion(nodeId, undefined, true);
   if (projectId && generationSession) {
     finishGenerationSession(projectId, nodeId, generationSession.id);
   }
@@ -3945,7 +3947,8 @@ export function saveManualEdit(nodeId: string, header: string | HeaderParts, bod
     : normalizeHeaderParts(header);
   const flat = flattenHeaderParts(parts) || cur.header;
   const newVersion: NodeVersion = {
-    ...(body === cur.body ? { answerEnrichmentId: cur.answerEnrichmentId, answerTermMarking: cur.answerTermMarking } : {}),
+    ...(body === cur.body ? { answerEnrichmentId: cur.answerEnrichmentId, answerTermMarking: cur.answerTermMarking,
+      termPreviewRevision: cur.termPreviewRevision } : {}),
     header: flat,
     headerParts: parts,
     body,

@@ -11,9 +11,9 @@ import type { ScatterNode } from '@/store/types';
 import { useGraphStore } from '@/store/useGraphStore';
 import { useChatRuntimeStore } from '@/store/useChatRuntimeStore';
 import { markChatTerms } from './termMarking';
-import { markedTerms, stripTermMarkers } from '../termMarking';
+import { markedTerms } from '../termMarking';
 import { generateTermPreviews } from '../termPreviews';
-import { reusableTermPreviews } from '../termPreviewCore';
+import { finishTermRedo, prepareTermRedo, reusableTermPreviews } from '../termPreviewCore';
 import { answerMarkingFingerprint, enrichmentMembers, pendingAnswerTermMarking, shareAnswerEnrichment } from './sharedEnrichment';
 import { newId } from '../ids';
 
@@ -99,14 +99,16 @@ export async function enrichChatAnswer(projectId: string, nodeId: string, ref: C
       error();
       useNodeStatusStore.getState().setProcessStatus(nodeId, lane, 'MARKING TERMS');
       try {
-        const { body, failed } = await markChatTerms(manual ? stripTermMarkers(answer.body) : answer.body, signal);
+        const draft = manual ? prepareTermRedo(seed, { ...seed, answerEnrichmentId: newId() }) : undefined;
+        const { body, failed } = await markChatTerms(draft?.body ?? seed.body, signal);
+        let applied = false;
         commit((node) => {
           const current = answerVersion(node, ref);
-          if (!current || current.body !== answer.body) return node;
-          // Read the latest cache: previews may finish while term selection runs.
-          const next = { ...current, body, ...(manual ? { answerEnrichmentId: current.answerEnrichmentId ? newId() : undefined } : {}) };
-          const termPreviews = reusableTermPreviews(next, [current], manual);
-          return updateChatAnswer(node, ref, { body, termPreviews, answerEnrichmentId: next.answerEnrichmentId,
+          if (!current || current.body !== seed.body || current.termPreviewRevision !== seed.termPreviewRevision) return node;
+          applied = true;
+          const next = draft ? finishTermRedo(draft, body) : { ...current, body };
+          const termPreviews = draft ? next.termPreviews : reusableTermPreviews(next, [current]);
+          return updateChatAnswer(node, ref, { body, termPreviews, answerEnrichmentId: next.answerEnrichmentId, termPreviewRevision: next.termPreviewRevision,
             answerTermMarking: { fingerprint: answerMarkingFingerprint(next), state: failed ? 'failed' : 'complete',
               error: failed ? 'Some terms could not be marked. Use Redo terms to retry.' : undefined } });
         });
@@ -125,11 +127,11 @@ export async function enrichChatAnswer(projectId: string, nodeId: string, ref: C
         }
         if (failed) error('Some terms could not be marked. Your text is unchanged; try Redo terms.');
         if (!manual && seed.answerEnrichmentId) pendingAnswerTermMarking.delete(seed.answerEnrichmentId);
-        if (!signal.aborted) {
+        if (!signal.aborted && manual && applied) void generateTermPreviews(nodeId, ref.versionCreatedAt, true);
+        if (!signal.aborted && !manual) {
           const project = getGenProject(projectId);
           const member = project && enrichmentMembers(project, nodeId, seed)[0];
-          if (manual) void generateTermPreviews(nodeId, ref.versionCreatedAt, true);
-          else if (member) void generateTermPreviews(member.nodeId, member.version.createdAt);
+          if (member) void generateTermPreviews(member.nodeId, member.version.createdAt);
         }
       } catch (cause) {
         if (!lifecycle.signal.aborted) {
