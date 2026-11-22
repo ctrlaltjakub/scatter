@@ -161,16 +161,20 @@ describe('model diagnostics', () => {
     const request = JSON.parse(job.test.messages[1]!.content as string);
     expect(request.terms.map((entry: { term: string }) => entry.term)).toEqual(['perimeter', 'equilateral triangle', 'J. R. R. Tolkien', 'working memory']);
     expect(request.context).toContain('The study of shapes');
+    expect(request.context).toContain('An equilateral triangle has three equal sides.');
+    const previews = [
+      { id: 0, parts: ['The perimeter is ', 'the total boundary length', ' of a shape.'] },
+      { id: 1, parts: ['An equilateral triangle has three equal sides, so its perimeter is three times the length of one side.'] },
+      { id: 2, parts: ['J. R. R. Tolkien was an author known for ', 'The Hobbit', ' and ', 'The Lord of the Rings', '.'] },
+      { id: 3, parts: ['Das Arbeitsgedächtnis hält etwa beim Kopfrechnen ein Zwischenergebnis für den nächsten Schritt bereit.'] },
+    ];
     const invoke = vi.fn(async function* () {
-      yield { delta: JSON.stringify({ previews: [
-        { id: 0, parts: ['The perimeter is ', 'the total boundary length', ' of a shape.'] },
-        { id: 1, parts: ['An equilateral triangle has three equal sides.'] },
-        { id: 2, parts: ['J. R. R. Tolkien was an author known for ', 'The Hobbit', ' and ', 'The Lord of the Rings', '.'] },
-        { id: 3, parts: ['Das Arbeitsgedächtnis hält Informationen kurzfristig bereit und ermöglicht ihre Verarbeitung.'] },
-      ] }), done: true, finishReason: 'stop' as const };
+      yield { delta: JSON.stringify({ previews }), done: true, finishReason: 'stop' as const };
     });
     expect((await runDiagnosticJob(job, cfg, new AbortController().signal, '', invoke)).status).toBe('passed');
     expect(invoke).toHaveBeenCalledTimes(1);
+    const echo = previews.map(p => p.id === 1 ? { ...p, parts: ['An equilateral triangle has ', 'three equal sides', '.'] } : p);
+    expect(() => job.test.validate!(JSON.stringify({ previews: echo }))).toThrow('only repeated the supplied definition');
   });
   it('rejects an English preview for a German source paragraph without making a repair call', async () => {
     const cfg = settings(), job = diagnosticPlan(cfg, 'secondary').find(job => job.test.id === 'previews')!;

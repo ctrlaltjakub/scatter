@@ -142,8 +142,9 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
         'Saving marked terms exposed bold delimiters. Report this app formatting error; no extra model call is needed.');
     }
   });
+  const givenDefinition = 'An equilateral triangle has three equal sides.';
   let previewVersion = { header: 'Geometry and literature',
-    body: 'The [[perimeter]] measures the boundary of an [[equilateral triangle]]. [[J. R. R. Tolkien]] wrote The Hobbit.\n\nBeim Lernen hält das [[working memory]] Informationen vorübergehend verfügbar, damit sie für eine aktuelle Aufgabe verarbeitet werden können.\n\n- Geometry\n  - Geometry: The study of shapes, sizes and positions.',
+    body: `The [[perimeter]] measures the boundary of an [[equilateral triangle]]. ${givenDefinition} [[J. R. R. Tolkien]] wrote The Hobbit.\n\nBeim Lernen hält das [[working memory]] Informationen vorübergehend verfügbar, damit sie für eine aktuelle Aufgabe verarbeitet werden können.\n\n- Geometry\n  - Geometry: The study of shapes, sizes and positions.`,
     language: language.id, createdAt: 1, generatedBy: 'root' as const, contentType: 'encyclopedic' as const };
   // Manual marking uses the same preview request/validation as automatic terms.
   // Exercise that path inside this existing check without another paid call.
@@ -161,6 +162,9 @@ export function modelDiagnosticCases(settings: Settings): ModelDiagnosticCase[] 
       'Mark term could not preserve the selected source passage. Report this app error; no extra model call is needed.');
     const { entries, issues } = inspectTermPreviews(text, requestedPreviewTerms);
     assertDiagnostic(!Object.keys(issues).length, Object.entries(issues).map(([term, issue]) => `${term}: ${issue.reason}`).join(' '));
+    // Detect a verbatim echo in this fixed sample, not semantic similarity in user projects.
+    assertDiagnostic(entries['equilateral triangle']?.replaceAll('**', '').toLowerCase() !== givenDefinition.toLowerCase(),
+      'The equilateral triangle preview only repeated the supplied definition. Check the Term previews system prompt or try a different secondary model.');
     // One mixed-source request also checks that English terms and the current
     // selector cannot override the German prose surrounding working memory.
     assertDiagnostic(/\b(?:das|die|der|ein|eine|ist|hält|speichert|ermöglicht|für|während|damit|werden|beim|zu|und|als)\b/iu.test(entries['working memory'] ?? ''),
