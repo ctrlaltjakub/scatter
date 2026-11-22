@@ -8,7 +8,7 @@ import { SettingsToggle } from './SettingsSection';
 // Exhaustive: adding a preference requires a visible settings control too.
 const BEHAVIORS: Record<keyof CameraAutoPan, { title: string; description: string }> = {
   focus: { title: 'When focusing a node', description: 'Bring a clicked node and its panels into view.' },
-  groups: { title: 'When selecting a group', description: 'Fit the selected group from the sidebar or canvas. Also applies to the canvas label for ungrouped nodes.' },
+  groups: { title: 'When selecting a group', description: 'Pan only if a group is out of view. Zoom out only if its nodes cannot fit at the current zoom. Also applies to the canvas label for ungrouped nodes.' },
   newNodes: { title: 'When creating a node', description: 'Bring the new node into view alongside its parent.' },
   branchProjects: { title: 'When creating a project from a branch', description: 'Fit the copied branch when its new project opens.' },
   generation: { title: 'While generating content', description: 'Keep following a growing node after the camera moves to it.' },
@@ -26,7 +26,7 @@ export function CameraSettings() {
   const setPreference = useSettingsStore(s => s.setCameraAutoPan);
   return <CollapsibleSection title="Automatic camera movement"
     description={<>Choose when the app automatically <strong>pans or adjusts zoom</strong>.</>}>
-    <p className="field-help">Manual navigation, search results, linked terms, and <strong>Fit node to screen</strong> still work. Node navigation preserves your zoom unless the node and its panels need more room. Explicit node and group fits are capped at <strong>100% zoom</strong>; manual zoom can go higher.</p>
+    <p className="field-help">Manual navigation, search results, linked terms, and <strong>Fit node to screen</strong> still work. Node navigation preserves your zoom unless the node and its panels need more room. Fit node to screen is capped at <strong>100% zoom</strong>; manual zoom can go higher.</p>
     {BEHAVIOR_KEYS.map(key => <SettingsToggle key={key}
       title={BEHAVIORS[key].title} description={BEHAVIORS[key].description} checked={preferences[key]}
       onChange={value => setPreference(key, value)} />)}

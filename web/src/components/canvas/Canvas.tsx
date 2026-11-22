@@ -875,7 +875,8 @@ export function Canvas(props: Props) {
       // fallbacks inside extendBBoxForPanels cover the pre-mount frames —
       // this runs every tick, so real measurements take over once mounted.
       const sel = proj.selection;
-      const panelTarget = sel.length === 1 && nodes.some((candidate) => candidate.id === sel[0])
+      const groupReveal = panTo.kind === 'nodes' && panTo.automatic === 'groups';
+      const panelTarget = !groupReveal && sel.length === 1 && nodes.some((candidate) => candidate.id === sel[0])
         ? proj.nodes[sel[0]!]
         : undefined;
       if (panelTarget) {
@@ -932,14 +933,14 @@ export function Canvas(props: Props) {
           canvasWidth: cw,
           canvasHeight: ch,
           leftInset: sidebarCollapsedRef.current ? 0 : SIDEBAR_WIDTH,
-          margin: FIT_MARGIN_PX,
+          // A group up against the workspace edge is still visible. Don't
+          // move or shrink it merely to add padding (or fit hidden panels).
+          margin: groupReveal ? 0 : FIT_MARGIN_PX,
           minZoom: MIN_CAMERA_ZOOM,
           axis: panTo.kind === 'node' ? panTo.axis : undefined,
           center,
-          // Explicit node/group fits may zoom in as well as out.
-          // Ordinary node navigation keeps the established zoom-out-only
-          // behavior by omitting this ceiling override.
-          ...(panTo.kind === 'nodes' || center ? { maxZoom: panTo.automatic === 'rootGeneration' ? Math.min(1, v.zoom) : 1 } : {}),
+          // Selecting a group uses the same minimum-pan, zoom-out-only fit as node navigation.
+          ...((panTo.kind === 'nodes' && !groupReveal) || center ? { maxZoom: panTo.automatic === 'rootGeneration' ? Math.min(1, v.zoom) : 1 } : {}),
         },
       );
     };

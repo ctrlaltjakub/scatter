@@ -39,6 +39,32 @@ const camera = (page: Page) => page.evaluate(() => {
 const arrived = (page: Page) => expect.poll(() =>
   page.evaluate(() => (window as any).cameraExport('useGraphStore').getState().panTo)).toBeNull();
 
+test('sidebar group selection leaves a visible group still and reveals an offscreen group without zooming in', async ({ page }) => {
+  await scene(page, 0.75);
+  const group = await page.evaluate(() => {
+    const graph = (window as any).cameraExport('useGraphStore').getState();
+    const member = { ...graph.project.nodes['camera-target'], id: 'group-member', type: 'term-click',
+      position: { x: 700, y: 350 } };
+    graph.setProject({ ...graph.project, nodes: { ...graph.project.nodes, [member.id]: member } });
+    const id = graph.createGroup('Example group');
+    graph.assignNodeToGroup(member.id, id);
+    return id;
+  });
+  const row = page.locator('[data-sidebar-group-id="' + group + '"]');
+  const before = await camera(page);
+  await row.click();
+  await expect.poll(() => page.evaluate(() => (window as any).cameraExport('useGraphStore').getState().project.selection)).toEqual(['group-member']);
+  await arrived(page);
+  expect(await camera(page)).toEqual(before);
+  await page.evaluate(() => (window as any).cameraExport('useGraphStore').getState().setViewport({ x: -1200, y: 100, zoom: 0.75 }));
+  await row.click();
+  await arrived(page);
+  expect(await camera(page)).toMatchObject({ zoom: 0.75, y: 100 });
+  const bounds = await page.locator('.node[data-node-id="group-member"]').boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(239);
+  expect(bounds!.x + bounds!.width).toBeLessThan(1920);
+});
+
 for (const zoom of [0.75, 1.25, 1.5]) {
   test('focus and panel navigation preserve ' + zoom + ' zoom; explicit fit remains capped', async ({ page }) => {
     await scene(page, zoom);

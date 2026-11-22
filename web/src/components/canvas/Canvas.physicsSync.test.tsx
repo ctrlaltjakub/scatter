@@ -143,10 +143,10 @@ function seedProject(count: number) {
   useGraphStore.getState().setProject({ ...project, nodes });
 }
 
-function renderCanvas() {
+function renderCanvas(sidebarCollapsed = true) {
   return render(
     <Canvas
-      sidebarCollapsed
+      sidebarCollapsed={sidebarCollapsed}
       onOpenSettings={noop}
       onReferenceClick={noop}
       onAskFollowUp={noop}
@@ -177,6 +177,39 @@ afterEach(() => {
 });
 
 describe('Canvas physics sync', () => {
+  it.each([
+    // The open sidebar reserves 240px; the viewport is 1800px wide.
+    { name: 'already visible at the edge', count: 2, spread: 200, x: 241, zoom: 0.5, expectedX: 241, expectedZoom: 0.5 },
+    { name: 'one visible close-up member with no floating panels', count: 1, spread: 0, x: 240, zoom: 1.5, expectedX: 240, expectedZoom: 1.5 },
+    { name: 'partially behind the sidebar', count: 2, spread: 200, x: -40, zoom: 1.5, expectedX: 240, expectedZoom: 1.5 },
+    { name: 'too wide to fit', count: 2, spread: 1456, x: 240, zoom: 1, expectedX: 240, expectedZoom: 0.75 },
+  ])('minimally reveals a selected group: $name', ({ count, spread, x, zoom, expectedX, expectedZoom }) => {
+    const callbacks = new Map<number, FrameRequestCallback>();
+    let serial = 0;
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { callbacks.set(++serial, cb); return serial; });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => callbacks.delete(id));
+    seedProject(count + 1);
+    const graph = useGraphStore.getState();
+    const ids = Object.keys(graph.project!.nodes).filter(id => id !== graph.project!.rootNodeId);
+    const group = graph.createGroup('Examples');
+    for (const id of ids) graph.assignNodeToGroup(id, group);
+    if (count > 1) graph.setNodePositions([{ id: ids[1]!, x: spread, y: 0 }]);
+    graph.setViewport({ x, y: 4, zoom });
+    const { container } = renderCanvas(false);
+    Object.defineProperties(container.querySelector('.canvas-host')!, {
+      clientWidth: { value: 1800 }, clientHeight: { value: 1100 },
+    });
+    act(() => { graph.selectGroup(group); graph.requestFitNodes(ids, 'groups'); });
+    expect(useGraphStore.getState().project!.selection).toEqual(ids);
+    for (const time of [0, 16, 400, 1000]) act(() => {
+      const pending = [...callbacks.values()]; callbacks.clear(); pending.forEach(cb => cb(time));
+      expect(useLiveViewportStore.getState().zoom).toBeLessThanOrEqual(zoom);
+      if (x === expectedX && zoom === expectedZoom)
+        expect(useLiveViewportStore.getState()).toMatchObject({ x, y: 4, zoom });
+    });
+    expect(useGraphStore.getState().panTo).toBeNull();
+    expect(useGraphStore.getState().project!.viewport).toEqual({ x: expectedX, y: 4, zoom: expectedZoom });
+  });
   it.each(['focus', 'expand', 'reading', 'delete', 'newNodes', 'panels', 'linked-term'] as const)(
     'preserves close-up zoom during %s navigation, while explicit fits still cap at 100%%', reason => {
       const frames = new Map<number, FrameRequestCallback>();
